@@ -62,7 +62,7 @@ await test('missing or different SDK-parsed invoice cannot inherit the caller in
 await test('verification never bypasses the existing fee cap or forces an alternate route', async () => {
   const { provider, sends } = harness(20)
   let callbacks = 0
-  await assert.rejects(provider.payInvoice({ invoice, preferSpark: true, maxFee: 7, onPreparedRoute() { callbacks++ } }), { code: 'LIGHTNING_FEE_ABOVE_LIMIT' })
+  await assert.rejects(provider.payInvoice({ invoice, preferSpark: true, maxFee: 7, onPreparedRoute() { callbacks++ } }), { code: 'PAYMENT_REVIEW_REQUIRED', reason: 'fee' })
   assert.equal(callbacks, 0)
   assert.equal(sends.length, 0)
 })

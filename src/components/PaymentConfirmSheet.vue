@@ -505,6 +505,8 @@
                 :tall="requiresSlide"
               />
               <button v-else-if="verb === 'send' && !walletCanPay && anotherWalletCanPay" key="choose-wallet" type="button" class="primary-cta choose-wallet-cta" @click="openWalletPicker">{{ $t('Choose another wallet') }}</button>
+              <!-- No other wallet to choose and this one only failed to connect: one way forward. -->
+              <button v-else-if="verb === 'send' && !walletCanPay && walletRetryable" key="retry-wallet" type="button" class="primary-cta" :disabled="walletRetrying" @click="$emit('retry-wallet')">{{ walletRetrying ? $t('Connecting...') : $t('Try again') }}</button>
               <SlideToSend
                 v-else-if="requiresSlide"
                 key="slide"
@@ -632,6 +634,13 @@ export default {
      */
     walletCanPay: { type: Boolean, default: true },
     walletHint: { type: String, default: '' },
+    /**
+     * The selected wallet cannot pay only because its connection failed:
+     * with no other wallet to choose, the commit control's place offers
+     * "Try again" (`retry-wallet`). `walletRetrying` while the parent connects it.
+     */
+    walletRetryable: { type: Boolean, default: false },
+    walletRetrying: { type: Boolean, default: false },
     /** A plain line about the paying wallet that blocks nothing (the default wallet sat this one out). */
     walletNotice: { type: String, default: '' },
     /**
@@ -686,7 +695,7 @@ export default {
     takeoverTitle: { type: String, default: '' },
     takeoverLocked: { type: Boolean, default: false }
   },
-  emits: ['update:modelValue', 'confirm', 'cancel', 'amount-changed', 'update:sendingWalletId', 'refund-pick', 'takeover-cancel', 'retry-preparation'],
+  emits: ['update:modelValue', 'confirm', 'cancel', 'amount-changed', 'update:sendingWalletId', 'refund-pick', 'takeover-cancel', 'retry-preparation', 'retry-wallet'],
   data() {
     return {
       showAddress: false,

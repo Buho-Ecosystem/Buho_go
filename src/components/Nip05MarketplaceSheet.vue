@@ -280,6 +280,8 @@ import { invoiceAmountMsat } from '../utils/addressUtils';
 import { fiatRatesService } from '../utils/fiatRates';
 import { formatCalendarDate } from '../utils/timeFormatting';
 import { feeReserveSats } from '../utils/payingWallets.js';
+import { isUnconfirmedPayment } from '../utils/paymentOutcome.js';
+import { buildPaymentError } from '../utils/userErrors.js';
 
 const SEARCH_DEBOUNCE_MS = 350;
 /** One uninterrupted wait for an in-app payment before "Almost ready". */
@@ -803,7 +805,11 @@ export default {
         else await provider.payInvoice({ invoice: invoice.invoice });
       } catch (err) {
         console.warn('[username] payment failed:', err);
-        this.notice = this.$t("Payment didn't go through. Try again or pay from another wallet.");
+        // A payment whose outcome is unknown may have gone through: paying
+        // again, from this wallet or another, could pay twice.
+        this.notice = isUnconfirmedPayment(err)
+          ? buildPaymentError(err, { context: 'payment', walletType: wallet.type, walletName: wallet.name }, this.$t.bind(this)).reason
+          : this.$t("Payment didn't go through. Try again or pay from another wallet.");
         this.busy = false;
         return;
       }

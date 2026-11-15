@@ -8,6 +8,7 @@
  * all. Every outcome lands in the rule's recent activity.
  */
 import assert from 'node:assert/strict';
+import * as paymentOutcome from '../../utils/paymentOutcome.js';
 import { test } from 'node:test';
 import { readFileSync } from 'node:fs';
 import { transformSync } from 'esbuild';
@@ -40,7 +41,7 @@ function load({ rates = { USD: 50_000 }, rateAge = 2, deps: extra = {} } = {}) {
     },
     '../providers/WalletFactory': { WALLET_TYPES: { SPARK: 'spark', ARKADE: 'arkade', NWC: 'nwc', LNBITS: 'lnbits' } },
     '../utils/autoWithdrawKeys.js': { migratePocketConfigKeys: (configs) => ({ configs, moved: [], dropped: [] }), settleRulesForWallets },
-    '../utils/nwcErrors.js': { NWC_ERROR: { UNCONFIRMED: 'NWC_PAYMENT_UNCONFIRMED' } },
+    '../utils/paymentOutcome.js': paymentOutcome,
     '../utils/fiatRates.js': {
       fiatRatesService: {
         getRates: async () => rates,
@@ -223,7 +224,7 @@ test('a destination the wallet can no longer pay is reported, not attempted', as
 
 test('a payment with an unknown outcome waits 10 minutes, a failed one retries after 15 s, five in a row pause the rule', async (t) => {
   t.mock.timers.enable({ apis: ['Date'], now: 1_000_000 });
-  for (const [code, retriesAfter16s] of [['NWC_PAYMENT_UNCONFIRMED', false], ['PAYMENT_FAILED', true]]) {
+  for (const [code, retriesAfter16s] of [['NWC_PAYMENT_UNCONFIRMED', false], ['PAYMENT_UNCONFIRMED', false], ['PAYMENT_FAILED', true]]) {
     const { aw, id, provider, walletStore } = setup();
     provider.getBalance = async () => ({ balance: 50_000 });
     let attempts = 0;

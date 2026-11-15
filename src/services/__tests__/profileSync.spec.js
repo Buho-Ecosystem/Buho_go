@@ -594,6 +594,8 @@ function mountSheet(identity, profile, props = {}) {
     // No test here pays: the sheet's own wallet payment must never start.
     '../services/nwcPayment.js': { payWithNwc: async () => assert.fail('these tests never pay from a wallet') },
     '../utils/payingWallets.js': { feeReserveSats: () => 0 },
+    '../utils/paymentOutcome.js': { isUnconfirmedPayment: () => false },
+    '../utils/userErrors.js': { buildPaymentError: () => ({ reason: '' }) },
   };
   const module = { exports: {} };
   new Function('require', 'module', 'exports', 'setTimeout', 'clearTimeout', transformSync(source, { format: 'cjs' }).code)(

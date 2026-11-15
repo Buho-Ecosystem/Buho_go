@@ -249,7 +249,7 @@ export function destinationProblem({ source, destination, wallets = [], rules = 
 export function failureReason(error) {
   const code = String(error?.code || '');
   const message = String(error?.message || '').toLowerCase();
-  if (code === 'NWC_PAYMENT_UNCONFIRMED') return 'unconfirmed';
+  if (code === 'NWC_PAYMENT_UNCONFIRMED' || code === 'PAYMENT_UNCONFIRMED') return 'unconfirmed';
   // The route cost more than a payment with no fee shown may
   // (providers/BreezSparkWalletProvider.js). Named before the words are
   // read: its copy mentions the network, which is not a lost connection.
