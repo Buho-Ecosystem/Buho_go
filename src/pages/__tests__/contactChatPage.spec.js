@@ -19,6 +19,7 @@ import * as ServerRenderer from 'vue/server-renderer'
 import * as amountFormatting from '../../utils/amountFormatting.js'
 import * as constants from '../../services/dm/constants.js'
 import * as routes from '../../services/dm/routes.js'
+import { useEmojiPicker } from '../../composables/useEmojiPicker.js'
 
 const sfc = createRequire(import.meta.url)('@vue/compiler-sfc')
 
@@ -83,6 +84,7 @@ function fakeChat(extra = {}) {
     calls,
     items: { value: [] },
     paymentsOnly: { value: false },
+    canReact: { value: true },
     open: () => calls.push(['open']),
     close: () => calls.push(['close']),
     resume: () => calls.push(['resume']),
@@ -103,7 +105,7 @@ function fakeChat(extra = {}) {
   }
 }
 
-function pageOf({ route = { params: { id: 'addr-1' } }, available = true, scope = ME, bookReady = true, chat = fakeChat(), muted = false, wallets = [], isBlocked = false } = {}) {
+function pageOf({ route = { params: { id: 'addr-1' } }, available = true, scope = ME, bookReady = true, chat = fakeChat(), muted = false, wallets = [], isBlocked = false, width = 1440 } = {}) {
   const notices = []
   const replaced = []
   const pushed = []
@@ -142,6 +144,8 @@ function pageOf({ route = { params: { id: 'addr-1' } }, available = true, scope 
     $nextTick: (fn) => fn?.(),
     $refs: {},
     store, addressBook, chat, contact, partner,
+    // The real picker state; `width` decides dock (wide) or sheet.
+    emoji: useEmojiPicker({ width: () => width }),
     partnerName: () => contact()?.name || `npub1${(partner() || '').slice(0, 8)}…`,
     runtime: { available: { value: available }, me: { value: ME }, syncBlockList: () => { blockSyncs.push(true) } },
     walletStore: { wallets, useBip177Format: true, getDisplayBalance: () => ({ known: false }), sparkLightningAddressOf: () => null },
@@ -160,31 +164,124 @@ function pageOf({ route = { params: { id: 'addr-1' } }, available = true, scope 
 
 const flush = () => new Promise((resolve) => setImmediate(resolve))
 
-test('emoji panel: each opening gets a fresh session and reaction focus returns after closing', () => {
+test('emoji: each opening gets a fresh session, and closing a reaction hands focus back to its message', () => {
   const { vm } = pageOf()
   const focused = []
-  vm.$refs = { thread: { focusMessage: id => focused.push(id) }, composer: { focusEmojiButton: () => focused.push('compose') } }
+  vm.$refs = { thread: { focusMessage: id => focused.push(id) }, composer: { focusEmojiButton: () => focused.push('button'), focus: () => focused.push('text'), hasInputFocus: () => false } }
   vm.toggleEmojiPicker()
   assert.equal(vm.emojiMode, 'compose')
-  const first = vm.emojiSession
+  const first = vm.emoji.session.value
   vm.openReactionPicker({ id: 'message-1' })
-  assert.ok(vm.emojiSession > first)
-  const second = vm.emojiSession
+  assert.equal(vm.emojiMode, 'react')
+  assert.ok(vm.emoji.session.value > first)
+  const second = vm.emoji.session.value
   vm.openReactionPicker({ id: 'message-1' })
-  assert.ok(vm.emojiSession > second)
+  assert.ok(vm.emoji.session.value > second, 'the same message again still starts fresh')
   vm.closeEmojiPicker()
   assert.equal(vm.emojiMode, null)
-  assert.deepEqual(focused, [])
+  assert.deepEqual(focused, [], 'not before the panel has left the screen')
   vm.restoreEmojiFocus()
   assert.deepEqual(focused, ['message-1'])
+  vm.restoreEmojiFocus()
+  assert.deepEqual(focused, ['message-1'], 'handed back once')
 })
 
-test('emoji panel: conversation changes discard pending reaction and focus state', () => {
+test('emoji: closing the draft\'s picker returns to the text if the caret was there, else to the button', () => {
   const { vm } = pageOf()
-  vm.openReactionPicker({ id: 'old-message' })
+  const focused = []
+  let typing = true
+  vm.$refs = { composer: { focusEmojiButton: () => focused.push('button'), focus: () => focused.push('text'), hasInputFocus: () => typing } }
+  vm.toggleEmojiPicker()
+  vm.toggleEmojiPicker()
+  vm.restoreEmojiFocus()
+  typing = false
+  vm.toggleEmojiPicker()
   vm.closeEmojiPicker()
-  vm.resetConversationState()
-  assert.deepEqual([vm.emojiMode, vm.emojiReactionId, vm.emojiFocusTarget], [null, null, null])
+  vm.restoreEmojiFocus()
+  assert.deepEqual(focused, ['text', 'button'])
+})
+
+test('emoji: docked, a pick goes into the draft and the picker stays; as a sheet one pick closes it and returns to the text', () => {
+  const run = (width) => {
+    const { vm } = pageOf({ width })
+    const log = []
+    vm.$refs = { composer: {
+      insertEmoji: (char, options) => log.push(['insert', char, options.focus]),
+      focus: () => log.push(['focus', 'text']), focusEmojiButton: () => log.push(['focus', 'button']), hasInputFocus: () => false,
+    } }
+    vm.toggleEmojiPicker()
+    vm.onEmoji('🦉')
+    vm.restoreEmojiFocus()
+    return { vm, log }
+  }
+  const dock = run(1440)
+  assert.equal(dock.vm.emojiDocked, true)
+  assert.equal(dock.vm.emojiMode, 'compose', 'ready for the next pick')
+  assert.deepEqual(dock.log, [['insert', '🦉', true]])
+
+  const sheet = run(390)
+  assert.equal(sheet.vm.emojiDocked, false)
+  assert.equal(sheet.vm.emojiMode, null, 'the sheet covered the draft')
+  assert.deepEqual(sheet.log, [['insert', '🦉', false], ['focus', 'text']])
+})
+
+test('emoji: a reaction pick closes the picker and reacts; without permission to react nothing opens or sends', async () => {
+  const { vm, chat } = pageOf()
+  vm.openReactionPicker({ id: 'message-1' })
+  vm.onEmoji('🚀')
+  await flush()
+  assert.equal(vm.emojiMode, null)
+  assert.deepEqual(chat.calls.filter(call => call[0] === 'react'), [['react', 'message-1', '🚀']])
+
+  // A stranger, a partner without an inbox, a blocked partner: the view-model's gate says no.
+  const closed = pageOf({ chat: fakeChat({ canReact: { value: false } }) })
+  closed.vm.openReactionPicker({ id: 'message-1' })
+  assert.equal(closed.vm.emojiMode, null, 'no picker that would do nothing')
+
+  // The gate closes while the picker is open (the partner gets blocked on another device).
+  const racing = pageOf()
+  racing.vm.openReactionPicker({ id: 'message-1' })
+  racing.chat.canReact.value = false
+  page.watch.canReact.call(racing.vm, false)
+  assert.equal(racing.vm.emojiMode, null)
+  racing.vm.onEmoji('🚀')
+  await flush()
+  assert.deepEqual(racing.chat.calls.filter(call => call[0] === 'react'), [])
+})
+
+test('emoji: Escape closes the dock from anywhere in the chat; the sheet is left to its dialog', () => {
+  const press = (width) => {
+    const { vm } = pageOf({ width })
+    const event = { stopped: false, prevented: false, stopPropagation() { this.stopped = true }, preventDefault() { this.prevented = true } }
+    vm.onEmojiEscape(event)
+    assert.equal(event.prevented, false, 'Escape is not taken while the picker is closed')
+    vm.toggleEmojiPicker()
+    vm.onEmojiEscape(event)
+    return { vm, event }
+  }
+  const dock = press(1440)
+  assert.equal(dock.vm.emojiMode, null)
+  assert.equal(dock.event.prevented && dock.event.stopped, true)
+  const sheet = press(390)
+  assert.equal(sheet.vm.emojiMode, 'compose')
+  assert.equal(sheet.event.prevented, false)
+})
+
+test('emoji: when the chat changes under the picker it closes without moving focus', () => {
+  for (const change of [
+    vm => vm.resetConversationState(),
+    vm => page.watch.blocked.call(vm, true),
+    vm => page.watch.paymentsOnly.call(vm, true),
+  ]) {
+    const { vm } = pageOf()
+    const focused = []
+    vm.$refs = { thread: { focusMessage: id => focused.push(id) }, composer: { focusEmojiButton: () => focused.push('button') } }
+    vm.openReactionPicker({ id: 'old-message' })
+    change(vm)
+    assert.deepEqual([vm.emojiMode, vm.emoji.reactionId.value], [null, null])
+    vm.restoreEmojiFocus()
+    assert.deepEqual(focused, [], 'focus does not jump to a message of the previous state')
+  }
 })
 
 // ── view state ───────────────────────────────────────────────────────

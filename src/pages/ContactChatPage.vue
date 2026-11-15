@@ -14,6 +14,11 @@
   the actions do lives in composables/useContactChat.js (view-model, tested
   under Node); the only way to act on the chat is `useChatRuntime()`.
 
+  Emoji: composables/useEmojiPicker.js holds the picker's state (open for the
+  draft or for a reaction, docked or a sheet); EmojiPanel draws it. Docked, it
+  stays open for the next pick. As a sheet it covers the chat, so one pick
+  closes it.
+
   Paying (a request's Pay, or Send) is handed to the existing pipeline
   (usePayContact -> /wallet -> confirm sheet with "Pay with"). The chat is gone
   by the time that payment succeeds, so the announcement to the partner is not
@@ -172,8 +177,15 @@
         />
       </MoneyBar>
     </div>
-    <EmojiPanel :model-value="!!emojiMode" :reaction="emojiMode === 'react'" :session-key="emojiSession"
-      @update:model-value="open => { if (!open) closeEmojiPicker() }" @select="onEmoji" @closed="restoreEmojiFocus" />
+    <EmojiPanel
+      :model-value="emojiMode !== null"
+      :docked="emojiDocked"
+      :reaction="emojiMode === 'react'"
+      :session-key="emoji.session.value"
+      @update:model-value="(open) => { if (!open) closeEmojiPicker() }"
+      @select="onEmoji"
+      @closed="restoreEmojiFocus"
+    />
     </div>
 
     <RequestSheet
@@ -262,6 +274,7 @@ import { useChatRuntime } from '../composables/useChatRuntime.js'
 import { usePayContact } from '../composables/usePayContact.js'
 import { useContactChat } from '../composables/useContactChat.js'
 import { useSignerAppNotice } from '../composables/useSignerAppNotice.js'
+import { useEmojiPicker } from '../composables/useEmojiPicker.js'
 import { containsSecretKey } from '../services/dm/protocol.js'
 import { contactChatRoute, contactPageRoute } from '../services/dm/routes.js'
 import { loadIncomingTransactions } from '../services/dm/incomingTransactions.js'
@@ -373,9 +386,10 @@ export default {
     })
 
     const signerNotice = useSignerAppNotice()
+    const emoji = useEmojiPicker({ width: () => $q.screen.width })
 
     return {
-      t, router, store, addressBook, walletStore, profile, runtime, chat, partner, contact, partnerName: displayName, formatFiat, fiatCode, requestFiatRate,
+      t, router, store, addressBook, walletStore, profile, runtime, chat, emoji, partner, contact, partnerName: displayName, formatFiat, fiatCode, requestFiatRate,
       goalForRequest,
       /** The app's clipboard (falls back where the WebView has no clipboard API). */
       copyText: copyToClipboard,
@@ -393,10 +407,6 @@ export default {
       bookReady: false,
       /** 'money' | 'text' (MoneyBar). */
       draft: '',
-      emojiMode: null,
-      emojiSession: 0,
-      emojiReactionId: null,
-      emojiFocusTarget: null,
       replyToId: null,
       requestOpen: false,
       requestSubmitting: false,
@@ -462,6 +472,17 @@ export default {
     paymentsOnly() {
       return this.chat.paymentsOnly.value
     },
+    /** Reactions can be sent to this partner (the view-model's one gate). */
+    canReact() {
+      return this.chat.canReact.value
+    },
+    /** null | 'compose' | 'react' */
+    emojiMode() {
+      return this.emoji.mode.value
+    },
+    emojiDocked() {
+      return this.emoji.docked.value
+    },
 
     secretKeyWarning() {
       return containsSecretKey(this.draft)
@@ -490,11 +511,13 @@ export default {
       this.activate()
     },
     view() {
-      if (this.view !== 'chat') this.emojiMode = null
+      if (this.view !== 'chat') this.dismissEmojiPicker()
       this.activate()
     },
-    blocked(value) { if (value) this.emojiMode = null },
-    paymentsOnly(value) { if (value) this.emojiMode = null },
+    // What the picker was open for is gone: no composer, or no reactions.
+    blocked(value) { if (value) this.dismissEmojiPicker() },
+    paymentsOnly(value) { if (value) this.dismissEmojiPicker() },
+    canReact(value) { if (!value && this.emojiMode === 'react') this.dismissEmojiPicker() },
     // A sender who gets saved moves to the contact route.
     contactEntry(entry) {
       if (entry && this.$route.params.pubkey) this.$router.replace(contactChatRoute(entry.id))
@@ -575,9 +598,7 @@ export default {
 
     resetConversationState() {
       this.draft = ''
-      this.emojiMode = null
-      this.emojiReactionId = null
-      this.emojiFocusTarget = null
+      this.dismissEmojiPicker()
       this.replyToId = null
       this.requestOpen = false
       this.menuOpen = false
@@ -659,42 +680,48 @@ export default {
       this.report(await this.chat.react(id, emoji))
     },
 
+    // ----- emoji --------------------------------------------------------------
+
     toggleEmojiPicker() {
       if (this.emojiMode === 'compose') this.closeEmojiPicker()
-      else { this.emojiSession++; this.emojiReactionId = null; this.emojiMode = 'compose' }
+      else this.emoji.open('compose')
     },
     openReactionPicker({ id }) {
-      if (this.unknown || this.blocked) return
-      this.emojiSession++
-      this.emojiReactionId = id
-      this.emojiMode = 'react'
+      if (this.canReact) this.emoji.open('react', id)
     },
-    closeEmojiPicker() {
-      this.emojiFocusTarget = this.emojiMode === 'react' ? this.emojiReactionId
-        : this.$refs.composer?.hasInputFocus?.() ? 'compose-input' : 'compose'
-      this.emojiMode = null
-      this.emojiReactionId = null
+    /** Close and hand focus back: to the message reacted to, or to the draft (the text if the caret was there). */
+    closeEmojiPicker({ toText = this.$refs.composer?.hasInputFocus?.() === true } = {}) {
+      this.emoji.close({ composer: toText ? 'input' : 'button' })
     },
+    /** Close because the chat changed under the picker: focus stays where it is. */
+    dismissEmojiPicker() {
+      this.emoji.close({ returnFocus: false })
+    },
+    /** The panel has left the screen. */
     restoreEmojiFocus() {
-      const target = this.emojiFocusTarget
-      this.emojiFocusTarget = null
-      if (target === 'compose') this.$refs.composer?.focusEmojiButton?.()
-      else if (target === 'compose-input') this.$refs.composer?.focus?.()
-      else if (target) this.$refs.thread?.focusMessage?.(target)
+      const target = this.emoji.takeFocusTarget()
+      if (!target) return
+      if (target.message) this.$refs.thread?.focusMessage?.(target.message)
+      else if (target.composer === 'input') this.$refs.composer?.focus?.()
+      else this.$refs.composer?.focusEmojiButton?.()
     },
+    /** Escape closes the dock, also from the message field. The sheet is a dialog and closes itself. */
     onEmojiEscape(event) {
-      if (!this.emojiMode || this.$q.screen.width < 1024) return
+      if (this.emojiMode === null || !this.emojiDocked) return
       event.stopPropagation()
       event.preventDefault()
       this.closeEmojiPicker()
     },
     onEmoji(emoji) {
-      if (this.blocked || this.paymentsOnly) return
       if (this.emojiMode === 'react') {
-        const id = this.emojiReactionId
+        const id = this.emoji.reactionId.value
         this.closeEmojiPicker()
-        if (id && !this.unknown) this.onReact({ id, emoji })
-      } else if (this.emojiMode === 'compose') this.$refs.composer?.insertEmoji(emoji, { focus: this.$q.screen.width >= 1024 })
+        if (id && this.canReact) this.onReact({ id, emoji })
+      } else if (this.emojiMode === 'compose') {
+        this.$refs.composer?.insertEmoji(emoji, { focus: this.emojiDocked })
+        // A sheet covers the draft: one pick, then back to the text.
+        if (!this.emojiDocked) this.closeEmojiPicker({ toText: true })
+      }
     },
 
     async onRetry({ id }) {

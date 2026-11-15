@@ -561,6 +561,35 @@ test('react: an emoji already chosen changes nothing, a stranger cannot be react
   assert.equal(stranger.runtime.calls.length, 0);
 });
 
+test('react: one gate for the thread and the action: no reactions to a stranger, a partner without an inbox or a blocked one', async () => {
+  const theirs = msg({ createdAt: seconds() - 10 });
+  ingest(theirs);
+  const bubble = (chat) => chat.items.value.find((item) => item.type === 'message').message;
+
+  const open = setup();
+  assert.equal(open.chat.canReact.value, true);
+  assert.equal(bubble(open.chat).canReact, true);
+
+  const stranger = setup({ unknown: true });
+  assert.equal(stranger.chat.canReact.value, false);
+  assert.equal(bubble(stranger.chat).canReact, false);
+
+  const noInbox = setup({ runtime: fakeRuntime({ partnerReachability: async () => 'missing' }) });
+  await noInbox.chat.open();
+  assert.equal(noInbox.chat.canReact.value, false);
+  assert.equal(bubble(noInbox.chat).canReact, false, 'no reaction buttons are drawn');
+  const refused = await noInbox.chat.react(theirs.id, '👍');
+  assert.equal(refused.ok, false);
+  assert.equal(refused.error.message, '', 'nothing to tell the user: the buttons are not there');
+  assert.equal(noInbox.runtime.calls.some((call) => call[0] === 'react'), false);
+
+  const blocked = setup();
+  store.block(ANNA);
+  assert.equal(blocked.chat.canReact.value, false);
+  assert.equal((await blocked.chat.react(theirs.id, '👍')).ok, false);
+  assert.equal(blocked.runtime.calls.some((call) => call[0] === 'react'), false);
+});
+
 test('pay a request: preview opens before lookup; resolving preserves invoice, note, history link and verified chat context', async () => {
   const theirs = request({ createdAt: seconds() - 10 });
   ingest(theirs);
