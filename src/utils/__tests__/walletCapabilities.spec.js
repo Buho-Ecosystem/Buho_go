@@ -14,6 +14,7 @@
 
 import { strict as assert } from 'node:assert';
 import {
+  AMOUNTLESS_INVOICE,
   destinationKind,
   canWalletPay,
   walletSwitchHint,
@@ -86,6 +87,16 @@ test('the hint for a destination the wallet cannot pay is one sentence that name
   for (const type of ['spark_address', 'arkade', 'lightning_invoice', 'bitcoin_address', 'unknown']) {
     assert.equal(walletSwitchHint(type, t), 'This payment needs a different wallet.');
   }
+});
+
+test('a request that names no amount is paid only by a wallet that can be told the amount', () => {
+  assert.equal(canWalletPay('spark', AMOUNTLESS_INVOICE), true);
+  for (const type of ['lnbits', 'nwc', 'arkade']) assert.equal(canWalletPay(type, AMOUNTLESS_INVOICE), false, type);
+  // With an amount, the same wallets pay as before.
+  for (const type of ['spark', 'lnbits', 'nwc']) assert.equal(canWalletPay(type, 'lightning_invoice'), true, type);
+  // It still rides the Lightning rail, and the hint says what the person can do.
+  assert.equal(destinationKind(AMOUNTLESS_INVOICE), 'lightning');
+  assert.equal(walletSwitchHint(AMOUNTLESS_INVOICE, t), 'This wallet can only pay a request that names an amount.');
 });
 
 test('receiving: Spark and LNbits can, Arkade cannot (Lightning paused), NWC follows its grants', () => {

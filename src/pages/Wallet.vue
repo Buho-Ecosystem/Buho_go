@@ -704,7 +704,7 @@ import {isLightningInvoice as isLightningInvoiceShared, isLightningAddress as is
 // home clipboard strip, so resolving from Home can't disagree with the sheet.
 import {classifyDestination, normalizeDestination} from '../utils/clipboardSuggestion.js';
 import {classifyIdentifier} from '../utils/nostrLookup.js';
-import {canWalletPay} from '../utils/walletCapabilities.js';
+import { AMOUNTLESS_INVOICE, canWalletPay } from '../utils/walletCapabilities.js';
 import {
   APP_MAX_PAYMENT_SATS,
   PAYING_REASON,
@@ -2044,6 +2044,9 @@ export default {
       if (p.sparkAddress) return 'spark';
       if (p.arkadeAddress) return 'arkade';
       if (p.bitcoinAddress) return 'bitcoin';
+      // An invoice that names no amount is a destination of its own: not
+      // every wallet that pays invoices can pay it (utils/walletCapabilities).
+      if (p.type === 'lightning_invoice' && !(Number(p.amount) > 0)) return AMOUNTLESS_INVOICE;
       return p.type || 'lightning';
     },
 
@@ -4871,7 +4874,11 @@ export default {
       let payerAmount = null;
       const payerFor = (amountSats = 0) => {
         if (payerId === null || payerAmount !== amountSats) {
-          payerId = this.chooseSendingWalletId(paymentData.type, requestedWalletId, amountSats);
+          // The same destination type the review judges by, so the wallet
+          // picked here is one the review will let pay.
+          const destinationType = paymentData.type === 'lightning_invoice' && !(this.invoiceAmountOf(paymentData) > 0)
+            ? AMOUNTLESS_INVOICE : paymentData.type;
+          payerId = this.chooseSendingWalletId(destinationType, requestedWalletId, amountSats);
           payerAmount = amountSats;
         }
         return payerId;
