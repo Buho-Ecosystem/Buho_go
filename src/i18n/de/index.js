@@ -1872,7 +1872,7 @@ export default {
   "Security Upgrade": "Sicherheits-Upgrade",
   "Send payment": "Zahlung senden",
   "Send to": "Senden an",
-  "Slide to send": "Zum Senden wischen",
+  "Slide to send": "Zum Senden schieben",
   "Spark address detected": "Spark-Adresse erkannt",
   "Spark wallet not connected. Please try again.": "Spark-Wallet nicht verbunden. Bitte versuche es erneut.",
   "Spark wallet not unlocked": "Spark-Wallet gesperrt",
