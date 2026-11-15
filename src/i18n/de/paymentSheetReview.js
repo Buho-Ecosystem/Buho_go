@@ -13,4 +13,7 @@ export default {
   "Change currency": "Währung wechseln",
   "No current exchange rate. Enter the amount in Bitcoin.": "Kein aktueller Wechselkurs. Gib den Betrag in Bitcoin ein.",
   "{amount} + fees": "{amount} + Gebühren",
+  "Remaining before fees": "Verbleibend vor Gebühren",
+  "Fees come on top. Your balance may not cover every payment.": "Gebühren kommen noch dazu. Dein Guthaben reicht vielleicht nicht für jede Zahlung.",
+  "The fee could not be calculated.": "Die Gebühr konnte nicht berechnet werden.",
 };

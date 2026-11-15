@@ -13,4 +13,7 @@ export default {
   "Change currency": "Change currency",
   "No current exchange rate. Enter the amount in Bitcoin.": "No current exchange rate. Enter the amount in Bitcoin.",
   "{amount} + fees": "{amount} + fees",
+  "Remaining before fees": "Remaining before fees",
+  "Fees come on top. Your balance may not cover every payment.": "Fees come on top. Your balance may not cover every payment.",
+  "The fee could not be calculated.": "The fee could not be calculated.",
 };
