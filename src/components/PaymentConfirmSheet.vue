@@ -359,7 +359,7 @@
             class="fact-group"
             :class="{ 'payment-summary': verb === 'send', 'payment-preparation-details': preparationActive }"
             :aria-busy="preparing ? 'true' : null"
-            :aria-label="preparationActive ? $t('Getting ready to pay') : null"
+            :aria-label="preparing ? $t('Getting ready to pay') : null"
           >
             <div v-if="noteRowReserved" class="note-row" aria-hidden="true">
               <span class="note-label">{{ $t('Note (optional)') }}</span>
@@ -1166,8 +1166,13 @@ export default {
     noteRowReserved() {
       return this.preparationActive && ['lightning', 'lnurl'].includes(this.payment?.recipient?.addressType)
     },
-    /** The group of facts under the recipient shows when it has a row to show. */
+    /**
+     * The group of facts under the recipient shows when it has a row to show.
+     * A payment that could not be made ready has none: held rows there would
+     * read as still loading, next to the reason it failed.
+     */
     factGroupVisible() {
+      if (this.preparationFailed) return false
       if (this.preparationActive) return this.feeSlotVisible || this.noteRowReserved
       return this.feeSlotVisible || !!this.refundRow || !!this.payment?.commentAllowed
     },

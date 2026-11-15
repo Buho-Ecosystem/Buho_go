@@ -665,6 +665,16 @@ test('while a payment to an address is made ready its note row is held; a reques
 })
 
 
+test('a payment that could not be made ready shows its reason without held rows', async () => {
+  const payment = { recipient: { name: 'Alice', addressType: 'lightning', address: 'alice@example.com' }, amount: { mode: 'free', defaultAmount: 1000 } }
+  const failed = bare(await render(ConfirmSheet, sheetProps({ contextual: true, preparing: false, preparationError: 'No payment address found.', payment }), { directives: sheetDirectives }))
+  assert.match(failed, /No payment address found\./)
+  assert.doesNotMatch(failed, /preparation-placeholder/, 'held rows would read as still loading')
+  assert.doesNotMatch(failed, /aria-label="Getting ready to pay"/)
+  const visible = (over) => ConfirmSheet.computed.factGroupVisible.call({ preparationFailed: false, preparationActive: true, feeSlotVisible: true, noteRowReserved: false, ...over })
+  assert.equal(visible({}), true)
+  assert.equal(visible({ preparationFailed: true }), false)
+})
 test('while a payment is made ready its limits line is held; a fixed amount has none to hold', () => {
   const reserved = vm => ConfirmSheet.computed.limitsHelperReserved.call(vm)
   assert.equal(reserved({ verb: 'send', preparing: true, amountMode: 'free' }), true)
