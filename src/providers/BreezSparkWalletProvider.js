@@ -1031,9 +1031,11 @@ export class BreezSparkWalletProvider extends WalletProvider {
 
   /**
    * Pay a BOLT11 invoice. The route fee is capped before any funds move:
-   *   - `maxFee` is a fee the person was shown as a quote; the cap allows
-   *     5 sats more, so a quote refreshed since then does not refuse over
-   *     rounding.
+   *   - `maxFee` is a fee the person was shown as a quote, and the payment
+   *     is held to exactly that. A route that has become dearer since is
+   *     not paid and is not a failure: it goes back for another look
+   *     (PAYMENT_REVIEW_REQUIRED, reason 'fee'), with the new quote kept
+   *     for the next estimate.
    *   - `feeLimitSats` is a limit the person was shown ("Up to"); it holds
    *     as it is.
    *   - With neither, nothing was shown, and the cap is unquotedFeeLimitSats
@@ -1079,9 +1081,16 @@ export class BreezSparkWalletProvider extends WalletProvider {
       // against the quoted route fee (see the method's comment).
       const paidSats = [decoded.isZeroAmount ? amountSats : decoded.amount, prep?.amount]
         .map(Number).find((sats) => Number.isFinite(sats) && sats > 0);
+      const quoted = typeof feeLimitSats !== 'number' && typeof maxFee === 'number';
       const feeCap = typeof feeLimitSats === 'number' ? feeLimitSats
-        : typeof maxFee === 'number' ? maxFee + 5
+        : quoted ? maxFee
           : paidSats ? unquotedFeeLimitSats(paidSats) : FEE_RESERVE_MIN_SATS;
+      if (routeFee > feeCap && quoted) {
+        throw Object.assign(
+          new Error(`The route now costs ${routeFee} sats, more than the ${maxFee} sats quoted`),
+          { code: 'PAYMENT_REVIEW_REQUIRED', reason: 'fee', feeSats: routeFee, quotedSats: maxFee },
+        );
+      }
       if (routeFee > feeCap) {
         throw Object.assign(
           new Error(`Lightning payment failed: fee ${routeFee} sats exceeds the ${feeCap} sats limit`),

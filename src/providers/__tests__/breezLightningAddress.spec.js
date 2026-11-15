@@ -187,11 +187,14 @@ await test('an invoice paid with no fee shown has the same limit; a fee shown as
   await unshownWithin.provider.payInvoice({ invoice: invoiceFor(5000) });
   assert.equal(unshownWithin.sent.length, 1);
 
-  const quoted = sparkWithRoute(15);
+  const quoted = sparkWithRoute(10);
   await quoted.provider.payInvoice({ invoice: invoiceFor(5000), maxFee: 10 });
-  assert.equal(quoted.sent.length, 1, 'a refreshed quote within 5 sats of the one shown still pays');
-  const requoted = sparkWithRoute(16);
-  await assert.rejects(requoted.provider.payInvoice({ invoice: invoiceFor(5000), maxFee: 10 }), aboveLimit(16, 15));
+  assert.equal(quoted.sent.length, 1, 'a route at the quote shown pays');
+  // A route dearer than the quote shown is not paid and not failed: it goes back for another look.
+  const requoted = sparkWithRoute(11);
+  await assert.rejects(requoted.provider.payInvoice({ invoice: invoiceFor(5000), maxFee: 10 }),
+    (error) => error.code === 'PAYMENT_REVIEW_REQUIRED' && error.reason === 'fee' && error.feeSats === 11);
+  assert.equal(requoted.sent.length, 0);
 
   // An invoice this decoder cannot read, but the engine can: the cap is of
   // the amount the engine is about to send, and the limit's floor without one.

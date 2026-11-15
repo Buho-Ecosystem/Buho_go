@@ -211,14 +211,15 @@ test('an LNURL payment sends the comment the person typed and stops at an invoic
   assert.deepEqual(paid, [invoiceFor(2500)], 'the oversized invoice was never paid');
 });
 
-test('a pasted invoice pays with the fee the sheet quoted, a free one included', async () => {
-  const methods = component().methods;
-  for (const [estimatedFee, maxFee] of [[7, 7], [0, 0], [null, undefined]]) {
+test('a pasted invoice is held to what the sheet showed: the quote, or the limit when the wallet only guessed', async () => {
+  const methods = component({ '../utils/payingWallets.js': payingWallets }).methods;
+  // [the wallet's estimate, a guess?] -> [quote enforced, limit enforced]; 1 % of 1,000 is under the 10 floor.
+  for (const [estimatedFee, isGuess, maxFee, feeLimitSats] of [[7, false, 7, undefined], [0, false, 0, undefined], [null, false, undefined, 10], [2, true, undefined, 10]]) {
     const asked = [];
     const provider = { payInvoice: async (args) => { asked.push(args); return { id: 'tx', status: 'completed' }; } };
-    const vm = { ...methods, estimatedFee, pendingPayment: { invoice: 'lnbc-x', amount: 1000 }, walletStore: { ensureSparkConnected: async () => provider } };
+    const vm = { ...methods, estimatedFee, estimatedFeeIsGuess: isGuess, pendingPayment: { invoice: 'lnbc-x', amount: 1000 }, walletStore: { ensureSparkConnected: async () => provider } };
     await vm.sendSparkPayment(1000, '', null, 'A');
-    assert.equal(asked[0].maxFee, maxFee, `quoted ${estimatedFee}`);
+    assert.deepEqual([asked[0].maxFee, asked[0].feeLimitSats], [maxFee, feeLimitSats], `estimate ${estimatedFee}, guess ${isGuess}`);
   }
 });
 
@@ -1129,14 +1130,17 @@ test('a fee limit the payment is held to is shown as a limit; a fallback guess i
   assert.equal(review().feeEstimate, null, 'no number for a wallet that cannot tell');
   assert.equal(review().feeNotice, 'Fee calculated when sending.');
   vm.sendingWalletId = 'personal';
+  // An invoice the wallet could only guess a fee for: the guess is never a
+  // number on the sheet. The limit the send is held to is (1 % of 2,500).
+  const unquoted = { sats: 25, isEstimating: false, isLimit: true };
   Object.assign(vm, { pendingPayment: { type: 'lightning_invoice', invoice: 'lnbc-request', amount: 2500 }, estimatedFee: 9876, estimatedFeeIsGuess: true });
-  assert.equal(review().feeEstimate, null, 'provider fallback is never an actual fee');
-  assert.equal(review().feeNotice, 'Fee calculated when sending.');
+  assert.deepEqual(review().feeEstimate, unquoted, 'provider fallback is never an actual fee');
+  assert.equal(review().feeNotice, '');
   vm.estimatedFeeIsGuess = false; vm.estimatedFee = 7;
   assert.deepEqual(review().feeEstimate, { sats: 7, isEstimating: false });
   for (const invalid of [NaN, Infinity, -1, '7']) {
     vm.estimatedFee = invalid;
-    assert.equal(review().feeEstimate, null, String(invalid));
+    assert.deepEqual(review().feeEstimate, unquoted, String(invalid));
   }
   Object.assign(vm, { pendingPayment: lnAddressPayment(), estimatedFee: null, sendSheetAmountSats: 0 });
   assert.equal(review().feeEstimate, null, 'no limit before there is an amount');

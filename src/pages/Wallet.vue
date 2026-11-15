@@ -1836,7 +1836,8 @@ export default {
       //   - a number is the provider's quote for the prepared payment;
       //   - "Up to" is a limit the payment is then held to (a Spark wallet
       //     paying an address or a payment link, whose invoice exists only
-      //     after the confirm: sendSparkPayment / payLightningAddress);
+      //     after the confirm, or an invoice it could not quote:
+      //     sendSparkPayment / payLightningAddress);
       //   - "Free" is said only from a quote of zero (a Spark transfer the
       //     SDK prepared). A transfer between Arkade addresses has no quote
       //     and nothing the app can hold it to, so no fee claim is made;
@@ -1856,6 +1857,11 @@ export default {
           ...(payerType === 'spark' && p.sparkAddress && this.estimatedFee === 0
             ? { label: this.$t('Free · instant') } : {}),
         };
+      } else if (payerType === 'spark' && p.invoice) {
+        // No quote for this invoice (the wallet could only guess): the
+        // limit the send is then held to (sparkInvoiceFeeTerms).
+        const { limitSats } = this.sparkInvoiceFeeTerms(this.payingAmountSats);
+        if (limitSats > 0) feeEstimate = { sats: limitSats, isEstimating: false, isLimit: true };
       } else if (payerType === 'spark' && (p.lightningAddress || p.lnurl) && p.type !== 'lnurl_withdraw') {
         const limit = unquotedFeeLimitSats(this.payingAmountSats);
         // An amount typed in the recipient's currency is only an estimate in
@@ -2045,8 +2051,9 @@ export default {
     payingWalletEntries() {
       const p = this.pendingPayment;
       if (!p || p.type === 'lnurl_withdraw') return [];
-      // A guessed fee (no route quote) is shown and capped, but never held
-      // back from the balance: it could refuse a payment the wallet makes.
+      // A guessed fee (no route quote) is neither shown nor enforced, and
+      // never held back from the balance: it could refuse a payment the
+      // wallet makes.
       const knownFee = this.estimatedFeeIsGuess ? null : this.estimatedFee;
       const entries = this.rankPayingWallets(this.pendingDestinationType, this.payingAmountSats, knownFee);
       if (!this.paymentOnly || !p.sparkInvoice) return entries;
@@ -5312,6 +5319,13 @@ export default {
     returnToReview(reason) {
       this.$refs.sendSheetRef?.resetSlide();
       if (!reason || !this.pendingPayment) return;
+      if (reason === 'fee') {
+        // The route costs more than the quote on the sheet: the new quote
+        // replaces it there, and nothing is paid until it is confirmed.
+        this.reviewNotice = this.$t('The Bitcoin fee changed. Review the updated fee and try again.');
+        void this.updateFeeEstimate({ force: true });
+        return;
+      }
       this.reviewNotice = reason === 'changed'
         ? this.$t('The recipient changed. Review it before sending.')
         : this.$t('The business check is not available right now. Review the payment before sending.');
@@ -6068,8 +6082,8 @@ export default {
     async sendSparkPayment(amount, comment, payout = null, walletId = null, payerData = null, payment = this.pendingPayment) {
       // This payment's own key, the same on every try of it.
       const idempotencyKey = sendKeyOf(payment);
-      // The fee the sheet showed, read before anything is awaited.
-      const quotedFee = this.estimatedFee;
+      // What the sheet said about the fee, read before anything is awaited.
+      const feeTerms = this.sparkInvoiceFeeTerms(amount);
       // Ensure Spark wallet is connected (auto-connects if session PIN available)
       const provider = await this.walletStore.ensureSparkConnected(walletId);
 
@@ -6111,8 +6125,9 @@ export default {
           invoice: payment.invoice,
           preferSpark: true, // Auto-use Spark transfer if recipient has Spark address
           amountSats: isZeroAmountInvoice ? amount : null, // Only pass amount for zero-amount invoices
-          // The fee the sheet showed; a quote of 0 ("Free") is a quote too.
-          maxFee: quotedFee ?? undefined,
+          // The quote the sheet showed (0, "Free", is a quote too), or the
+          // limit it showed when the wallet had no quote to give.
+          ...('quoteSats' in feeTerms ? { maxFee: feeTerms.quoteSats } : { feeLimitSats: feeTerms.limitSats }),
           onPreparedRoute: route => this.brantaReview().assertPrepared(payment, route),
           idempotencyKey,
         });
@@ -7078,6 +7093,18 @@ export default {
       } finally {
         if (run === this._feeEstimateRun) this.isEstimatingFee = false;
       }
+    },
+
+    /**
+     * What a Spark wallet holds the fee of an invoice payment to, the same
+     * for the sheet and for the send: the wallet's own quote when it gave
+     * one, else the limit of an unquoted payment (unquotedFeeLimitSats). A
+     * fee the wallet only guessed is neither.
+     * @returns {{ quoteSats: number }|{ limitSats: number }}
+     */
+    sparkInvoiceFeeTerms(amountSats) {
+      const quoted = !this.estimatedFeeIsGuess && Number.isFinite(this.estimatedFee) && this.estimatedFee >= 0;
+      return quoted ? { quoteSats: this.estimatedFee } : { limitSats: unquotedFeeLimitSats(amountSats) };
     },
 
     getPaymentAmountForFee() {
