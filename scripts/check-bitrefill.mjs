@@ -7,10 +7,11 @@
  * an order at Bitrefill: the confirm sheet, the payment, never paying an
  * invoice twice, a refused payment, an expired price, messages from elsewhere.
  *
- * Start the dev server first, with Bitrefill's demo source until BuhoGO is
- * approved (the real widget refuses unapproved names):
- *   VITE_BITREFILL_UTM_SOURCE=bitrefill_demo npx quasar dev --port 9311
+ * Start the dev server first, with the shop switched on and Bitrefill's demo
+ * source until BuhoGO is approved (the real widget refuses unapproved names):
+ *   VITE_BITREFILL_ENABLED=true VITE_BITREFILL_UTM_SOURCE=bitrefill_demo npx quasar dev --port 9311
  * Then: BITREFILL_BASE_URL=http://localhost:9311 node scripts/check-bitrefill.mjs
+ * BITREFILL_MOCK_ONLY=1 skips part 1, so nothing contacts the real storefront.
  * Screenshots go to output/bitrefill-check/. */
 import { chromium } from '@playwright/test';
 import assert from 'node:assert/strict';
@@ -21,13 +22,17 @@ const output = process.env.BITREFILL_OUTPUT || new URL('../output/bitrefill-chec
 await mkdir(output, { recursive: true });
 
 const WIDGET = 'https://embed.bitrefill.com';
-// A signed, unpayable test invoice (random key): 139,740 sats. Signed fresh on
-// every run, because it expires after 10 minutes.
+// Signed, unpayable test invoices (random key), fresh on every run because
+// they expire after 10 minutes. Every order gets its own: the app knows an
+// invoice by its payment hash, so the same one twice is the same payment.
 const { execFileSync } = await import('node:child_process');
 const signInvoice = (sats, memo, age = 0) => execFileSync('node', [new URL('./fixtures/bitrefill-invoice.mjs', import.meta.url).pathname, String(sats), memo, String(age)]).toString().trim();
-const INVOICE = signInvoice(139740, 'Amazon.de Germany 100 EUR');
-const EXPIRED_INVOICE = signInvoice(55900, 'REWE 40 EUR', 3600);
-const OTHER_INVOICE = signInvoice(55900, 'REWE 40 EUR');
+const AMAZON = 139740;
+const REWE = 55900;
+const amazon = () => signInvoice(AMAZON, 'Amazon.de Germany 100 EUR');
+const INVOICE = amazon();
+const EXPIRED_INVOICE = signInvoice(REWE, 'REWE 40 EUR', 3600);
+const OTHER_INVOICE = signInvoice(REWE, 'REWE 40 EUR');
 
 const WALLETS = [
   { id: 'daily', type: 'spark', name: 'Daily', metadata: {} },
@@ -91,14 +96,25 @@ async function open({ theme = 'dark', stubWidget = false, emailAsked = false, em
     }
     store.refreshBalance = async () => {};
     store.refreshWalletData = async () => {};
-    // The payment stand-in: counts invoices handed to a wallet.
+    // The payment stand-in: counts invoices handed to a wallet, and answers
+    // the way window.__payBehaviour says.
     window.__payments = [];
     window.__payBehaviour = 'ok';
+    window.__walletRecords = [];
     store.ensureWalletConnectedForTransfer = async (walletId) => ({
-      payInvoice: async ({ invoice }) => {
-        window.__payments.push({ walletId, invoice });
-        if (window.__payBehaviour === 'refuse') throw new Error('Insufficient balance');
-        return { id: `tx-${window.__payments.length}`, status: 'completed' };
+      getLightningSendFeeEstimate: async () => ({ estimatedFeeSats: 3 }),
+      getTransactions: async () => window.__walletRecords,
+      payInvoice: async ({ invoice, maxFee }) => {
+        window.__payments.push({ walletId, invoice, maxFee });
+        const id = `tx-${window.__payments.length}`;
+        const how = window.__payBehaviour;
+        // Refused before any money moves: certainly not paid.
+        if (how === 'refuse') throw Object.assign(new Error('Lightning payment failed: fee 900 sats exceeds the 8 sats limit'), { code: 'LIGHTNING_FEE_ABOVE_LIMIT' });
+        // An error that says nothing about the payment.
+        if (how === 'throw') throw new Error('connection reset');
+        if (how === 'pending') return { id, status: 'pending' };
+        if (how === 'slow') await new Promise((r) => setTimeout(r, 1500));
+        return { id, status: 'completed' };
       },
     });
     if (email) {
@@ -112,14 +128,22 @@ async function open({ theme = 'dark', stubWidget = false, emailAsked = false, em
 }
 
 const post = (page, data) => page.evaluate((d) => document.querySelector('iframe.bitrefill-frame').contentWindow.postMessage({ post: d }, '*'), data);
-const intent = (invoiceId, invoice = INVOICE) => ({ event: 'payment_intent', invoiceId, paymentUri: `lightning:${invoice}`, paymentMethod: 'lightning', paymentAmount: 0.0013974, paymentCurrency: 'BTC' });
+// The widget states the order's amount in BTC; the app checks it against the invoice.
+const intent = (invoiceId, invoice = INVOICE, sats = AMAZON) => ({ event: 'payment_intent', invoiceId, paymentUri: `lightning:${invoice}`, paymentMethod: 'lightning', paymentAmount: sats / 1e8, paymentCurrency: 'BTC' });
 const sheet = (page) => page.locator('.sheet-card').first();
+// Paying from the shop always takes the slide, whatever the amount.
 const slide = async (page) => {
   const track = sheet(page).locator('.slide-track');
-  if (await track.count()) { await track.focus(); await page.keyboard.press('Enter'); }
-  else await sheet(page).locator('.confirm-cta button').first().click();
+  await track.waitFor({ timeout: 5000 });
+  await page.waitForFunction(() => !document.querySelector('.sheet-card .fee-pending'), null, { timeout: 10000 });
+  await track.focus();
+  await page.keyboard.press('Enter');
 };
 const toastText = (page) => page.locator('.q-notification, .toast, [role="status"]').allInnerTexts();
+const said = async (page, pattern) => (await toastText(page)).some((t) => pattern.test(t));
+const waitSaid = (page, text, timeout = 5000) => page.waitForFunction((needle) => [...document.querySelectorAll('.q-notification, .toast, [role="status"]')].some((n) => n.innerText.includes(needle)), text, { timeout });
+const ledgerEntry = (page, invoiceId) => page.evaluate((id) => (JSON.parse(localStorage.getItem('buhoGO_bitrefill_invoices')) || []).find((e) => e.invoiceId === id) || null, invoiceId);
+const noSheet = (page, timeout = 6000) => page.waitForFunction(() => !document.querySelector('.sheet-card'), null, { timeout });
 
 // ── Part 1 · the real widget ──────────────────────────────────────────────
 if (process.env.BITREFILL_MOCK_ONLY !== '1') {
@@ -179,10 +203,23 @@ console.log('✓ real widget: the email step comes first, then the widget opens 
   await page.waitForFunction(() => new URL(document.querySelector('iframe.bitrefill-frame').src).searchParams.get('email') === 'later@example.com');
   await page.locator('.brmail-sheet').waitFor({ state: 'detached' });
   await shot(page, 'light-after-edit');
+  // Editing says what it changes; removing asks first and says the shop reloads.
+  await page.getByRole('button', { name: 'Voucher email' }).click();
+  await page.getByText('Applies to your next order. The shop reloads when you save.').waitFor();
+  await page.getByRole('button', { name: 'Remove email' }).click();
+  await page.getByText('Remove this email?').waitFor();
+  await page.getByText('Bitrefill will ask for an email at checkout. The shop reloads.').waitFor();
+  await shot(page, 'remove-email-asks');
+  await page.getByRole('button', { name: 'Cancel' }).click();
+  assert.equal(new URL(await page.locator('iframe.bitrefill-frame').getAttribute('src')).searchParams.get('email'), 'later@example.com', 'Cancel keeps the email');
+  await page.getByRole('button', { name: 'Remove email' }).click();
+  await page.getByRole('button', { name: 'Remove', exact: true }).click();
+  await page.waitForFunction(() => !new URL(document.querySelector('iframe.bitrefill-frame').src).searchParams.has('email'));
+  assert.equal(await page.evaluate(() => localStorage.getItem('buhoGO_bitrefill_email')), null);
   assert.deepEqual(errors, []);
   await context.close();
 }
-console.log('✓ "Not now" opens the shop without an email and is not asked again; the header edits it and reloads the widget');
+console.log('✓ "Not now" opens the shop without an email and is not asked again; the header edits it and reloads the widget; removing it asks first');
 
 // ── Part 2 · paying ───────────────────────────────────────────────────────
 {
@@ -197,115 +234,178 @@ console.log('✓ "Not now" opens the shop without an email and is not asked agai
 
   // Payment may have happened elsewhere before this page tried it.
   await post(page, { event: 'invoice_update', invoiceId: 'already-paid-elsewhere', status: 'payment_detected' });
-  await post(page, intent('already-paid-elsewhere'));
+  await post(page, intent('already-paid-elsewhere', amazon()));
   await pause(500);
   assert.equal(await page.locator('.sheet-card').count(), 0, 'an earlier paid update prevents a later payment intent');
   assert.equal(await page.evaluate(() => window.__payments.length), 0);
 
-  // The widget hands over the invoice: the confirm sheet, Bitrefill as recipient.
+  // The widget hands over the invoice: the confirm sheet, Bitrefill as
+  // recipient, the fee the wallet quoted and the total, always with the slide.
   await post(page, intent('inv-1'));
   await sheet(page).waitFor({ timeout: 5000 });
+  await sheet(page).locator('.slide-track').waitFor({ timeout: 5000 });
+  await page.waitForFunction(() => /Total/.test(document.querySelector('.sheet-card')?.innerText || ''), null, { timeout: 10000 });
   const text = await sheet(page).innerText();
   assert.match(text, /Bitrefill/);
   assert.match(text, /139[,.]?740/);
   assert.match(text, /Amazon\.de Germany 100 EUR/);
   assert.match(text, /Daily/);
+  assert.match(text, /Network fee/, 'the fee is on the sheet before the slide');
+  assert.match(text, /139[,.]?743/, 'and so is the total');
+  assert.doesNotMatch(text, /lightning|invoice/i, 'no rail names on the sheet');
   assert.equal(await page.evaluate(() => window.__payments.length), 0, 'nothing is paid before the slide');
   await pause(500);
   await shot(page, 'confirm-sheet');
 
   await slide(page);
   await page.waitForFunction(() => window.__payments.length === 1, null, { timeout: 5000 });
-  await page.waitForFunction(() => !document.querySelector('.sheet-card'), null, { timeout: 5000 });
+  await noSheet(page);
   assert.equal(await page.evaluate(() => window.__payments[0].walletId), 'daily');
-  assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('buhoGO_bitrefill_invoices')).find((e) => e.invoiceId === 'inv-1').state), 'paid');
+  assert.equal(await page.evaluate(() => window.__payments[0].maxFee), 3, 'the quoted fee is the cap');
+  assert.equal((await ledgerEntry(page, 'inv-1')).state, 'paid');
+  assert.ok((await ledgerEntry(page, 'inv-1')).paymentHash, 'the ledger knows the invoice by its payment hash');
+  await waitSaid(page, 'Paid. Bitrefill is preparing your order.');
+  assert.equal(await said(page, /voucher appears/i), false, 'paid is not delivered: no voucher is promised yet');
   await pause(300);
   await shot(page, 'paid');
 
-  // The same invoice again: refused, nothing paid.
+  // Bitrefill reports the order delivered: only now is it called ready.
+  await post(page, { event: 'invoice_complete', invoiceId: 'inv-1', deliveryStatus: 'delivered', refundNeeded: false });
+  await waitSaid(page, 'Your order is ready');
+
+  // The same invoice again, under its own id and under a new one: refused.
   await post(page, intent('inv-1'));
   await pause(800);
   assert.equal(await page.locator('.sheet-card').count(), 0, 'a paid invoice never opens the sheet again');
+  await post(page, intent('inv-1-renamed'));
+  await pause(800);
+  assert.equal(await page.locator('.sheet-card').count(), 0, 'nor under another order id');
   assert.equal(await page.evaluate(() => window.__payments.length), 1);
-  assert.ok((await toastText(page)).some((t) => /already paid/.test(t)), 'it says so');
+  assert.ok(await said(page, /already paid/), 'it says so');
+
+  // An order whose stated amount is not the invoice's amount is not paid.
+  await post(page, intent('inv-wrong-amount', amazon(), AMAZON * 10));
+  await pause(700);
+  assert.equal(await page.locator('.sheet-card').count(), 0, 'amount and invoice must describe the same order');
 
   // A refused payment: the error, the invoice freed for a retry.
   await page.evaluate(() => { window.__payBehaviour = 'refuse'; });
-  await post(page, intent('inv-2'));
+  await post(page, intent('inv-2', amazon()));
   await sheet(page).waitFor();
   await slide(page);
   await page.waitForFunction(() => window.__payments.length === 2);
   await pause(4800); // waits for the widget to report the payment anyway
-  assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('buhoGO_bitrefill_invoices')).find((e) => e.invoiceId === 'inv-2').state), 'failed');
+  assert.equal((await ledgerEntry(page, 'inv-2')).state, 'failed');
   await pause(300);
   await shot(page, 'refused');
   await page.evaluate(() => { const s = window.__audit.app.config.globalProperties.$pinia._s.get('wallet'); s.paymentError = { ...s.paymentError, visible: false }; });
   // The sheet stays for a retry; while it is open no other order replaces it.
   assert.equal(await page.locator('.sheet-card').count(), 1, 'a refused payment keeps the sheet for a retry');
-  await post(page, intent('inv-9', OTHER_INVOICE));
+  await post(page, intent('inv-9', OTHER_INVOICE, REWE));
   await pause(500);
   assert.match(await sheet(page).innerText(), /139[,.]?740/, 'the order on screen is not swapped');
   await sheet(page).locator('.top-btn').first().click();
-  await page.waitForFunction(() => !document.querySelector('.sheet-card'), null, { timeout: 4000 });
+  await noSheet(page, 4000);
 
-  // A refusal the widget contradicts: it saw the money, so it counts as paid.
-  await page.evaluate(() => { window.__payBehaviour = 'refuse'; });
-  await page.goto(`${base}/#/bitrefill`);
-  await page.locator('iframe.bitrefill-frame').waitFor();
-  await page.waitForFunction(() => document.querySelector('.bitrefill-state') === null);
-  await page.evaluate(() => {
-    const s = window.__audit.app.config.globalProperties.$pinia._s.get('wallet');
-    window.__payments = window.__payments || [];
-    s.ensureWalletConnectedForTransfer = async (walletId) => ({ payInvoice: async ({ invoice }) => { window.__payments.push({ walletId, invoice }); throw new Error('timeout'); } });
-  });
-  await post(page, intent('inv-3'));
+  // An error that says nothing about the payment: the invoice stays blocked.
+  await page.evaluate(() => { window.__payBehaviour = 'throw'; });
+  await post(page, intent('inv-unknown', amazon()));
+  await sheet(page).waitFor();
+  await slide(page);
+  await noSheet(page, 9000);
+  assert.equal((await ledgerEntry(page, 'inv-unknown')).state, 'attempted', 'an unknown outcome is not "failed"');
+  assert.ok(await said(page, /couldn't confirm this payment/), 'it says to check before ordering again');
+  await post(page, intent('inv-unknown'));
+  await pause(700);
+  assert.equal(await page.locator('.sheet-card').count(), 0, 'and it is not handed to a wallet again');
+
+  // A thrown error the widget contradicts: it saw the money, so it counts as paid.
+  await post(page, intent('inv-3', amazon()));
   await sheet(page).waitFor();
   await slide(page);
   await pause(400);
   await post(page, { event: 'invoice_update', invoiceId: 'inv-3', status: 'payment_detected' });
-  await page.waitForFunction(() => !document.querySelector('.sheet-card'), null, { timeout: 6000 });
-  assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('buhoGO_bitrefill_invoices')).find((e) => e.invoiceId === 'inv-3').state), 'paid');
+  await noSheet(page);
+  assert.equal((await ledgerEntry(page, 'inv-3')).state, 'paid');
+
+  // A payment still on its way: nothing is celebrated, the invoice stays
+  // blocked, and the shop's "paid" settles it.
+  await page.evaluate(() => { window.__payBehaviour = 'pending'; });
+  await post(page, intent('inv-pending', amazon()));
+  await sheet(page).waitFor();
+  await slide(page);
+  await noSheet(page);
+  assert.equal((await ledgerEntry(page, 'inv-pending')).state, 'attempted');
+  assert.ok(await said(page, /This payment is on its way/));
+  await pause(300);
+  await shot(page, 'on-its-way');
+  await post(page, { event: 'invoice_update', invoiceId: 'inv-pending', status: 'payment_confirmed' });
+  await page.waitForFunction(() => (JSON.parse(localStorage.getItem('buhoGO_bitrefill_invoices')) || []).find((e) => e.invoiceId === 'inv-pending')?.state === 'paid', null, { timeout: 4000 });
 
   // An expired price closes the sheet without paying.
+  await page.evaluate(() => { window.__payBehaviour = 'ok'; });
   const before = await page.evaluate(() => window.__payments.length);
-  await post(page, intent('inv-4'));
+  await post(page, intent('inv-4', amazon()));
   await sheet(page).waitFor();
   await post(page, { event: 'invoice_update', invoiceId: 'inv-4', status: 'expired' });
-  await page.waitForFunction(() => !document.querySelector('.sheet-card'), null, { timeout: 4000 });
+  await noSheet(page, 4000);
   assert.equal(await page.evaluate(() => window.__payments.length), before, 'an expired invoice is never paid');
 
   // An invoice that ran out before it arrived: said, never shown for paying.
-  await post(page, intent('inv-6', EXPIRED_INVOICE));
+  await post(page, intent('inv-6', EXPIRED_INVOICE, REWE));
   await pause(700);
   assert.equal(await page.locator('.sheet-card').count(), 0, 'an expired invoice opens nothing');
-  assert.ok((await toastText(page)).some((t) => /price ran out/.test(t)));
+  assert.ok(await said(page, /price ran out/));
 
-  // A second order arriving while a payment is on its way changes nothing.
-  await page.evaluate(() => {
-    const s = window.__audit.app.config.globalProperties.$pinia._s.get('wallet');
-    s.ensureWalletConnectedForTransfer = async (walletId) => ({ payInvoice: async ({ invoice }) => { window.__payments.push({ walletId, invoice }); await new Promise((r) => setTimeout(r, 1500)); return { id: 'slow' }; } });
-  });
+  // A second order arriving while a payment is on its way changes nothing,
+  // and neither does the sheet's own close button.
+  await page.evaluate(() => { window.__payBehaviour = 'slow'; });
   const count = await page.evaluate(() => window.__payments.length);
-  await post(page, intent('inv-7'));
+  await post(page, intent('inv-7', amazon()));
   await sheet(page).waitFor();
   await slide(page);
   await pause(300);
-  await post(page, intent('inv-8', OTHER_INVOICE));
-  await page.waitForFunction(() => !document.querySelector('.sheet-card'), null, { timeout: 6000 });
+  await post(page, intent('inv-8', OTHER_INVOICE, REWE));
+  await noSheet(page);
   assert.equal(await page.evaluate(() => window.__payments.length), count + 1, 'only the first order was paid');
-  const ledger = await page.evaluate(() => JSON.parse(localStorage.getItem('buhoGO_bitrefill_invoices')));
-  assert.equal(ledger.find((e) => e.invoiceId === 'inv-7').state, 'paid');
-  assert.equal(ledger.find((e) => e.invoiceId === 'inv-8'), undefined, 'the second order was never started');
+  assert.equal((await ledgerEntry(page, 'inv-7')).state, 'paid');
+  assert.equal(await ledgerEntry(page, 'inv-8'), null, 'the second order was never started');
 
   // An invoice that is not Lightning, or not an invoice: nothing opens.
   await post(page, { ...intent('inv-5'), paymentMethod: 'bitcoin', paymentUri: 'bitcoin:bc1qxyz' });
   await pause(600);
   assert.equal(await page.locator('.sheet-card').count(), 0);
 
+  // Bitrefill took the money and could not deliver: one plain line, kept
+  // until it is read.
+  await post(page, { event: 'invoice_complete', invoiceId: 'inv-7', deliveryStatus: 'failed', refundNeeded: true });
+  await page.locator('.bitrefill-line').waitFor({ timeout: 4000 });
+  assert.match(await page.locator('.bitrefill-line').innerText(), /could not deliver an order/);
+  await pause(300);
+  await shot(page, 'refund-line');
+
+  // Leaving with an order on screen asks first; the header leads to Spend.
+  await page.getByRole('button', { name: 'Back' }).click();
+  await page.getByText('Leave the shop?').waitFor({ timeout: 4000 });
+  await pause(300);
+  await shot(page, 'leave-asks');
+  await page.getByRole('button', { name: 'Stay' }).click();
+  await pause(400);
+  assert.match(page.url(), /#\/bitrefill$/, 'Stay stays');
+  await page.getByRole('button', { name: 'Back' }).click();
+  await page.getByRole('button', { name: 'Leave', exact: true }).click();
+  await page.waitForFunction(() => /#\/spend$/.test(location.href), null, { timeout: 10000 });
+
+  // The refund line is still there on the next visit, until dismissed.
+  await page.evaluate(() => window.__audit.app.config.globalProperties.$router.push('/bitrefill'));
+  await page.locator('.bitrefill-line').waitFor({ timeout: 6000 });
+  await page.locator('.bitrefill-line-close').click();
+  await page.locator('.bitrefill-line').waitFor({ state: 'detached' });
+
   assert.deepEqual(errors, []);
   await context.close();
 }
-console.log('✓ paying: only the widget frame is heard; the sheet names Bitrefill, the product and the wallet; paid once; a refusal frees the invoice; the widget\'s own "paid" wins; an expired price closes the sheet or never opens it; nothing replaces a payment on its way');
+console.log('✓ paying: only the widget frame is heard; the sheet names Bitrefill, the product, the wallet, the fee and the total; paid once, also under another order id; a refusal frees the invoice; an unknown or pending outcome keeps it blocked; the widget\'s own "paid" wins; an expired price closes the sheet or never opens it; a refund shows one line; leaving asks first');
 
 await browser.close();
 console.log(`Screenshots: ${output}`);
