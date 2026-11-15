@@ -166,7 +166,12 @@ export class NWCWalletProvider extends WalletProvider {
     }
   }
 
-  async payInvoice({ invoice, maxFee }) {
+  /**
+   * Pay an invoice. There is no fee limit to pass: a NIP-47 pay request has
+   * no field for one, so the wallet behind the connection alone decides
+   * what the route may cost (utils/payingWallets.js feeLimitHolder).
+   */
+  async payInvoice({ invoice }) {
     this._ensureConnected();
 
     try {

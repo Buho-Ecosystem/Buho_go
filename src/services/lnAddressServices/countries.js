@@ -73,7 +73,7 @@ export const PAYOUT_COUNTRIES = [
     flagFile: 'flags/circle-flags--ke.svg',
     logoFile: 'logos/tando.png', // Tando is the KE provider -> brand with its logo.
     hint: 'You are about to pay a Kenyan phone number',
-    note: 'Tando Kenyan Lightning address', // prefilled when saving as a contact
+    note: 'Tando Kenyan payment address', // prefilled when saving as a contact
     currency: 'KES',
     domains: ['bitcoin.co.ke'], // Tando's live Lightning Address domain
     sendDomain: 'bitcoin.co.ke',
@@ -108,7 +108,7 @@ export const PAYOUT_COUNTRIES = [
     flagFile: 'flags/circle-flags--zm.svg',
     logoFile: 'logos/bitzed.svg', // Bitzed is our partner and the sole ZM provider -> brand with the logo.
     hint: 'You are about to pay a Zambian phone number',
-    note: 'Bitzed Zambian Lightning address', // prefilled when saving as a contact
+    note: 'Bitzed Zambian payment address', // prefilled when saving as a contact
     currency: 'ZMW',
     domains: ['bitzed.xyz'],
     sendDomain: 'bitzed.xyz',
@@ -132,7 +132,7 @@ export const PAYOUT_COUNTRIES = [
     flagFile: 'flags/circle-flags--tz.svg',
     logoFile: 'logos/chapsmart.png', // ChapSmart is the sole TZ provider -> brand with its logo.
     hint: 'You are about to pay a Tanzanian phone number',
-    note: 'ChapSmart Tanzanian Lightning address', // prefilled when saving as a contact
+    note: 'ChapSmart Tanzanian payment address', // prefilled when saving as a contact
     // Same reason as Ghana: `operators` below is also the validity rule, so an
     // Airtel or Yas customer would be told their own number is not a number.
     networkNote: 'Vodacom M-Pesa only',
@@ -166,7 +166,7 @@ export const PAYOUT_COUNTRIES = [
     flagFile: 'flags/circle-flags--gh.svg',
     logoFile: 'logos/bitspenda.png', // BitSpenda is the sole GH provider -> brand with the logo.
     hint: 'You are about to pay a Ghanaian phone number',
-    note: 'BitSpenda Ghanaian Lightning address', // prefilled when saving as a contact
+    note: 'BitSpenda Ghanaian payment address', // prefilled when saving as a contact
     // Said BEFORE the first keystroke. The operators table below is also the
     // validity rule, so without this a Telecel or AirtelTigo customer types a
     // number that is perfectly valid in Ghana and is told it is not a number.

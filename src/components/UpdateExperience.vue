@@ -55,7 +55,7 @@
 
       <div v-if="stage === 'downloading'" class="update-sheet__progress">
         <div class="update-sheet__progress-copy">
-          <span>{{ $t('Downloading...') }}</span>
+          <span>{{ $t('Downloading…') }}</span>
           <span v-if="sizeLine">{{ sizeLine }}</span>
         </div>
         <q-linear-progress
@@ -64,7 +64,7 @@
           :indeterminate="!updateStore.playTotalBytes"
           :value="updateStore.playDownloadProgress"
           color="positive"
-          :aria-label="$t('Downloading...')"
+          :aria-label="$t('Downloading…')"
         />
       </div>
 

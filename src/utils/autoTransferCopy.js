@@ -62,9 +62,11 @@ export function whenText(at, { locale = 'en-US', now = Date.now() } = {}) {
 
 /**
  * Why a rule did not move money, as one short sentence. `wallet` is the
- * rule's wallet, `destination` its destination's label.
+ * rule's wallet, `destination` its destination's label, `detail` what the
+ * entry kept with the reason (a cause, or the limit in sats), `bip177` the
+ * app's amount format.
  */
-export function reasonText(reason, { t, wallet = '', destination = '', detail = null }) {
+export function reasonText(reason, { t, wallet = '', destination = '', detail = null, bip177 = true }) {
   switch (reason) {
     case 'unreachable': return t('{name} didn\'t answer.', { name: destination });
     case 'offline': return t('There was no connection.');
@@ -76,6 +78,7 @@ export function reasonText(reason, { t, wallet = '', destination = '', detail = 
     case 'balance_unverified': return balanceUnverifiedText(detail, { t, wallet });
     case 'no_rate': return t('Waiting for an exchange rate.');
     case 'below_minimum': return t('Too little to move.');
+    case 'above_maximum': return t('At most {amount} can be sent to {name} at a time.', { name: destination, amount: formatSats(detail, { bip177 }) });
     case 'cannot_pay': return t('{name} can\'t pay this destination right now.', { name: wallet });
     case 'cannot_receive': return t('{name} can\'t receive payments.', { name: destination });
     case 'missing': return t('{name} is no longer on this phone.', { name: destination || t('The destination') });
@@ -151,7 +154,7 @@ export function eventRow(event, ctx, names = {}) {
   if (event.outcome === OUTCOME.SENT) {
     return { title: formatSats(event.amount, ctx), detail: when, value: ctx.t('Sent'), tone: 'good' };
   }
-  const reason = reasonText(event.reason, { t: ctx.t, ...names, detail: event.detail ?? null });
+  const reason = reasonText(event.reason, { t: ctx.t, ...names, detail: event.detail ?? null, bip177: ctx.bip177 });
   if (event.outcome === OUTCOME.FAILED) return { title: ctx.t('Couldn\'t send'), detail: `${when} · ${reason}`, value: '', tone: 'warn' };
   return { title: ctx.t('Waited'), detail: `${when} · ${reason}`, value: '', tone: 'muted' };
 }
@@ -164,7 +167,7 @@ export function attentionCopy(rule, { walletName, balanceSats = 0 }, ctx) {
   const status = ruleStatus(rule);
   if (status.kind !== 'attention') return null;
   const destination = destinationLabel(rule.destination, ctx) || ctx.t('the destination');
-  const reason = reasonText(status.event?.reason, { t: ctx.t, wallet: walletName, destination, detail: status.event?.detail ?? null });
+  const reason = reasonText(status.event?.reason, { t: ctx.t, wallet: walletName, destination, detail: status.event?.detail ?? null, bip177: ctx.bip177 });
   if (isStuckWait(status.event)) {
     return {
       line: ctx.t("Auto-Transfer can't check {name}'s balance", { name: walletName }),

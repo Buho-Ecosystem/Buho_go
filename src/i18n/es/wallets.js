@@ -1,6 +1,6 @@
 // Spark multi-wallet: creating, adding, naming, removing and restoring wallets.
 export default {
-  "Setting up your wallet...": "Configurando tu cartera…",
+  "Setting up your wallet…": "Configurando tu cartera…",
   "This recovery phrase is already on this device": "Esta frase de recuperación ya está en este dispositivo",
   "Any of its wallets that are missing here will appear in your wallet list.": "Las carteras de esta frase que falten aquí aparecerán en tu lista de carteras.",
   "Another recovery phrase is in use": "Ya se usa otra frase de recuperación",
@@ -23,7 +23,7 @@ export default {
   "Your wallets changed after this backup. Back up again to include the changes.": "Tus carteras cambiaron después de esta copia. Haz otra copia para incluir los cambios.",
   "New Spark wallet": "Nueva cartera Spark",
   "Made from your recovery phrase, so the backup you have already covers it.": "Creada con tu frase de recuperación, así que la copia que ya tienes la cubre.",
-  "Creating wallet...": "Creando cartera…",
+  "Creating wallet…": "Creando cartera…",
   "Create wallet": "Crear cartera",
   "You already have the most Spark wallets this app supports.": "Ya tienes el máximo de carteras Spark que admite la app.",
   "Couldn't create the wallet. Check your connection and try again.": "No se pudo crear la cartera. Comprueba tu conexión e inténtalo de nuevo.",
@@ -43,7 +43,7 @@ export default {
   "Receiving wallet": "Cartera que recibe",
   "{target} receives at {address} instead of {old}, which stops working. {source} gets a new address, which you can change later.": "{target} recibe en {address} en lugar de {old}, que deja de funcionar. {source} obtiene una dirección nueva, que puedes cambiar después.",
   "{target} receives at {address}. {source} gets a new address, which you can change later.": "{target} recibe en {address}. {source} obtiene una dirección nueva, que puedes cambiar después.",
-  "Moving address...": "Moviendo la dirección…",
+  "Moving address…": "Moviendo la dirección…",
   "Both wallets need to be connected. Check your connection and try again.": "Las dos carteras deben estar conectadas. Comprueba tu conexión e inténtalo de nuevo.",
   "This wallet has no address to move right now.": "Esta cartera no tiene ahora una dirección que mover.",
   "The address could not be moved. Nothing changed, so you can try again.": "No se pudo mover la dirección. No cambió nada, así que puedes intentarlo de nuevo.",

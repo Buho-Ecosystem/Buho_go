@@ -149,7 +149,7 @@
               />
               <div class="input-helper" :class="$q.dark.isActive ? 'helper-dark' : 'helper-light'">
                 <template v-if="addressIsRequest">
-                  <span>{{ $t('Review this request to share your Lightning address.') }}</span>
+                  <span>{{ $t('Review this request to share your payment address.') }}</span>
                 </template>
                 <template v-else-if="addressShowsError">
                   <Icon icon="tabler:alert-circle" width="13" height="13" />
@@ -168,7 +168,7 @@
               </div>
               <textarea
                 v-model="formData.notes"
-                :placeholder="$t('e.g., Monthly rent, Coffee shop...')"
+                :placeholder="$t('e.g., Monthly rent, Coffee shop…')"
                 class="form-input notes-textarea"
                 :class="$q.dark.isActive ? 'form-input-dark' : 'form-input-light'"
                 maxlength="200"

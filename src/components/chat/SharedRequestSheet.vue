@@ -39,7 +39,7 @@
         <Icon icon="tabler:at" width="28" height="28" />
         <p>
           {{
-            $t('To request money you need a Lightning address in your profile.')
+            $t('To request money you need a payment address in your profile.')
           }}
         </p>
       </div>
@@ -299,7 +299,7 @@
           />
           {{
             !address
-              ? $t('Set up Lightning address')
+              ? $t('Set up payment address')
               : submitting
                 ? $t('Sending requests…')
                 : allocation.collectSats

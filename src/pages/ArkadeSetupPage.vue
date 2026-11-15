@@ -34,13 +34,13 @@ export default {
   },
   data() {
     return {
-      creatingStatus: this.$t('Getting things ready...'),
+      creatingStatus: this.$t('Getting things ready…'),
     };
   },
   async mounted() {
     // Visual-audit harness: never touch the real SDK / network.
     if (typeof window !== 'undefined' && window.__AUDIT__) {
-      this.creatingStatus = this.$t('Securing your wallet...');
+      this.creatingStatus = this.$t('Securing your wallet…');
       return;
     }
     await this.createWallet();
@@ -54,9 +54,9 @@ export default {
         await this.walletStore.addArkadeWallet({
           onProgress: (step) => {
             const messages = {
-              encrypting: this.$t('Securing your wallet...'),
-              connecting: this.$t('Connecting to Arkade...'),
-              done: this.$t('Almost done...'),
+              encrypting: this.$t('Securing your wallet…'),
+              connecting: this.$t('Connecting to Arkade…'),
+              done: this.$t('Almost done…'),
             };
             this.creatingStatus = messages[step] || this.creatingStatus;
           },

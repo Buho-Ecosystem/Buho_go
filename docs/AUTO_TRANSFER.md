@@ -33,17 +33,30 @@ Words come from one place, `utils/autoTransferCopy.js`: a rule is a sentence, a 
 2. Spark balances are re-read fresh before money moves; the rule, the wallet and its connection must be unchanged after the read.
 3. The destination is checked again (`destinationProblem`): this wallet can pay it, it is not this wallet, no loop of rules sends the money back.
 4. The amount: what is above the amount kept, less the fee. Spark to Spark is free (0 held back); Lightning holds back 1%, at least 10 sats; on-chain quotes the fee for the chosen speed and withdraws with the fee included.
-5. Another wallet on this phone goes through `transferBetweenWallets`; addresses through the wallet's provider.
-6. Every outcome lands in the rule's recent activity (20 events; repeated waits collapse into one line). The transaction is stamped `source: 'auto-transfer'` with the destination's name.
+5. What the destination takes: a payment address states the least and the most it takes at a time. The rule reads them from its pay request (`payRequestLimits` in `utils/lnurlPay.js`) before any invoice is asked for, keeps them for 10 minutes, and holds the amount of step 4 against them (`amountLimit`). Below the least, the rule waits (`below_minimum`): no payment is tried and the failure count does not grow. Above the most, the transfer fails (`above_maximum`) and its entry names the limit; a transfer is never sent in parts. The sheet knows the same limits for an address pasted or scanned there: a rule whose smallest transfer is already more than the address takes cannot be turned on and says why, and the live footer says "nothing moves yet" while what would move is less than the address takes.
+6. Another wallet on this phone goes through `transferBetweenWallets`; addresses through the wallet's provider.
+7. Every outcome lands in the rule's recent activity (20 events; repeated waits collapse into one line). The transaction is stamped `source: 'auto-transfer'` with the destination's name.
 
 | Situation | What happens |
 |---|---|
 | Sent | toast "Moved 512,400 sats · To Savings"; 60 s before the rule runs again |
 | Failed | no alert; Home's line "Auto-Transfer couldn't send to Savings ›"; retry after 15 s |
+| Less than the destination takes | waits: "Too little to move."; it runs on the next balance that leaves enough |
+| More than the destination takes at a time | fails: "At most 500,000 sats can be sent to shop@example.com at a time." |
 | Outcome unknown (NWC) | rests 10 minutes: it may have gone through |
 | 5 failures in a row | the rule pauses itself; "Try Again" switches it back on and runs it |
 | Destination wallet removed | the rule pauses: "Paused: where it sent is no longer on this phone." |
 | Rule moved from an old Spark pocket | paused, and says so |
+
+## Who holds the fee
+
+What a rule holds back is a reserve. Whether the fee stays inside it depends on who holds the payment to a limit, which `feeLimitHolder` in `utils/payingWallets.js` says per wallet type:
+
+| Wallet | Who holds the fee | What the rule leaves |
+|---|---|---|
+| Spark | the app: the wallet refuses a route above 1% of the amount, at least 10 sats | its own reserve, which is that limit |
+| LNbits | its server: each payment is held to the server's own fee reserve, an operator's setting, and refused when the balance does not cover the amount plus that reserve | the server's figure for the invoice it is about to pay (`GET /api/v1/payments/fee-reserve`). When that is more than the rule's own reserve left room for, the rule asks for an invoice for less. A server that does not answer leaves the rule's own reserve, as before |
+| NWC | nobody: a pay request has no field for a limit | its own reserve, which the fee of the wallet behind the connection can exceed |
 
 ## Keeping balances current
 

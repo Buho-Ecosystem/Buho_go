@@ -277,7 +277,7 @@ test('a service\'s words keep their label in the Send field and in the dialog', 
   const vm = { ...methods, $t: t, sendResolveError: '', sendResolveSource: '', walletStore: { showPaymentError: (error, ctx) => shown.push([error, ctx]) } };
   vm.failSendResolution('This account is suspended', true, { attribution: 'Reported by the recipient' });
   assert.deepEqual([vm.sendResolveError, vm.sendResolveSource], ['This account is suspended', 'Reported by the recipient']);
-  vm.failSendResolution("We couldn't find this Lightning address", true, { attribution: null });
+  vm.failSendResolution("We couldn't find this payment address", true, { attribution: null });
   assert.equal(vm.sendResolveSource, '', 'our own words carry no label');
   vm.failSendResolution('Shop closed', false, { context: 'link', attribution: 'Reported by the server' });
   vm.failSendResolution('Our words', false, {});
@@ -608,6 +608,8 @@ function payingHarness({ wallets = PAY_WALLETS, active = 'biz', funds = PAY_FUND
     withdrawToL1: async args => { calls.push([id, 'withdrawToL1', args.destinationAddress, args.amountSats]); return { requestId: 'req-1' }; },
     waitForWithdrawalCompletion: async requestId => { calls.push([id, 'waitForWithdrawalCompletion', requestId]); return { isFailed: false, txId: 'tx' }; },
     getLightningSendFeeEstimate: async () => { calls.push([id, 'getLightningSendFeeEstimate']); return { estimatedFeeSats: 7 }; },
+    // An LNbits server from before the fee reserve could be asked for.
+    getFeeReserveSats: async () => null,
   });
   const store = {
     nwcPayOptions: () => ({ limit: null }),
@@ -623,6 +625,7 @@ function payingHarness({ wallets = PAY_WALLETS, active = 'biz', funds = PAY_FUND
     ensureSparkConnected: async (id = null) => { calls.push([id, 'ensureSparkConnected']); return providerFor(id || store.activeWalletId); },
     ensureLNBitsConnected: async id => { calls.push([id, 'ensureLNBitsConnected']); return providerFor(id || store.activeWalletId); },
     ensureArkadeConnected: async id => { calls.push([id, 'ensureArkadeConnected']); return providerFor(id || store.activeWalletId); },
+    ensureWalletConnectedForTransfer: async id => providerFor(id),
     getProvider: id => providerFor(id),
     getActiveProvider: () => providerFor(store.activeWalletId),
     reconcileSpark: async (ids, reason) => { calls.push(['*', 'reconcileSpark', ids, reason]); },
@@ -655,6 +658,8 @@ function payingHarness({ wallets = PAY_WALLETS, active = 'biz', funds = PAY_FUND
   const vm = {
     ...options.methods, ...options.data.call({}),
     $t: t, $refs: {}, walletStore: store,
+    // Home says app-wide that it is sending (stores/paymentFlow.js); nothing here reads it.
+    paymentFlow: { beginSend: () => () => {} },
     $q: { dark: { isActive: false }, notify: notice => notices.push(notice) },
     addressBookStore: { findContactByAddress: () => null, findContactByPubkey: () => null, getEntryById: id => (id === 'c1' ? { id: 'c1' } : undefined) },
     transactionMetadataStore: { enqueuePendingContactLink: async link => { (sent.links ||= []).push(link); } },
@@ -819,7 +824,7 @@ test('any other address that does not resolve still says so, in its own words', 
   vm.fetchLightningAddressInfo = async () => ({});
   vm.resolveNostrTarget = async () => null;
   await quietly(() => vm.onPaymentDetected({ type: 'lightning_address', data: 'nobody@example.com' }));
-  assert.equal(vm.sendResolveError, "We couldn't find this Lightning address");
+  assert.equal(vm.sendResolveError, "We couldn't find this payment address");
 });
 
 test('Arkade onchain requires a quote for this wallet, destination and recipient amount', async () => {
@@ -1074,6 +1079,21 @@ test('Pay with: zero-fee rails reserve nothing, so a whole balance can be sent',
   assert.equal(ln.vm.paymentSheetWalletCanPay, false, '1000 + 7 > 1000');
 });
 
+test('an amount above the app\'s own maximum is told to the sheet, and the pipeline never refuses it without a word', async () => {
+  const max = payingWallets.APP_MAX_PAYMENT_SATS;
+  const { vm, options, calls } = payingHarness();
+  vm.resolveWalletBrand = () => null;
+  await vm.onPaymentDetected({ type: 'spark_address', data: 'spark1friend', sendingWalletId: 'biz' });
+  // The sheet is given the limit the pipeline holds to, so it can say it before the slide.
+  assert.equal(options.computed.paymentSheetProps.call(vm).amount.maxSats, max);
+  Object.assign(vm, { paymentAmount: String(max + 1), sendDenomination: 'sats' });
+  const before = calls.length;
+  await vm.confirmPayment();
+  assert.equal(vm.reviewNotice, `Maximum is ${max} sats`, 'said in the words the sheet uses');
+  assert.equal(calls.length, before, 'nothing was sent');
+  assert.notEqual(vm.pendingPayment, null, 'the review stays open');
+});
+
 test('Pay with: a guessed Spark fee is shown but never held back from the balance', async () => {
   const funds = { ...PAY_FUNDS, biz: 1000 };
   for (const [isEstimated, canPay] of [[true, true], [false, false]]) {
@@ -1148,7 +1168,8 @@ test('a fee limit the payment is held to is shown as a limit; a fallback guess i
 });
 
 test('the success screen and History records carry what the invoice charged, in the recipient\'s currency too', async () => {
-  for (const [invoiceSats, shown] of [[2060, 2060], [2500, 2500], [undefined, 2500], [2059.4, 2060]]) {
+  // The invoice's amount arrives as a whole figure: a fraction is rounded up where it is decoded (utils/lightningInvoice.js).
+  for (const [invoiceSats, shown] of [[2060, 2060], [2500, 2500], [undefined, 2500]]) {
     const { vm, sent } = payingHarness({ active: 'biz' });
     vm.fetchLightningAddressInvoice = async () => ({ pr: 'lnbc-resolved', invoiceSats, successAction: null, verify: null });
     Object.assign(vm, { pendingPayment: lnAddressPayment(), sendingWalletId: 'lnb', paymentAmount: '2500', sendSheetAmountSats: 2500 });

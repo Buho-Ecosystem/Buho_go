@@ -11,6 +11,8 @@ import { receiptFromPayment } from '../../services/paymentReceipts.js';
 import { normalizeTx } from '../../services/txNormalizer.js';
 import * as paymentOutcome from '../../utils/paymentOutcome.js';
 import * as nwcWallet from '../../utils/nwcWallet.js';
+import * as lightningInvoice from '../../utils/lightningInvoice.js';
+import { invoiceFor } from '../../utils/__tests__/lnurlPayFixtures.js';
 
 function loadModule() {
   const load = (file, deps) => {
@@ -20,7 +22,7 @@ function loadModule() {
     return module.exports;
   };
   const base = load('../WalletProvider.js', {});
-  return load('../LNBitsWalletProvider.js', { './WalletProvider': base, '../utils/paymentOutcome.js': paymentOutcome, '../utils/nwcWallet.js': nwcWallet });
+  return load('../LNBitsWalletProvider.js', { './WalletProvider': base, '../utils/paymentOutcome.js': paymentOutcome, '../utils/nwcWallet.js': nwcWallet, '../utils/lightningInvoice.js': lightningInvoice });
 }
 
 const { LNBitsWalletProvider, lnbitsPaymentHint } = loadModule();
@@ -224,3 +226,21 @@ test('a payment LNbits marks failed or has not paid yet is never returned as com
   assert.deepEqual(await pay({ paid: true, preimage: 'pre', details: { payment_hash: HASH, status: 'success', fee: -3000 } }),
     { preimage: 'pre', fee: 3, status: 'completed', paymentHash: HASH });
 });
+
+test('the most an invoice can cost is the server\'s own figure, rounded up, or nothing at all', async () => {
+  const invoice = invoiceFor(1000);
+  /** What the provider says for a server that answers the fee-reserve read with `answer`. */
+  const reserveFor = (answer) => {
+    server({ 'GET /api/v1/payments/fee-reserve': answer });
+    return provider().getFeeReserveSats(invoice);
+  };
+  // The server counts in thousandths: the figure is never below what it may charge.
+  assert.equal(await reserveFor({ fee_reserve: 2000 }), 2);
+  assert.equal(await reserveFor({ fee_reserve: 2001 }), 3);
+  assert.equal(await reserveFor({ fee_reserve: 0 }), 0);
+  // No usable answer is no figure, never a guess.
+  for (const answer of [{}, { fee_reserve: '2000' }, { fee_reserve: -1 }, { fee_reserve: 1.5 }, null]) {
+    assert.equal(await reserveFor(answer), null, JSON.stringify(answer));
+  }
+});
+

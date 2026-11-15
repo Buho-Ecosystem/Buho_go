@@ -76,4 +76,5 @@ export default {
   "To {name}": "To {name}",
   "Set Up": "Set Up",
   "Moved {amount}": "Moved {amount}",
+  "At most {amount} can be sent to {name} at a time.": "At most {amount} can be sent to {name} at a time.",
 };

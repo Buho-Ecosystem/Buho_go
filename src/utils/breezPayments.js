@@ -136,6 +136,8 @@ export function mapWithdrawFeeQuoteToTiers(feeQuote) {
     medium: tier(feeQuote.speedMedium),
     fast: tier(feeQuote.speedFast),
     expiresAt: Number(feeQuote.expiresAt || 0),
+    // The wallet's own word that these fees are an estimate, not a quote.
+    isEstimate: feeQuote.isEstimate === true,
   };
 }
 

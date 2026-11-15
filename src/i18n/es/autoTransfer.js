@@ -76,4 +76,5 @@ export default {
   "To {name}": "A {name}",
   "Set Up": "Configurar",
   "Moved {amount}": "{amount} movidos",
+  "At most {amount} can be sent to {name} at a time.": "A {name} se pueden enviar como máximo {amount} de una vez.",
 };

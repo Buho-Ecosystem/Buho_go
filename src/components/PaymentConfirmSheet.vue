@@ -513,7 +513,7 @@
               />
               <button v-else-if="verb === 'send' && !walletCanPay && anotherWalletCanPay" key="choose-wallet" type="button" class="primary-cta choose-wallet-cta" @click="openWalletPicker">{{ $t('Choose another wallet') }}</button>
               <!-- No other wallet to choose and this one only failed to connect: one way forward. -->
-              <button v-else-if="verb === 'send' && !walletCanPay && walletRetryable" key="retry-wallet" type="button" class="primary-cta" :disabled="walletRetrying" @click="$emit('retry-wallet')">{{ walletRetrying ? $t('Connecting...') : $t('Try again') }}</button>
+              <button v-else-if="verb === 'send' && !walletCanPay && walletRetryable" key="retry-wallet" type="button" class="primary-cta" :disabled="walletRetrying" @click="$emit('retry-wallet')">{{ walletRetrying ? $t('Connecting…') : $t('Try again') }}</button>
               <SlideToSend
                 v-else-if="requiresSlide"
                 key="slide"
@@ -1046,9 +1046,13 @@ export default {
       }
       const sats = this.amountInSats
       if (sats <= 0) return ''
-      if (this.amountMode === 'range') {
-        if (sats < this.minSats) return this.$t('Minimum is {amount}', { amount: reviewAmount(this, this.minSats) })
-        if (sats > this.maxSats) return this.$t('Maximum is {amount}', { amount: reviewAmount(this, this.maxSats) })
+      if (this.amountMode === 'range' && sats < this.minSats) {
+        return this.$t('Minimum is {amount}', { amount: reviewAmount(this, this.minSats) })
+      }
+      // The recipient's maximum (range), or one the parent sets for a free
+      // amount (`amount.maxSats`): said the same way, in the same place.
+      if ((this.amountMode === 'range' || this.maxSats > 0) && sats > this.maxSats) {
+        return this.$t('Maximum is {amount}', { amount: reviewAmount(this, this.maxSats) })
       }
       return ''
     },
@@ -1202,12 +1206,13 @@ export default {
       return sats === null ? '' : paymentFeeText(sats, !!fee.isLimit, (amount) => reviewAmount(this, amount), (key, values) => this.$t(key, values))
     },
     /**
-     * "Network fee", or "Fees" when the limit shown also covers what the
-     * recipient's service adds (an amount typed in the recipient's currency).
+     * "Network fee", or "Fees" when the limit shown covers more than that:
+     * what the recipient's service adds (an amount typed in the recipient's
+     * currency), or the service fee of the wallet's own server.
      */
     feeRowLabel() {
       const fee = shownFee(this.payment)
-      return fee?.isLimit && this.isLocalDenomination ? this.$t('Fees') : this.$t('Network fee')
+      return fee?.isLimit && (this.isLocalDenomination || fee.coversServiceFee) ? this.$t('Fees') : this.$t('Network fee')
     },
     /** The fee slot: a quote, a limit, "Free", the line that says the fee comes later, or its place held while getting ready. */
     feeSlotVisible() {
@@ -1338,8 +1343,8 @@ export default {
 
     // In-flight label shown inside the filling ProgressCta.
     sendingLabel() {
-      if (this.isCard) return this.$t('Receiving sats...')
-      return this.isRedeem ? this.$t('Redeeming...') : this.$t('Sending...')
+      if (this.isCard) return this.$t('Receiving…')
+      return this.isRedeem ? this.$t('Redeeming…') : this.$t('Sending…')
     }
   },
   watch: {

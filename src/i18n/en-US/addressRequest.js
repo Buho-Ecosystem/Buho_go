@@ -1,8 +1,8 @@
 export default {
-  "Review this request to share your Lightning address.": "Review this request to share your Lightning address.",
-  "Share Lightning address?": "Share Lightning address?",
+  "Review this request to share your payment address.": "Review this request to share your payment address.",
+  "Share payment address?": "Share payment address?",
   "Share address": "Share address",
-  "Your Lightning address": "Your Lightning address",
+  "Your payment address": "Your payment address",
   "This lets the service send you payments.": "This lets the service send you payments.",
   "Opening address request…": "Opening address request…",
   "Sharing with {domain}…": "Sharing with {domain}…",
@@ -19,7 +19,7 @@ export default {
   "Address request": "Address request",
   "Copied address request": "Copied address request",
   "Copied link": "Copied link",
-  "Add a Lightning address to your profile, then return here to review the request.": "Add a Lightning address to your profile, then return here to review the request.",
+  "Add a payment address to your profile, then return here to review the request.": "Add a payment address to your profile, then return here to review the request.",
   "Your identity or payment address changed. Review the address again before sharing.": "Your identity or payment address changed. Review the address again before sharing.",
   "The service may have received your address. Check there before opening a new request.": "The service may have received your address. Check there before opening a new request.",
   "The service did not accept this request. Open a new request from the service.": "The service did not accept this request. Open a new request from the service.",
@@ -30,5 +30,5 @@ export default {
   "Could not reach the service. Check your connection and open the request again.": "Could not reach the service. Check your connection and open the request again.",
   "This link asks for your address. It cannot receive a payment.": "This link asks for your address. It cannot receive a payment.",
   "Finish the current request, then open this one again.": "Finish the current request, then open this one again.",
-  "This code asks for your Lightning address. Scan it from Home after setting up your wallet.": "This code asks for your Lightning address. Scan it from Home after setting up your wallet."
+  "This code asks for your payment address. Scan it from Home after setting up your wallet.": "This code asks for your payment address. Scan it from Home after setting up your wallet."
 };

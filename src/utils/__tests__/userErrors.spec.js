@@ -114,7 +114,7 @@ test('unreachableReason names Spark only when the Spark SDK reported the failure
 
 test('connection copy has German and Spanish translations', () => {
   const copy = [
-    'Checking your connection...',
+    'Checking your connection…',
     ...['offline', 'no-internet'].map((kind) => unreachableReason(kind, '')),
     unreachableReason('service', SPARK_UNREACHABLE),
     unreachableReason('service', ''),
@@ -241,10 +241,11 @@ test('a wallet that is already connected is said by BuhoGO, in every language', 
 test('a pay request that cannot be paid is explained by BuhoGO, and says nothing was sent', () => {
   const cases = [
     [{ code: 'LNURL_REFUSED' }, "The recipient's service declined. Nothing was sent."],
+    [{ code: 'PAYMENT_NOT_STARTED' }, "The wallet didn't answer in time. Nothing was sent."],
     [{ code: 'LNURL_NOT_PAY_REQUEST' }, "This link can't receive a payment."],
     [{ code: 'LNURL_PAY_REQUEST_INVALID' }, "The recipient's payment details aren't valid. Ask them for another way to pay."],
-    [{ code: 'LNURL_AMOUNT_OUT_OF_RANGE', minSats: 1000, maxSats: 2500000 }, `This recipient accepts ₿ ${(1000).toLocaleString()} to ₿ ${(2500000).toLocaleString()}.`],
-    [{ code: 'LNURL_AMOUNT_OUT_OF_RANGE', minSats: 81, maxSats: 81 }, 'This recipient only accepts ₿ 81.'],
+    [{ code: 'LNURL_AMOUNT_OUT_OF_RANGE', minSats: 1000, maxSats: 2500000 }, `This recipient accepts ₿\u00a0${(1000).toLocaleString()} to ₿\u00a0${(2500000).toLocaleString()}.`],
+    [{ code: 'LNURL_AMOUNT_OUT_OF_RANGE', minSats: 81, maxSats: 81 }, 'This recipient only accepts ₿\u00a081.'],
     [{ code: 'LNURL_CURRENCY_UNAVAILABLE', currency: 'TZS' }, 'The recipient no longer takes payments in TZS. Send the amount in Bitcoin instead.'],
     [{ code: 'LNURL_INVOICE_MISSING' }, "The recipient didn't send a valid payment request. Nothing was sent."],
     [{ code: 'LNURL_INVOICE_MISMATCH' }, 'The recipient asked for a different amount than you confirmed. Nothing was sent.'],
@@ -265,8 +266,8 @@ test('limits are written the way the person reads amounts in settings', () => {
   const range = { code: 'LNURL_AMOUNT_OUT_OF_RANGE', minSats: 1000, maxSats: 2000 };
   const t = (key, values = {}) => key.replace(/\{(\w+)\}/g, (_, name) => values[name] ?? name);
   const said = (useBip177Format) => buildPaymentError(Object.assign(new Error('x'), range), { context: 'payment', useBip177Format }, t).reason;
-  assert.equal(said(false), `This recipient accepts ${(1000).toLocaleString()} sats to ${(2000).toLocaleString()} sats.`);
-  assert.equal(said(true), `This recipient accepts ₿ ${(1000).toLocaleString()} to ₿ ${(2000).toLocaleString()}.`);
+  assert.equal(said(false), `This recipient accepts ${(1000).toLocaleString()}\u00a0sats to ${(2000).toLocaleString()}\u00a0sats.`);
+  assert.equal(said(true), `This recipient accepts ₿\u00a0${(1000).toLocaleString()} to ₿\u00a0${(2000).toLocaleString()}.`);
   assert.equal(said(undefined), said(true), 'the setting\'s default');
 });
 
@@ -275,8 +276,8 @@ test('a route above the fee limit says both amounts the way settings writes them
   const error = Object.assign(new Error('Lightning payment failed: fee 1200 sats exceeds the 1000 sats limit'),
     { code: 'LIGHTNING_FEE_ABOVE_LIMIT', feeSats: 1200, limitSats: 1000 });
   const said = (useBip177Format) => buildPaymentError(error, { context: 'payment', useBip177Format }, t);
-  assert.equal(said(true).reason, `The network fee would be ₿ ${(1200).toLocaleString()}, more than the ₿ ${(1000).toLocaleString()} limit. Nothing was sent. Try again later.`);
-  assert.equal(said(false).reason, `The network fee would be ${(1200).toLocaleString()} sats, more than the ${(1000).toLocaleString()} sats limit. Nothing was sent. Try again later.`);
+  assert.equal(said(true).reason, `The network fee would be ₿\u00a0${(1200).toLocaleString()}, more than the ₿\u00a0${(1000).toLocaleString()} limit. Nothing was sent. Try again later.`);
+  assert.equal(said(false).reason, `The network fee would be ${(1200).toLocaleString()}\u00a0sats, more than the ${(1000).toLocaleString()}\u00a0sats limit. Nothing was sent. Try again later.`);
   assert.deepEqual([said(true).reasonSource, said(true).reasonAttribution], ['curated', null], 'our own limit, said in our words');
 });
 

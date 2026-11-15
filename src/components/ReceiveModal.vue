@@ -135,7 +135,7 @@
             <div v-else class="default-zero-loading">
               <q-spinner-dots size="40px" :color="$q.dark.isActive ? 'white' : 'grey-7'" />
               <div class="default-zero-loading-text" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'">
-                {{ $t('Preparing address...') }}
+                {{ $t('Preparing address…') }}
               </div>
             </div>
 
@@ -274,7 +274,7 @@
             <!-- Status -->
             <div class="ln-status" :class="paymentStatusClass">
               <div class="ln-status-dot"></div>
-              <span>{{ paymentStatusMessage || $t('Waiting for payment...') }}</span>
+              <span>{{ paymentStatusMessage || $t('Waiting for payment…') }}</span>
             </div>
           </div>
 
@@ -286,7 +286,7 @@
               @click="copyInvoice"
             >
               <Icon icon="tabler:copy" width="18" height="18" />
-              <span>{{ $t('Copy Request') }}</span>
+              <span>{{ $t('Copy request') }}</span>
             </button>
             <button
               class="action-btn"
@@ -294,7 +294,7 @@
               @click="shareInvoice"
             >
               <Icon icon="tabler:share" width="18" height="18" />
-              <span>{{ $t('Share Invoice') }}</span>
+              <span>{{ $t('Share invoice') }}</span>
             </button>
           </div>
         </div>
@@ -377,7 +377,7 @@
             @click="openDescriptionSheet"
           >
             <Icon icon="tabler:notes" width="18" height="18" />
-            <span>{{ $t('Add Description') }}</span>
+            <span>{{ $t('Add description') }}</span>
           </button>
           <button
             v-else
@@ -416,10 +416,10 @@
             no-caps
             unelevated
           >
-            <span v-if="!isCreatingInvoice">{{ isArkadeWallet ? $t('Set Amount') : $t('Create Invoice') }}</span>
+            <span v-if="!isCreatingInvoice">{{ isArkadeWallet ? $t('Set amount') : $t('Create invoice') }}</span>
             <template v-slot:loading>
               <q-spinner-dots class="q-mr-sm"/>
-              {{ $t('Creating...') }}
+              {{ $t('Creating…') }}
             </template>
           </q-btn>
         </div>
@@ -432,7 +432,7 @@
         <q-card-section class="desc-sheet-section">
           <div class="desc-sheet-header">
             <span class="desc-sheet-title" :class="$q.dark.isActive ? 'text-white' : 'text-grey-9'">
-              {{ $t('Add Description') }}
+              {{ $t('Add description') }}
             </span>
             <q-btn flat round dense @click="closeDescriptionSheet" class="desc-sheet-close">
               <Icon icon="tabler:x" width="20" height="20" />
@@ -723,7 +723,7 @@ export default {
       if (this.showSpecificInvoiceView || this.showAmountKeypadView) {
         // Arkade mints no invoice while its Lightning rail is out - the
         // keypad only sets the request amount on the unified code.
-        return this.isArkadeWallet ? this.$t('Set Amount') : this.$t('Invoice');
+        return this.isArkadeWallet ? this.$t('Set amount') : this.$t('Invoice');
       }
       return this.$t('Receive');
     },
@@ -1187,7 +1187,7 @@ export default {
       }
 
       this.paymentStatus = PaymentStatus.PENDING;
-      this.paymentStatusMessage = this.$t('Waiting for payment...');
+      this.paymentStatusMessage = this.$t('Waiting for payment…');
 
       if (this.isSparkWallet) {
         await this.startSparkEventMonitor();
@@ -1541,12 +1541,12 @@ export default {
           break;
 
         case PaymentStatus.ERROR:
-          this.paymentStatusMessage = data.message || this.$t('Error checking payment');
+          this.paymentStatusMessage = this.$t('Error checking payment');
           break;
 
         case PaymentStatus.PENDING:
         default:
-          this.paymentStatusMessage = this.$t('Waiting for payment...');
+          this.paymentStatusMessage = this.$t('Waiting for payment…');
           break;
       }
     },
@@ -1747,12 +1747,12 @@ export default {
 
       const qrBlob = await qrBlobFromRef(this.$refs.lightningAddressQr, {
         label: this.lightningAddress,
-        title: this.$t('Lightning Address'),
+        title: this.$t('Lightning address'),
         hint: this.$t('Scan with any Bitcoin wallet'),
         rails: ['Lightning'],
       });
       const result = await shareContent({
-        title: this.$t('Lightning Address'),
+        title: this.$t('Lightning address'),
         text: this.lightningAddress,
         files: qrBlob ? [{ blob: qrBlob, name: 'lightning-address.png', mimeType: 'image/png' }] : undefined,
       });
@@ -1830,11 +1830,11 @@ export default {
       if (!this.arkadeBoardingAddress) return;
       const qrBlob = await qrBlobFromRef(this.$refs.arkadeBoardingQr, {
         label: this.arkadeBoardingAddress,
-        title: this.$t('Bitcoin Address'),
+        title: this.$t('Bitcoin address'),
         hint: this.$t('Scan with any Bitcoin wallet'),
       });
       const result = await shareContent({
-        title: this.$t('Bitcoin Address'),
+        title: this.$t('Bitcoin address'),
         // The full unified string - exactly what the QR encodes, so the
         // recipient's wallet gets every rail.
         text: this.arkadeUnifiedQrValue,
@@ -1877,13 +1877,13 @@ export default {
 
       const qrBlob = await qrBlobFromRef(this.$refs.invoiceQr, {
         label: this.generatedInvoice?.payment_request || '',
-        title: this.$t('Lightning Invoice'),
+        title: this.$t('Lightning invoice'),
         amount: this.invoiceShareAmount(),
         hint: this.$t('Scan with any Bitcoin wallet'),
         rails: ['Lightning'],
       });
       const result = await shareContent({
-        title: this.$t('Lightning Invoice'),
+        title: this.$t('Lightning invoice'),
         // Pure invoice URI so recipients can copy-paste cleanly. The
         // BuhoGO wordmark is baked into the QR image by qrShare.
         text: lightningUri,

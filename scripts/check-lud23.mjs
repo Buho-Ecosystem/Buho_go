@@ -226,7 +226,7 @@ try {
     const value = request('Rewards for Alice@Example.com. '.repeat(12));
     await page.evaluate(async value => { const { offerAddressRequest } = await import('/src/services/addressRequestIntake.js'); offerAddressRequest(value); }, value);
     await page.locator('.address-request-address').waitFor();
-    await page.getByRole('heading', { name: ({ 'en-US': 'Share Lightning address?', de: 'Lightning-Adresse teilen?', es: '¿Compartir dirección Lightning?' })[locale], exact: true }).waitFor();
+    await page.getByRole('heading', { name: ({ 'en-US': 'Share payment address?', de: 'Zahlungsadresse teilen?', es: '¿Compartir dirección de pago?' })[locale], exact: true }).waitFor();
     await page.waitForTimeout(350);
     const layout = await page.locator('.address-request-sheet').evaluate(el => {
       const r = el.getBoundingClientRect();

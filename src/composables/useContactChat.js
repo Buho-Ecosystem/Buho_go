@@ -260,10 +260,10 @@ export function describeDmError(error, { t, name = '' }) {
           : t("This contact can't receive requests in the chat yet."),
       };
     case DM_ERROR.NO_PAYMENT_ADDRESS:
-      message = t('To request money you need a Lightning address in your profile.');
+      message = t('To request money you need a payment address in your profile.');
       break;
     case DM_ERROR.PAYMENT_ADDRESS_UNREACHABLE:
-      message = t("Your Lightning address doesn't answer right now. Check it in your profile.");
+      message = t("Your payment address doesn't answer right now. Check it in your profile.");
       break;
     case DM_ERROR.AMOUNT_OUT_OF_RANGE:
       message = t("The payment address doesn't take this amount. Try a different amount.");

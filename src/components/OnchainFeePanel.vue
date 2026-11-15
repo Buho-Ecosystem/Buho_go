@@ -5,9 +5,10 @@
   of a parallel sheet. Owns everything an on-chain send needs beyond the
   standard sheet:
 
-    - balance row with "Use all" (emits `use-max`; the parent writes the
-      amount back into the sheet); without "Use all" when the request
-      fixes the amount
+    - balance row with "Use all": the amount that leaves nothing behind,
+      taken from the wallet's own quotes (see useAll) and emitted as
+      `use-max` for the parent to write into the sheet; without "Use all"
+      when the request fixes the amount
     - debounced fee quote from the Spark SDK (`getWithdrawalFeeQuote`) —
       we don't second-guess it with third-party mempool data, because
       those are the numbers the SSP will actually charge when the
@@ -25,7 +26,8 @@
         or null whenever no valid quote is selected. The parent feeds
         `ready && !insufficient` into the sheet's commitGate and passes
         speed/feeQuoteId/totalFeeSats to `withdrawToL1` on confirm.
-    - @use-max     conservative max-sendable sats for "Use all"
+    - @use-max     the amount "Use all" found: with its fee it comes to
+                   the whole balance
 -->
 <template>
   <div class="onchain-panel">
@@ -39,12 +41,15 @@
         v-if="!amountFixed"
         type="button"
         class="max-pill"
-        :disabled="disabled || availableBalance <= 0"
-        @click="emitUseMax"
+        :disabled="disabled || useAllBusy || availableBalance <= 0"
+        :aria-busy="useAllBusy ? 'true' : undefined"
+        @click="useAll"
       >
         {{ $t('Use all') }}
       </button>
     </div>
+    <!-- Why "Use all" set no amount, in one plain line under its row. -->
+    <div v-if="useAllNote" class="use-all-note" role="status">{{ useAllNote }}</div>
 
     <!-- Speed selection — appears once we have a fee quote. The three
          options come straight from the SDK's per-tier quote so users
@@ -75,9 +80,9 @@
     </section>
 
     <!-- Fee-quote loading indicator -->
-    <div v-else-if="amountSats > 0 && isLoadingFeeQuote" class="fee-loading">
+    <div v-else-if="(amountSats > 0 && isLoadingFeeQuote) || useAllBusy" class="fee-loading">
       <q-spinner-dots size="22px" />
-      <span>{{ $t('Calculating fees...') }}</span>
+      <span>{{ $t('Calculating the fee…') }}</span>
     </div>
 
     <!-- Summary panel — explicit breakdown so users know what each
@@ -116,12 +121,6 @@ import { useWalletStore } from '../stores/wallet';
 import { formatAmount as formatAmountUtil } from '../utils/amountFormatting';
 import { describeL1WithdrawError } from '../utils/l1WithdrawErrors';
 
-// Conservative max-fee reservation for "Use all". The real fee gets
-// recalculated once the quote returns; this just gives the user
-// something to commit to with a single tap without the amount field
-// flickering.
-const USE_ALL_FEE_RESERVE_SATS = 2000;
-
 export default {
   name: 'OnchainFeePanel',
 
@@ -157,6 +156,14 @@ export default {
       feeQuoteDebounceTimer: null,
       feeQuoteRun: 0,
       feeQuoteDisposed: false,
+      // "Use all": at work, the quote it confirmed (waiting for the sheet
+      // to take the amount), and the line saying why it set none.
+      useAllBusy: false,
+      useAllRun: 0,
+      useAllQuote: null,
+      useAllNote: '',
+      // The amount "Use all" last set, while it is still the one on the sheet.
+      useAllAmount: null,
     };
   },
 
@@ -223,7 +230,12 @@ export default {
     },
 
     selectedSpeed() {
+      // What "Use all" said was about the speed chosen then.
+      this.useAllNote = '';
       this.emitFeeGate();
+      // Another speed costs another fee: the amount that was "all" is not
+      // any more, so it is found again for this speed.
+      if (this.useAllAmount !== null && this.amountSats === this.useAllAmount) this.useAll();
     },
 
     // A quote belongs to the wallet it was requested from. Another paying
@@ -254,17 +266,78 @@ export default {
       this.feeQuoteRun += 1;
       if (this.feeQuoteDebounceTimer) clearTimeout(this.feeQuoteDebounceTimer);
       this.feeQuoteDebounceTimer = null;
-      this.feeQuote = null;
+      // The quote "Use all" confirmed stands when this very payment is now
+      // the one on the sheet; for any other, "Use all" starts over.
+      const kept = this.useAllQuote;
+      this.useAllQuote = null;
+      this.useAllRun += 1;
+      this.useAllBusy = false;
+      this.useAllNote = '';
+      const confirmed = kept && kept.amountSats === this.amountSats && kept.walletId === this.walletId
+        && kept.address === this.address && !this.feeQuoteDisposed;
+      this.feeQuote = confirmed ? kept.quote : null;
       this.isLoadingFeeQuote = false;
       this.emitFeeGate();
-      if (this.feeQuoteDisposed || this.amountSats <= 0 || !this.address) return;
+      if (confirmed || this.feeQuoteDisposed || this.amountSats <= 0 || !this.address) return;
       if (debounce) this.feeQuoteDebounceTimer = setTimeout(() => this.fetchFeeQuote(), 500);
       else void this.fetchFeeQuote();
     },
 
-    emitUseMax() {
-      const maxSendable = Math.max(0, this.availableBalance - USE_ALL_FEE_RESERVE_SATS);
-      this.$emit('use-max', maxSendable);
+    /**
+     * "Use all": the amount that, with its fee, comes to the whole balance.
+     * A fee belongs to a quote and a quote to an amount, so nothing is
+     * assumed. The wallet first quotes a send of everything it holds: the
+     * fee of the chosen speed, taken from the balance, is what that leaves
+     * to send. That amount is then quoted as any typed amount is, and it is
+     * offered only when this second quote comes to exactly the balance. The
+     * second quote then stands as the one on the panel (refreshFeeQuote).
+     */
+    async useAll() {
+      const run = ++this.useAllRun;
+      const { walletId, address, availableBalance: balance, selectedSpeed: speed } = this;
+      const current = () => !this.feeQuoteDisposed && run === this.useAllRun && walletId === this.walletId
+        && address === this.address && balance === this.availableBalance && speed === this.selectedSpeed;
+      this.useAllBusy = true;
+      this.useAllNote = '';
+      this.useAllAmount = null;
+      try {
+        const provider = await this.walletStore.ensureSparkConnected(walletId);
+        if (!current()) return;
+        if (!provider?.getWithdrawalFeeQuote) throw new Error('Withdrawal not supported');
+        const everything = await provider.getWithdrawalFeeQuote(balance, address, { wholeBalance: true });
+        if (!current()) return;
+        const amountSats = balance - everything[speed].totalFee;
+        if (amountSats <= 0) {
+          this.useAllNote = this.$t('Your balance does not cover the fee.');
+          return;
+        }
+        const quote = await provider.getWithdrawalFeeQuote(amountSats, address);
+        if (!current()) return;
+        // "All" is said only of figures the wallet stands by: two quotes that
+        // come to exactly the balance, neither of them an estimate.
+        if (everything.isEstimate || quote.isEstimate || amountSats + quote[speed].totalFee !== balance) {
+          this.useAllNote = this.$t('The amount for your whole balance could not be confirmed. Try again, or enter an amount.');
+          return;
+        }
+        this.useAllQuote = { amountSats, walletId, address, quote };
+        this.useAllAmount = amountSats;
+        this.$emit('use-max', amountSats);
+        // The amount already on the sheet: no change will come to take the quote.
+        if (this.amountSats === amountSats) this.refreshFeeQuote(false);
+      } catch (error) {
+        if (!current()) return;
+        console.error('Failed to quote the whole balance:', error);
+        this.reportQuoteError(error);
+      } finally {
+        if (run === this.useAllRun) this.useAllBusy = false;
+      }
+      // The balance or the speed moved while the wallet was asked, and nobody
+      // asked again since: the answer was for what is no longer there, so it
+      // is asked for what is. Otherwise the tap would end in nothing.
+      if (run === this.useAllRun && !this.feeQuoteDisposed && walletId === this.walletId && address === this.address
+        && (balance !== this.availableBalance || speed !== this.selectedSpeed) && this.useAllAmount === null && !this.useAllNote) {
+        return this.useAll();
+      }
     },
 
     emitFeeGate() {
@@ -305,23 +378,28 @@ export default {
       } catch (error) {
         if (!current()) return;
         console.error('Failed to fetch fee quote:', error);
-        // The shared translator's titles ("Amount too small", "Connection
-        // problem", "Wallet locked") are more accurate than the generic
-        // "Bitcoin transaction failed" for these precondition errors,
-        // so pass them through. Same modal shell as everywhere else.
-        const msg = describeL1WithdrawError(error, this.$t.bind(this));
-        this.walletStore.showPaymentError(error, {
-          context: 'l1',
-          route: 'L1 withdrawal fee quote',
-          title: msg.title,
-          reason: msg.description,
-          t: this.$t.bind(this),
-        });
+        this.reportQuoteError(error);
         this.feeQuote = null;
         this.emitFeeGate();
       } finally {
         if (current()) this.isLoadingFeeQuote = false;
       }
+    },
+
+    /** A quote the wallet could not give, in the app's usual error dialog. */
+    reportQuoteError(error) {
+      // The shared translator's titles ("Amount too small", "Connection
+      // problem", "Wallet locked") are more accurate than the generic
+      // "Bitcoin transaction failed" for these precondition errors,
+      // so pass them through. Same modal shell as everywhere else.
+      const msg = describeL1WithdrawError(error, this.$t.bind(this));
+      this.walletStore.showPaymentError(error, {
+        context: 'l1',
+        route: 'L1 withdrawal fee quote',
+        title: msg.title,
+        reason: msg.description,
+        t: this.$t.bind(this),
+      });
     },
 
     formatAmount(sats) {
@@ -372,6 +450,15 @@ export default {
 .max-pill:hover:not(:disabled) { filter: brightness(1.05); }
 .max-pill:active:not(:disabled) { transform: scale(0.96); }
 .max-pill:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* One quiet line under the balance row. */
+.use-all-note {
+  margin-top: -6px;
+  font-size: 12px;
+  line-height: 1.4;
+  text-align: center;
+  color: var(--text-secondary);
+}
 
 /* ─── Speed selection ─── */
 .section-label {

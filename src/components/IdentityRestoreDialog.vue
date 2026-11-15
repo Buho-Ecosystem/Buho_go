@@ -74,8 +74,13 @@
             :class="$q.dark.isActive ? 'dialog_add_btn_dark' : 'dialog_add_btn_light'"
             :label="$t('Replace and restore identity')"
             :loading="isApplying"
+            :disable="identity.bootstrapped && paymentFlow.paymentBeingSent"
             @click="apply"
           />
+          <!-- Replacing the identity in use waits for a payment that is
+               being sent; this says so for as long as it does. With no
+               identity in use yet there is nothing to wait for. -->
+          <IdentityWaitsForPayment v-if="identity.bootstrapped" />
           <q-btn
             flat
             no-caps
@@ -209,8 +214,10 @@
 
 <script>
 import BackupKeyring from './BackupKeyring.vue';
+import IdentityWaitsForPayment from './identity/IdentityWaitsForPayment.vue';
 import { Icon } from '@iconify/vue';
 import { useIdentityStore } from '../stores/identity';
+import { usePaymentFlowStore } from '../stores/paymentFlow.js';
 import {
   isValidIdentityMnemonic,
   computeIdentityFingerprint,
@@ -222,7 +229,7 @@ const SEED_WORD_COUNT = 12;
 export default {
   name: 'IdentityRestoreDialog',
 
-  components: { Icon, BackupKeyring },
+  components: { Icon, BackupKeyring, IdentityWaitsForPayment },
 
   props: {
     modelValue: {
@@ -236,7 +243,7 @@ export default {
   setup() {
     const identity = useIdentityStore();
     const seed = useBip39Mnemonic({ wordCount: SEED_WORD_COUNT });
-    return { identity, ...seed };
+    return { identity, paymentFlow: usePaymentFlowStore(), ...seed };
   },
 
   data() {
@@ -317,6 +324,9 @@ export default {
 
     async apply() {
       if (this.isApplying) return;
+      // An identity in use is not replaced while a payment is being sent;
+      // the line by the button says so. With none in use there is nothing to wait for.
+      if (this.identity.bootstrapped && this.paymentFlow.paymentBeingSent) return;
       this.errorText = '';
       const phrase = this.normalisedMnemonic;
 
@@ -326,6 +336,7 @@ export default {
       }
 
       this.isApplying = true;
+      let waiting = false;
       try {
         await this.identity.importMnemonic(phrase, true);
         this.$q.notify({
@@ -338,13 +349,21 @@ export default {
         this.close();
       } catch (err) {
         console.error('[IdentityRestore] importMnemonic failed', err);
+        // The store refused because a payment started meanwhile: nothing was
+        // replaced and the words stay. The line by the button says why and
+        // goes by itself when the payment has ended; an error text here
+        // would outlive it.
+        if (err?.code === 'IDENTITY_WAITS_FOR_PAYMENT') {
+          waiting = true;
+          return;
+        }
         this.errorText = this.$t('Identity could not be restored. Check your words and try again.');
         this.step = 'enter';
       } finally {
         this.isApplying = false;
         // Best-effort wipe so the visible inputs (and the in-memory
         // ref the composable holds) don't outlive the apply call.
-        if (!this.errorText) this.resetMnemonic();
+        if (!this.errorText && !waiting) this.resetMnemonic();
       }
     },
 

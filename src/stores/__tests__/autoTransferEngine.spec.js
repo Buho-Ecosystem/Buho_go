@@ -50,6 +50,8 @@ function load({ rates = { USD: 50_000 }, rateAge = 2, deps: extra = {} } = {}) {
       },
     },
     '../utils/autoTransfer.js': rules,
+    // The address answers with a typical pay request: the engine reads its limits before a transfer.
+    '../utils/lnurlPay.js': lnurlPayWith(async () => ({ ok: true, status: 200, data: PAY_REQUEST })),
     ...extra,
   };
   const module = { exports: {} };
@@ -287,7 +289,8 @@ test('from LNbits or NWC, a Lightning address is paid only with an invoice for t
       const asked = [];
       const get = async (url) => {
         asked.push(url);
-        if (asked.length === 1) return { ok: true, status: 200, data: PAY_REQUEST };
+        // The pay request is read for its limits, and again by the payment itself.
+        if (!new URL(url).searchParams.has('amount')) return { ok: true, status: 200, data: PAY_REQUEST };
         if (answer === 'refusal') return { ok: false, status: 500, data: { status: 'ERROR', reason: 'Wallet frozen' } };
         const sats = Number(new URL(url).searchParams.get('amount')) / 1000;
         return { ok: true, status: 200, data: { pr: invoiceFor(answer === 'greedy' ? sats * 10 : sats) } };
@@ -298,7 +301,8 @@ test('from LNbits or NWC, a Lightning address is paid only with an invoice for t
         '../services/nwcPayment.js': { payWithNwc: async (nwc, invoice) => { paid.push(invoice); return { payment_hash: 'h' }; } },
       } });
       provider.getBalance = async () => ({ balance: 50_000 });
-      walletStore.ensureLNBitsConnected = async () => ({ payInvoice: async ({ invoice }) => { paid.push(invoice); return { payment_hash: 'h' }; } });
+      // An LNbits server from before the fee reserve could be asked for.
+      walletStore.ensureLNBitsConnected = async () => ({ getFeeReserveSats: async () => null, payInvoice: async ({ invoice }) => { paid.push(invoice); return { payment_hash: 'h' }; } });
       walletStore.nwcConnection = async () => ({});
       walletStore.nwcPayOptions = () => ({ limit: null });
       await aw.checkAndExecute(id, 50_000, walletStore);
@@ -313,6 +317,64 @@ test('from LNbits or NWC, a Lightning address is paid only with an invoice for t
       }
     }
   }
+});
+
+test('from LNbits, a transfer leaves the fee reserve the server states, so what the rule keeps stays (#511)', async () => {
+  // LNbits wants its own reserve in the wallet beyond the invoice and may
+  // charge up to it. Balance 100,000, keep 5,000: 95,000 may leave in all.
+  // The rule's own reserve (1%) leaves 94,050 to send.
+  for (const [serverReserve, moved] of [
+    [(sats) => Math.ceil(sats * 0.01), 94_050], // the server's default: it fits, one invoice
+    [(sats) => Math.ceil(sats * 0.03), 92_178], // an operator's 3%: 94,050 + 2,822 is too much, so 95,000 - 2,822
+    [() => 94_995, null], // a reserve that leaves under 10: the rule waits
+  ]) {
+    const amountOf = new Map();
+    const get = async (url) => {
+      const sats = Number(new URL(url).searchParams.get('amount')) / 1000;
+      if (!sats) return { ok: true, status: 200, data: PAY_REQUEST };
+      amountOf.set(invoiceFor(sats), sats);
+      return { ok: true, status: 200, data: { pr: invoiceFor(sats) } };
+    };
+    const paid = [];
+    const { aw, id, walletStore } = setup({ shopType: 'lnbits', rule: { keep: { sats: 5_000 } }, deps: { '../utils/lnurlPay.js': lnurlPayWith(get) } });
+    walletStore.ensureLNBitsConnected = async () => ({
+      getFeeReserveSats: async (invoice) => serverReserve(amountOf.get(invoice)),
+      payInvoice: async ({ invoice }) => { paid.push(amountOf.get(invoice)); return { payment_hash: 'h' }; },
+    });
+    await aw.checkAndExecute(id, 100_000, walletStore);
+    assert.deepEqual(paid, moved ? [moved] : [], 'only the invoice that fits is paid');
+    assert.deepEqual(events(aw, id), [moved ? ['sent', moved] : ['skipped', 'below_minimum']]);
+    if (moved) assert.ok(moved + serverReserve(moved) <= 95_000, 'the amount and the most it can cost leave the 5,000');
+    assert.equal(aw.configs[id].failureStreak, 0);
+  }
+
+  // A wait for the server's reserve: nothing was tried, so no cooldown is
+  // left behind, and nothing is asked again (each asking leaves an unpaid
+  // invoice at the destination) until more can leave the wallet.
+  let reserve = () => 94_995;
+  const amountOf = new Map();
+  let invoicesAsked = 0;
+  const get = async (url) => {
+    const sats = Number(new URL(url).searchParams.get('amount')) / 1000;
+    if (!sats) return { ok: true, status: 200, data: PAY_REQUEST };
+    invoicesAsked += 1;
+    amountOf.set(invoiceFor(sats), sats);
+    return { ok: true, status: 200, data: { pr: invoiceFor(sats) } };
+  };
+  const paid = [];
+  const { aw, id, walletStore } = setup({ shopType: 'lnbits', rule: { keep: { sats: 5_000 } }, deps: { '../utils/lnurlPay.js': lnurlPayWith(get) } });
+  walletStore.ensureLNBitsConnected = async () => ({
+    getFeeReserveSats: async (invoice) => reserve(amountOf.get(invoice)),
+    payInvoice: async ({ invoice }) => { paid.push(amountOf.get(invoice)); return { payment_hash: 'h' }; },
+  });
+  await aw.checkAndExecute(id, 100_000, walletStore);
+  const askedWhileWaiting = invoicesAsked;
+  await aw.checkAndExecute(id, 100_000, walletStore);
+  assert.equal(invoicesAsked, askedWhileWaiting, 'the same balance asks for no further invoice');
+  reserve = (sats) => Math.ceil(sats * 0.01);
+  await aw.checkAndExecute(id, 100_100, walletStore);
+  assert.equal(paid.length, 1, 'sent on the next balance that lets more leave, with no minute to wait');
+  assert.ok(paid[0] + reserve(paid[0]) <= 95_100, 'what was sent and the most it can cost leave the 5,000');
 });
 
 test('rules left behind by removed wallets are settled when the rules load', async () => {
@@ -342,4 +404,50 @@ test('Settings, the page and Home count only the rules of wallets on screen', ()
   assert.deepEqual(listed.map((entry) => entry.walletId), [id]);
   assert.equal(listed[0].status.kind, rules.ruleStatus(aw.configs[id]).kind);
   assert.deepEqual(aw.rulesOf(), []);
+});
+
+test('an amount outside what the address takes: below its minimum the rule waits, above its maximum it fails and names the limit (#512)', async () => {
+  // The address takes 1,000 to 50,000. Threshold 5,500, keep 5,000.
+  for (const shopType of ['spark', 'nwc', 'lnbits']) {
+    const asked = [];
+    const get = async (url) => {
+      asked.push(url);
+      const sats = Number(new URL(url).searchParams.get('amount')) / 1000;
+      return { ok: true, status: 200, data: sats ? { pr: invoiceFor(sats) } : { ...PAY_REQUEST, minSendable: 1_000_000, maxSendable: 50_000_000 } };
+    };
+    const paid = [];
+    const { aw, id, sent, provider, walletStore } = setup({ shopType, rule: { threshold: { sats: 5_500 }, keep: { sats: 5_000 } }, deps: {
+      '../utils/lnurlPay.js': lnurlPayWith(get),
+      '../services/nwcPayment.js': { payWithNwc: async (nwc, invoice) => { paid.push(invoice); return { payment_hash: 'h' }; } },
+    } });
+    let balance = 6_000;
+    provider.getBalance = async () => ({ balance });
+    walletStore.ensureLNBitsConnected = async () => ({ getFeeReserveSats: async () => null, payInvoice: async ({ invoice }) => { paid.push(invoice); return { payment_hash: 'h' }; } });
+    walletStore.nwcConnection = async () => ({});
+    walletStore.nwcPayOptions = () => ({ limit: null });
+    const moved = () => (shopType === 'spark' ? sent.map(([, , amount]) => amount) : paid);
+
+    // 1,000 above the keep, 990 after the fee reserve: less than the address takes.
+    await aw.checkAndExecute(id, balance, walletStore);
+    await aw.checkAndExecute(id, balance, walletStore);
+    assert.deepEqual(events(aw, id), [['skipped', 'below_minimum']], `${shopType}: it waits, on one line`);
+    assert.equal(aw.configs[id].failureStreak, 0, 'a wait is no failure');
+    assert.deepEqual(moved(), []);
+    assert.equal(asked.length, 1, 'the limits were read once, and no invoice was asked for');
+
+    // Enough has come in: the next balance moves it, with no cooldown in the way.
+    balance = 6_100;
+    await aw.checkAndExecute(id, balance, walletStore);
+    assert.deepEqual(events(aw, id)[0], ['sent', 1_089], shopType);
+    assert.deepEqual(moved(), shopType === 'spark' ? [1_089] : [invoiceFor(1_089)]);
+
+    // More than it takes at a time: nothing is sent, in whole or in part.
+    const before = moved().length;
+    balance = 80_000;
+    await aw.tryNow(id, { ...walletStore, getDisplayBalance: () => ({ balance }) });
+    const [failed] = aw.configs[id].events;
+    assert.deepEqual([failed.outcome, failed.reason, failed.detail, failed.amount], ['failed', 'above_maximum', 50_000, 74_250], shopType);
+    assert.equal(aw.configs[id].failureStreak, 1);
+    assert.equal(moved().length, before);
+  }
 });

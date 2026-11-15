@@ -18,4 +18,6 @@ export default {
   "The fee could not be calculated.": "No se pudo calcular la comisión.",
   "{amount} stays in {wallet} for the fee.": "{amount} se queda en {wallet} para la comisión.",
   "{amount} today": "{amount} hoy",
+  "Your balance does not cover the fee.": "Tu saldo no alcanza para la comisión.",
+  "The amount for your whole balance could not be confirmed. Try again, or enter an amount.": "No se pudo confirmar el importe de todo tu saldo. Inténtalo de nuevo o introduce un importe.",
 };

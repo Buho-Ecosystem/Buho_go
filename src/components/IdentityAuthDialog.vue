@@ -286,11 +286,11 @@ export default {
     signingLine() {
       const site = this.displayDomain;
       switch (this.challenge?.action) {
-        case 'register':  return this.$t('Creating your account at {site}...', { site });
-        case 'link':      return this.$t('Linking to {site}...', { site });
-        case 'auth':      return this.$t('Approving on {site}...', { site });
+        case 'register':  return this.$t('Creating your account at {site}…', { site });
+        case 'link':      return this.$t('Linking to {site}…', { site });
+        case 'auth':      return this.$t('Approving on {site}…', { site });
         case 'login':
-        default:          return this.$t('Signing in to {site}...', { site });
+        default:          return this.$t('Signing in to {site}…', { site });
       }
     },
 

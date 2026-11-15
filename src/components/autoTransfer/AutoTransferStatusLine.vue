@@ -24,7 +24,7 @@
       <div class="at-alert__actions">
         <button v-if="copy.canRetry" type="button" class="form-sheet-primary" :disabled="trying" @click="tryAgain">
           <q-spinner v-if="trying" size="18px" />
-          <template v-else>{{ $t('Try Again') }}</template>
+          <template v-else>{{ $t('Try again') }}</template>
         </button>
         <button type="button" class="at-alert__secondary" @click="changeDestination">{{ $t('Change Destination') }}</button>
         <button v-if="entry.rule.enabled" type="button" class="at-alert__secondary at-alert__secondary--quiet" @click="pause">{{ $t('Pause Rule') }}</button>

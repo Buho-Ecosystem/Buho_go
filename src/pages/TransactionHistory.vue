@@ -188,7 +188,7 @@
             <span class="tx-claim-btn">{{ $t('Claim') }}</span>
           </span>
           <span v-else class="tx-row-fiat" :class="$q.dark.isActive ? 'tx-row-muted-dark' : 'tx-row-muted-light'">
-            {{ deposit.confirmed ? '' : $t('Confirming...') }}
+            {{ deposit.confirmed ? '' : $t('Confirming…') }}
           </span>
         </span>
       </button>
@@ -319,7 +319,7 @@
                 spellcheck="false"
                 autocapitalize="off"
                 autocomplete="off"
-                :placeholder="$t('bc1...')"
+                :placeholder="$t('bc1…')"
                 class="refund-advanced-input"
                 :class="$q.dark.isActive ? 'input-dark' : 'input-light'"
               />
@@ -357,7 +357,7 @@
     <PaymentConfirmation
       v-model="showClaimSuccess"
       :amount="claimSuccessAmount"
-      :label="$t('Bitcoin Claimed')"
+      :label="$t('Bitcoin claimed')"
       accent-color="orange"
       @closed="onClaimSuccessClosed"
     />
@@ -702,7 +702,7 @@
           @click="loadMoreTransactions"
         >
           <Icon icon="tabler:circle-plus" width="18" height="18" class="q-mr-sm" />
-          {{ $t('Load More') }}
+          {{ $t('Load more') }}
         </q-btn>
       </div>
 
@@ -1361,7 +1361,7 @@ export default {
       if (!tx) return { full: '', kind: 'generic' };
       if (tx.status === 'pending') {
         return {
-          full: tx.type === 'incoming' ? this.$t('Awaiting payment') : this.$t('Sending...'),
+          full: tx.type === 'incoming' ? this.$t('Awaiting payment') : this.$t('Sending…'),
           kind: 'status'
         };
       }
@@ -2270,7 +2270,7 @@ export default {
       if (this.isAutoWithdraw(tx)) return this.$t('Auto-Transfer');
       // Check for Bitcoin (L1) transactions
       if (this.isBitcoinTransaction(tx)) {
-        return tx.type === 'incoming' ? this.$t('Bitcoin Deposit') : this.$t('Bitcoin Withdrawal');
+        return tx.type === 'incoming' ? this.$t('Bitcoin deposit') : this.$t('Bitcoin withdrawal');
       }
       return tx.type === 'incoming' ? this.$t('Received') : this.$t('Sent');
     },
@@ -2631,7 +2631,7 @@ export default {
         // Show info toast instead of error - the SDK may still complete the claim
         this.$q.notify({
           type: 'info',
-          message: this.$t('Processing your deposit...'),
+          message: this.$t('Processing your deposit…'),
           caption: this.$t('This may take a few seconds'),
 
           timeout: 3000

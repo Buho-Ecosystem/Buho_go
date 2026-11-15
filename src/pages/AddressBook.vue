@@ -292,7 +292,7 @@ export default {
         return
       }
       const caption = result.identityOnly > 0
-        ? this.$t('{n} couldn\'t be restored. They have no Lightning address right now.', { n: result.identityOnly })
+        ? this.$t('{n} couldn\'t be restored. They have no payment address right now.', { n: result.identityOnly })
         : undefined
       this.$q.notify({
         type: 'positive',

@@ -2,6 +2,11 @@
  * Volatile ownership of one contextual payment. No invoices, callbacks or
  * destinations are persisted. A lease bounds preparation work to the user
  * action that started it; a cancelled/superseded lease can never reopen UI.
+ *
+ * Also the one place that knows a payment is being sent right now, from
+ * Home or for a contact (`paymentBeingSent`). Whatever must wait for a
+ * running send reads it here: the identity in use cannot change meanwhile
+ * (stores/identity.js).
  */
 import { computed, markRaw, ref, shallowRef } from 'vue'
 import { defineStore } from 'pinia'
@@ -33,10 +38,36 @@ export const usePaymentFlowStore = defineStore('contextual-payment-flow', () => 
   const stage = ref('idle')
   let sequence = 0
   let cancellation = null
+  // Sends under way. A count, not a flag: Home and a contact payment are
+  // separate pages and each ends its own send.
+  const sends = ref(0)
 
   const active = computed(() => intent.value !== null)
   const committed = computed(() => COMMITTED.has(stage.value))
   const isCurrent = id => intent.value !== null && intent.value.id === id
+  /** A payment was confirmed on the sheet and its send has not ended yet. */
+  const paymentBeingSent = computed(() => sends.value > 0)
+
+  /**
+   * A send starts. The function returned ends it, once, and belongs in the
+   * send's own `finally`: there it runs on every ending (paid, on its way,
+   * not confirmed, failed, back to the review), also for a send whose page
+   * is gone by then. There is no timer here: how long a send may take is the
+   * send pipeline's to bound (utils/paymentOutcome: what comes before the
+   * hand-over to the wallet ends as a failure, the hand-over itself as not
+   * confirmed), and a second clock here could free the identity under a
+   * payment still running.
+   * @returns {() => void}
+   */
+  function beginSend() {
+    sends.value += 1
+    let running = true
+    return () => {
+      if (!running) return
+      running = false
+      sends.value -= 1
+    }
+  }
 
   /** Start synchronously, before any route, wallet connection or lookup. */
   function begin(input = {}) {
@@ -93,5 +124,5 @@ export const usePaymentFlowStore = defineStore('contextual-payment-flow', () => 
     return true
   }
 
-  return { intent, stage, active, committed, begin, setStage, isCurrent, cancel, finish }
+  return { intent, stage, active, committed, paymentBeingSent, begin, setStage, isCurrent, cancel, finish, beginSend }
 })

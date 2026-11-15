@@ -46,7 +46,7 @@
 
       <div v-if="!address" class="request-sheet__empty">
         <span class="request-sheet__empty-icon"><Icon icon="tabler:at" width="26" height="26" /></span>
-        <p class="request-sheet__empty-text">{{ $t('To request money you need a Lightning address in your profile.') }}</p>
+        <p class="request-sheet__empty-text">{{ $t('To request money you need a payment address in your profile.') }}</p>
       </div>
 
       <AmountKeypad
@@ -89,7 +89,7 @@
           <span>{{ error }}</span>
         </p>
         <button v-if="!address" type="button" class="form-sheet-primary request-sheet__cta" @click="$emit('open-address')">
-          {{ $t('Set up Lightning address') }}
+          {{ $t('Set up payment address') }}
         </button>
         <template v-else>
           <button type="button" class="request-sheet__to" :disabled="submitting" @click="$emit('open-address')">

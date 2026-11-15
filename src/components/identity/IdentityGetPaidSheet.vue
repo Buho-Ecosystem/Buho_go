@@ -51,7 +51,7 @@
                 <Icon icon="tabler:arrow-down-left" width="17" height="17" />
               </span>
               <span class="pay-row-copy">
-                <strong>{{ $t('Payment Received') }}</strong>
+                <strong>{{ $t('Payment received') }}</strong>
                 <small>
                   {{ latestIncoming.walletName }}<template v-if="relativeIncomingTime"> · {{ relativeIncomingTime }}</template>
                 </small>
@@ -86,7 +86,7 @@
             <div class="pay-row pay-row--address">
               <span class="pay-row-icon"><Icon icon="tabler:wallet" width="17" height="17" /></span>
               <span class="pay-row-copy">
-                <small>{{ $t('Lightning address') }}</small>
+                <small>{{ $t('Payment address') }}</small>
                 <strong class="pay-address">{{ payAddressShown }}</strong>
               </span>
               <span class="pay-row-actions">
@@ -250,13 +250,13 @@
         <div class="payment-week-head">
           <div>
             <strong>{{ $t('Last 7 days') }}</strong>
-            <p>{{ $t("Received through your profile's Lightning address.") }}</p>
+            <p>{{ $t('Received through your payment address.') }}</p>
           </div>
           <span>{{ formatSats(weeklyIncomingTotal) }} {{ $t('sats') }}</span>
         </div>
 
         <div class="payment-address-band">
-          <span>{{ $t('Lightning address') }}</span>
+          <span>{{ $t('Payment address') }}</span>
           <strong>{{ payAddress }}</strong>
         </div>
 

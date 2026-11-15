@@ -81,10 +81,14 @@ export class WalletProvider {
    * Pay a Lightning invoice
    * @param {Object} params
    * @param {string} params.invoice - Lightning invoice (BOLT11)
-   * @param {number} [params.maxFee] - Maximum fee in sats
    * @returns {Promise<{preimage: string, fee?: number, status: string}>}
+   *
+   * A fee limit is no part of this contract: only a wallet the app itself
+   * can hold to one takes it, as its own parameters (Spark's `maxFee` and
+   * `feeLimitSats`). Who holds a payment to a limit, per wallet type, is
+   * said in utils/payingWallets.js (feeLimitHolder).
    */
-  async payInvoice({ invoice, maxFee }) {
+  async payInvoice({ invoice }) {
     throw new Error('payInvoice() must be implemented by subclass');
   }
 

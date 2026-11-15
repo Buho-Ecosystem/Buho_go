@@ -139,7 +139,7 @@
           <q-list class="copy-menu" :class="$q.dark.isActive ? 'copy-menu-dark' : 'copy-menu-light'">
             <q-item v-if="leadWithLightningAddress" v-close-popup clickable @click="copyValue(lightningAddress, $t('Lightning address copied'))">
               <div class="copy-item">
-                <span>{{ $t('Lightning Address') }}</span>
+                <span>{{ $t('Lightning address') }}</span>
                 <small>{{ lightningAddress }}</small>
               </div>
             </q-item>
@@ -392,7 +392,7 @@
               <span v-else>+{{ formatAmount(netClaimAmount) }}</span>
             </div>
             <div class="hero-label" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-7'">
-              {{ isLoadingQuote || !claimFeeQuote ? $t('Calculating fee...') : $t('will be added to your wallet') }}
+              {{ isLoadingQuote || !claimFeeQuote ? $t('Calculating the fee…') : $t('will be added to your wallet') }}
             </div>
           </div>
 
@@ -1208,12 +1208,12 @@ export default {
       const leadAddress = this.leadWithLightningAddress;
       const qrBlob = await qrBlobFromRef(this.$refs.depositQr, {
         label: leadAddress ? this.lightningAddress : this.depositAddress,
-        title: leadAddress ? this.$t('Lightning Address') : this.$t('Bitcoin Address'),
+        title: leadAddress ? this.$t('Lightning address') : this.$t('Bitcoin address'),
         hint: this.$t('Scan with any Bitcoin wallet'),
         rails: leadAddress ? ['Lightning'] : [],
       });
       const result = await shareContent({
-        title: leadAddress ? this.$t('Lightning Address') : this.$t('Bitcoin Address'),
+        title: leadAddress ? this.$t('Lightning address') : this.$t('Bitcoin address'),
         text: leadAddress ? this.lightningAddress : this.qrValue,
         files: qrBlob ? [{ blob: qrBlob, name: leadAddress ? 'lightning-address.png' : 'bitcoin-address.png', mimeType: 'image/png' }] : undefined,
       });

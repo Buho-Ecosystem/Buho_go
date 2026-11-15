@@ -636,10 +636,12 @@ export default {
         this.reset();
       } catch (err) {
         const msg = err?.message || '';
-        if (msg.includes('Lightning address')) {
+        // A contact that exists already also names the address in its message:
+        // only a profile without one is "no payment address".
+        if (msg.includes('Lightning address') && !msg.includes('already')) {
           this.$q.notify({
             type: 'negative',
-            message: this.$t('No Lightning address'),
+            message: this.$t('No payment address'),
             caption: this.$t('This profile cannot receive payments yet.'),
             timeout: 4000,
           });

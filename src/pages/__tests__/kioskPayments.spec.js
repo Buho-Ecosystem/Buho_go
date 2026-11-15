@@ -402,11 +402,11 @@ test('the register shows amounts in the Bitcoin format chosen in Settings (#453)
   const n = (1234).toLocaleString();
   assert.equal(h.vm.amountPrefix, '₿', 'the default format puts ₿ in front');
   assert.equal(h.vm.showSatsSuffix, false);
-  assert.equal(h.vm.displaySats(1234), `₿ ${n}`);
+  assert.equal(h.vm.displaySats(1234), `₿\u00a0${n}`);
   h.store.useBip177Format = false; await settle();
   assert.equal(h.vm.amountPrefix, '');
   assert.equal(h.vm.showSatsSuffix, true, 'only the legacy format says sats');
-  assert.equal(h.vm.displaySats(1234), `${n} sats`);
+  assert.equal(h.vm.displaySats(1234), `${n}\u00a0sats`);
   h.store.kioskDisplayCurrency = 'fiat'; h.store.exchangeRates = { usd: 100_000 }; h.store.exchangeRateTimes = { usd: Date.now() }; await settle();
   assert.equal(h.vm.amountPrefix, '$');
   assert.equal(h.vm.showSatsSuffix, false);

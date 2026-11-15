@@ -764,8 +764,8 @@ test('a balance still being read pulses in its row of the chooser', async () => 
 
 test('wallet chooser keeps known balances beside restriction reasons without inventing unknown balances', () => {
   const vm = { useBip177Format: true }
-  assert.equal(ConfirmSheet.methods.walletPickerBalance.call(vm, { ...WALLETS[0], usable: false }), `₿ ${n(1200)}`)
-  assert.equal(ConfirmSheet.methods.walletPickerBalance.call(vm, { ...WALLETS[0], connectionFailed: true }), `₿ ${n(1200)}`)
+  assert.equal(ConfirmSheet.methods.walletPickerBalance.call(vm, { ...WALLETS[0], usable: false }), `₿\u00a0${n(1200)}`)
+  assert.equal(ConfirmSheet.methods.walletPickerBalance.call(vm, { ...WALLETS[0], connectionFailed: true }), `₿\u00a0${n(1200)}`)
   assert.equal(ConfirmSheet.methods.walletPickerBalanceOutdated.call(vm, { ...WALLETS[0], connectionFailed: true }), true)
   assert.equal(ConfirmSheet.methods.walletPickerBalance.call(vm, { id: 'unknown', usable: false }), null)
 })

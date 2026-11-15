@@ -4,6 +4,9 @@
 
   Sheet handoffs wait for dismissal, so only one sheet owns focus at a time:
   choice sheet -> profile sheet <-> photo picker.
+
+  A new identity becomes the one in use, so the two choices wait while a
+  payment is being sent, with the reason under them.
 -->
 <template>
   <q-dialog
@@ -39,7 +42,7 @@
         <p class="account-sheet-lede">{{ $t('Choose what comes with you. You can change the contact list later.') }}</p>
 
         <div class="account-options">
-          <button v-if="contactCount > 0" type="button" class="account-option account-option--recommended" @click="onCreate(true)">
+          <button v-if="contactCount > 0" type="button" class="account-option account-option--recommended" :disabled="flow.paymentBeingSent" @click="onCreate(true)">
             <span class="account-option-icon account-option-icon--accent" aria-hidden="true">
               <Icon icon="tabler:address-book" width="21" height="21" />
             </span>
@@ -53,7 +56,7 @@
             <Icon class="account-option-chevron" icon="tabler:chevron-right" width="18" height="18" />
           </button>
 
-          <button type="button" class="account-option" @click="onCreate(false)">
+          <button type="button" class="account-option" :disabled="flow.paymentBeingSent" @click="onCreate(false)">
             <span class="account-option-icon" aria-hidden="true">
               <Icon icon="tabler:user-plus" width="21" height="21" />
             </span>
@@ -63,6 +66,8 @@
             </span>
             <Icon class="account-option-chevron" icon="tabler:chevron-right" width="18" height="18" />
           </button>
+
+          <IdentityWaitsForPayment />
 
           <div class="account-recovery-note">
             <Icon icon="tabler:shield-check" width="17" height="17" />
@@ -108,7 +113,9 @@ import { computed, getCurrentInstance, ref } from 'vue';
 import { useQuasar } from 'quasar';
 import { Icon } from '@iconify/vue';
 import ProfileAvatarPickerSheet from '../ProfileAvatarPickerSheet.vue';
+import IdentityWaitsForPayment from './IdentityWaitsForPayment.vue';
 import { useAddressBookStore } from '../../stores/addressBook';
+import { usePaymentFlowStore } from '../../stores/paymentFlow.js';
 import { useProfileStore } from '../../stores/profile';
 import { useIdentityChange } from '../../composables/useIdentityChange';
 
@@ -121,6 +128,7 @@ const t = (key, params) => proxy.$t(key, params);
 const $q = useQuasar();
 const addressBook = useAddressBookStore();
 const profile = useProfileStore();
+const flow = usePaymentFlowStore();
 const { busy, create } = useIdentityChange(t);
 
 const contactCount = computed(() => addressBook.entries.length);
@@ -184,8 +192,9 @@ body.body--dark .account-sheet-close { background: rgba(255, 255, 255, 0.07); }
 .account-options { display: flex; flex-direction: column; gap: 10px; }
 .account-option { width: 100%; min-height: 72px; display: grid; grid-template-columns: 42px minmax(0, 1fr) 18px; align-items: center; gap: 12px; padding: 12px 13px; border: 1px solid var(--border-card); border-radius: 18px; background: color-mix(in srgb, var(--text-primary) 2.5%, transparent); color: var(--text-primary); text-align: left; cursor: pointer; transition: transform 100ms ease, border-color 160ms ease, background 160ms ease; -webkit-tap-highlight-color: transparent; }
 .account-option--recommended { border-color: color-mix(in srgb, var(--brand-accent-text) 30%, var(--border-card)); background: color-mix(in srgb, var(--brand-accent-soft) 48%, transparent); }
-.account-option:hover { border-color: color-mix(in srgb, var(--brand-accent-text) 35%, var(--border-card)); }
-.account-option:active { transform: scale(0.985); }
+.account-option:not(:disabled):hover { border-color: color-mix(in srgb, var(--brand-accent-text) 35%, var(--border-card)); }
+.account-option:not(:disabled):active { transform: scale(0.985); }
+.account-option:disabled { opacity: 0.5; cursor: default; }
 body.body--dark .account-option { background: rgba(255, 255, 255, 0.025); }
 body.body--dark .account-option--recommended { border-color: rgba(113, 232, 167, 0.26); background: rgba(21, 222, 114, 0.09); }
 .account-option-icon { width: 42px; height: 42px; display: grid; place-items: center; border-radius: 14px; color: var(--text-secondary); background: color-mix(in srgb, var(--text-secondary) 9%, transparent); }

@@ -73,7 +73,7 @@
           />
           <div v-if="cameraError" class="camera-error">
             <Icon icon="tabler:camera" style="font-size: 4rem; color: #bdbdbd;" />
-            <div class="error-title">{{ $t('Camera Access Required') }}</div>
+            <div class="error-title">{{ $t('Camera access required') }}</div>
             <div class="error-subtitle">{{ cameraError }}</div>
             <q-btn
               class="retry-btn"

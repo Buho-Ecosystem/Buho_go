@@ -40,6 +40,7 @@ import { lnurlGetJson } from './lnurlHttp.js'
 import { ONION_HOST_RE } from './addressUtils.js'
 import { counterpartyError } from './errorOrigin.js'
 import { parseLightningInvoice } from './lightningInvoice.js'
+import { APP_MAX_PAYMENT_SATS } from './payingWallets.js'
 import { PAYER_DATA_PROBLEM, payerDataFor } from './lud18.js'
 import { parseSuccessAction } from './successAction.js'
 import { validateVerifyUrl } from './lnurlVerify.js'
@@ -74,9 +75,10 @@ export const PAY_REQUEST_ERROR = Object.freeze({
   PAYER_DATA_INVALID: 'LNURL_PAYER_DATA_INVALID',
 })
 
-// Limits a service leaves out (or sends as 0), as every path has always assumed.
+// Limits a service leaves out (or sends as 0), as every path has always
+// assumed. The maximum is then the app's own (see APP_MAX_PAYMENT_SATS).
 const DEFAULT_MIN_MSAT = 1000
-const DEFAULT_MAX_MSAT = 100000000000
+const DEFAULT_MAX_MSAT = APP_MAX_PAYMENT_SATS * 1000
 
 /**
  * How far above the confirmed estimate an invoice in the recipient's currency
@@ -376,6 +378,23 @@ function payTerms(payRequest) {
   return { callback, minSendable, maxSendable, commentAllowed, currency: currencyOffer(payRequest.currency) }
 }
 
+/** The whole-sat amounts those limits leave room for (payTerms made sure there is one). */
+function satLimits({ minSendable, maxSendable }) {
+  return { minSats: Math.ceil(minSendable / 1000), maxSats: Math.floor(maxSendable / 1000) }
+}
+
+/**
+ * What a pay request takes, in whole sats, the way requestPayInvoice holds
+ * an amount to it. For a caller that has to know before it asks for an
+ * invoice: Auto-Transfer, when a rule is set up and before each transfer.
+ * @param {object} payRequest  from fetchPayRequest
+ * @returns {{ minSats: number, maxSats: number }}
+ * @throws {Error} code PAY_REQUEST_ERROR.INVALID
+ */
+export function payRequestLimits(payRequest) {
+  return satLimits(payTerms(payRequest))
+}
+
 /**
  * Check a service's answer to the first request and return it with its
  * terms normalised (`currency` is null when none can be used). Unknown
@@ -508,7 +527,12 @@ function payerDetails(payRequest, payerData, callback) {
   }
 }
 
-/** The invoice in a callback answer, decoded. */
+/**
+ * The invoice in a callback answer, decoded. Its amount comes as two
+ * figures: `amountMsat`, what it asks for to the thousandth, which the
+ * check in requestPayInvoice holds it to, and `amountSats`, the whole figure
+ * the screens and records show (utils/lightningInvoice.js).
+ */
 function readInvoice(data, decode) {
   const missing = (message) => payRequestError(PAY_REQUEST_ERROR.INVOICE_MISSING, message)
   const pr = typeof data?.pr === 'string' ? data.pr.trim() : ''
@@ -519,11 +543,12 @@ function readInvoice(data, decode) {
   } catch {
     throw missing('The invoice could not be read')
   }
-  const amountSats = Number(decoded?.amount)
-  if (!Number.isFinite(amountSats) || amountSats <= 0) throw missing('The invoice has no amount')
+  const amountMsat = Number(decoded?.amountMsat)
+  if (!Number.isFinite(amountMsat) || amountMsat <= 0) throw missing('The invoice has no amount')
   return {
     pr: typeof decoded.invoice === 'string' && decoded.invoice ? decoded.invoice : pr,
-    amountSats,
+    amountMsat,
+    amountSats: Number(decoded.amount),
     expiresAt: Number.isFinite(decoded.expiry) ? decoded.expiry : null,
   }
 }
@@ -554,7 +579,8 @@ function readInvoice(data, decode) {
  *   now?: () => number }} [options]  `now` is the phone's clock in milliseconds
  * @returns {Promise<{ pr: string, amountSats: number, successAction: object|null,
  *   verify: string|null, storeable: boolean, payerData: { identifier: string }|null }>}
- *   `amountSats` is the invoice's; `successAction` is the LUD-09 action as
+ *   `amountSats` is the invoice's, as the whole figure every screen shows
+ *   (in sats it is the amount confirmed); `successAction` is the LUD-09 action as
  *   utils/successAction.js reads it, `verify` the LUD-21 URL on the
  *   callback's own host, `storeable` the LUD-11 verdict (isStoreablePayLink),
  *   and `payerData` the payer details that went with it (null: none).
@@ -572,13 +598,13 @@ export async function requestPayInvoice(
   let sats = null
   if (!currency) {
     sats = confirmed
-    if (sats * 1000 < terms.minSendable || sats * 1000 > terms.maxSendable) {
-      const minSats = Math.ceil(terms.minSendable / 1000)
-      const maxSats = Math.floor(terms.maxSendable / 1000)
+    const { minSats, maxSats } = satLimits(terms)
+    if (sats < minSats || sats > maxSats) {
       throw payRequestError(
         PAY_REQUEST_ERROR.AMOUNT_OUT_OF_RANGE,
         `Amount must be between ${minSats} and ${maxSats} sats`,
-        { minSats, maxSats },
+        // A maximum the service did not name is the app's own, and is said so.
+        { minSats, maxSats, amountSats: sats, ownMaximum: terms.maxSendable === DEFAULT_MAX_MSAT },
       )
     }
   }
@@ -609,12 +635,15 @@ export async function requestPayInvoice(
   }
   const data = serviceAnswer(response)
   const invoice = readInvoice(data, decode)
-  const tooMuch = sats === null ? invoice.amountSats > payoutCeilingSats(confirmed) : invoice.amountSats !== sats
+  // Held to the thousandth: an invoice a fraction above or below the amount
+  // confirmed is another amount, whatever whole figure it would be shown as.
+  const tooMuch = sats === null ? invoice.amountMsat > payoutCeilingSats(confirmed) * 1000 : invoice.amountMsat !== sats * 1000
   if (tooMuch) {
+    const exactSats = invoice.amountMsat / 1000
     throw payRequestError(
       PAY_REQUEST_ERROR.INVOICE_MISMATCH,
-      `The invoice is for ${invoice.amountSats} sats, not the ${confirmed} sats confirmed`,
-      { askedSats: confirmed, invoiceSats: invoice.amountSats },
+      `The invoice is for ${exactSats} sats, not the ${confirmed} sats confirmed`,
+      { askedSats: confirmed, invoiceSats: exactSats },
     )
   }
   const clock = serviceClockSeconds(response) ?? now() / 1000

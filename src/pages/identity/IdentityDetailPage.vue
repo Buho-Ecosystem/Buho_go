@@ -31,11 +31,13 @@
         v-if="!row.active"
         type="button"
         class="btn-primary detail-use"
-        :disabled="busy || bucket.isSweeping"
+        :disabled="busy || bucket.isSweeping || flow.paymentBeingSent"
         @click="onUse"
       >
         {{ $t('Use this identity') }}
       </button>
+      <!-- Why the button above has to wait, for as long as it does. -->
+      <IdentityWaitsForPayment v-if="!row.active" />
 
       <IdentityGroup
         :title="$t('Keys')"
@@ -100,10 +102,12 @@ import IdentityGroup from '../../components/identity/IdentityGroup.vue';
 import IdentityRow from '../../components/identity/IdentityRow.vue';
 import IdentityPrivateKeySheet from '../../components/identity/IdentityPrivateKeySheet.vue';
 import IdentitySwitchingDialog from '../../components/identity/IdentitySwitchingDialog.vue';
+import IdentityWaitsForPayment from '../../components/identity/IdentityWaitsForPayment.vue';
 import SettingsHubNav from '../../components/settings/SettingsHubNav.vue';
 import { useIdentities } from '../../composables/useIdentities';
 import { useIdentityChange } from '../../composables/useIdentityChange';
 import { useIdentityStore } from '../../stores/identity';
+import { usePaymentFlowStore } from '../../stores/paymentFlow.js';
 import { useProfileStore } from '../../stores/profile';
 import { useSocialBucketStore } from '../../stores/socialBucket';
 
@@ -118,6 +122,7 @@ const router = useRouter();
 const identity = useIdentityStore();
 const profile = useProfileStore();
 const bucket = useSocialBucketStore();
+const flow = usePaymentFlowStore();
 const { identities, refresh, nameOf, captionOf, originOf } = useIdentities(t);
 const { busy, switching, switchTo } = useIdentityChange(t);
 

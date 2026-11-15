@@ -4,6 +4,28 @@
  * Supports BIP-177 (₿) and Legacy (sats) formats
  */
 
+// Between a figure and its sign or unit: the two never part at a line end.
+// Written as an escape so an editor cannot flatten it into a plain space.
+const NBSP = '\u00a0';
+
+/**
+ * Text with formatted amounts in it, for leaving the app (shared, copied,
+ * exported): with plain spaces. The non-breaking space is for a screen.
+ * @param {string} text
+ * @returns {string}
+ */
+export function plainSpaces(text) {
+  return String(text ?? '').replace(/[\u00a0\u202f]/g, ' ');
+}
+
+/**
+ * The digits of a whole-number Bitcoin amount ("₿ 2,408", "2,408 sats"):
+ * grouped as the device does, and never with a decimal part. Amounts are
+ * whole before they are shown: a request that names a fraction is rounded
+ * up where it is decoded (utils/lightningInvoice.js).
+ */
+const wholeDigits = (amount) => amount.toLocaleString(undefined, { maximumFractionDigits: 0 })
+
 /**
  * Format satoshi amount according to user preference
  * @param {number} amount - Amount in satoshis
@@ -20,17 +42,17 @@ export function formatSatoshis(amount, useBip177 = true, options = {}) {
 
   const absAmount = Math.abs(amount)
   const formattedNumber = useLocaleString
-    ? absAmount.toLocaleString()
+    ? wholeDigits(absAmount)
     : absAmount.toString()
 
   if (useBip177) {
     // BIP-177: ₿ 1,234 (with space for consistency and readability)
     const sign = showSign ? (isPositive ? '+' : '-') : ''
-    return '₿ ' + sign + formattedNumber
+    return '₿' + NBSP + sign + formattedNumber
   } else {
     // Legacy: 1,234 sats (space before sats)
     const prefix = showSign ? (isPositive ? '+' : '-') : ''
-    return prefix + formattedNumber + ' sats'
+    return prefix + formattedNumber + NBSP + 'sats'
   }
 }
 
@@ -65,14 +87,14 @@ export function formatMainBalance(amount, useBip177 = true) {
  */
 export function formatAmount(amount, useBip177 = true) {
   const absAmount = Math.abs(amount)
-  const formattedNumber = absAmount.toLocaleString()
+  const formattedNumber = wholeDigits(absAmount)
 
   if (useBip177) {
     // BIP-177: ₿ 1,234 (with space for consistency and readability)
-    return '₿ ' + formattedNumber
+    return '₿' + NBSP + formattedNumber
   } else {
     // Legacy: 1,234 sats (space before sats)
-    return formattedNumber + ' sats'
+    return formattedNumber + NBSP + 'sats'
   }
 }
 
@@ -85,18 +107,16 @@ export function formatAmount(amount, useBip177 = true) {
  */
 export function formatAmountWithPrefix(amount, useBip177 = true, sign = '') {
   const absAmount = Math.abs(amount)
-  const formattedNumber = absAmount.toLocaleString()
+  const formattedNumber = wholeDigits(absAmount)
 
   if (useBip177) {
     // BIP-177: ₿ +1,234 or ₿ -1,234
-    return '₿ ' + sign + formattedNumber
+    return '₿' + NBSP + sign + formattedNumber
   } else {
     // Legacy: +1,234 sats or -1,234 sats
-    return sign + formattedNumber + ' sats'
+    return sign + formattedNumber + NBSP + 'sats'
   }
 }
-
-const NBSP = ' '
 
 /**
  * The digits a fiat currency is written with (2 for EUR, 0 for JPY).

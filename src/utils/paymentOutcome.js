@@ -99,6 +99,15 @@ export function assertOnline(online = globalThis.navigator?.onLine) {
   throw Object.assign(new Error('Failed to fetch'), { neverSent: true });
 }
 
+/** `work`, or the error `lateError()` makes once `ms` have passed. The work itself runs on. */
+function within(work, ms, lateError) {
+  let timer;
+  const late = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(lateError()), ms);
+  });
+  return Promise.race([Promise.resolve(work), late]).finally(() => clearTimeout(timer));
+}
+
 /**
  * `work`, or PAYMENT_UNCONFIRMED once `ms` have passed. The work itself runs
  * on: the wallet may still make the payment, which is why a wait that ran
@@ -108,9 +117,26 @@ export function assertOnline(online = globalThis.navigator?.onLine) {
  * @param {object} [extra]  what identifies the payment, kept on the error
  */
 export function withinPaymentDeadline(work, ms = PAYMENT_COMPLETION_TIMEOUT_MS, extra = {}) {
-  let timer;
-  const late = new Promise((_, reject) => {
-    timer = setTimeout(() => reject(unconfirmedPayment('No answer from the wallet in time', extra)), ms);
-  });
-  return Promise.race([Promise.resolve(work), late]).finally(() => clearTimeout(timer));
+  return within(work, ms, () => unconfirmedPayment('No answer from the wallet in time', extra));
+}
+
+/** A step a payment needs before it can be handed to a wallet gave no answer in time. */
+export const PAYMENT_NOT_STARTED = 'PAYMENT_NOT_STARTED';
+
+/**
+ * `work`, or a plain failure once `ms` have passed: for what has to answer
+ * BEFORE a payment is handed to a wallet (connecting it, preparing the
+ * payment, a quote). Nothing has left by then, so a wait that ran out is
+ * "nothing was sent", never an unknown outcome, and whatever waits for the
+ * send to end (the sheet, the identity in use) is free again. Without this
+ * a wallet or a service that never answers would hold a send open for good.
+ * The work itself runs on; a late answer is nobody's any more.
+ * @param {Promise} work
+ * @param {number} [ms]
+ */
+export function beforePaymentLeaves(work, ms = PAYMENT_COMPLETION_TIMEOUT_MS) {
+  return within(work, ms, () => Object.assign(
+    new Error('No answer in time, before the payment was handed to the wallet'),
+    { code: PAYMENT_NOT_STARTED, neverSent: true },
+  ));
 }

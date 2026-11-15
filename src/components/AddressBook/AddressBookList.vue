@@ -5,7 +5,7 @@
       <q-input
         :model-value="searchQuery"
         @update:model-value="setSearchQuery"
-        :placeholder="$t('Search contacts...')"
+        :placeholder="$t('Search contacts…')"
         borderless
         dense
         :class="$q.dark.isActive ? 'search_bg' : 'search_light'"

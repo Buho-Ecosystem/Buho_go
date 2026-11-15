@@ -34,6 +34,7 @@ import { Invoice } from '@getalby/lightning-tools';
 import { fetchPayRequest, lightningAddressUrl, requestPayInvoice } from '../utils/lnurlPay.js';
 import { fiatRatesService } from '../utils/fiatRates.js';
 import { isBitcoinAddress } from '../utils/addressUtils.js';
+import { invoiceSats } from '../utils/lightningInvoice.js';
 import { decodeSparkDestination, identityPublicKeyFromSparkAddress } from '../utils/sparkPayment.js';
 import { registerRandomLightningAddress } from '../utils/lightningAddressNames.js';
 import * as breezSdk from '../services/breezSdk.js';
@@ -59,9 +60,7 @@ import { reportSparkAttempt } from '../services/sparkReachabilityCheck.js';
 import { classifyTransportFailure } from '../utils/userErrors.js';
 import { FEE_RESERVE_MIN_SATS, unquotedFeeLimitSats } from '../utils/payingWallets.js';
 import { readInvoice } from '../utils/nwcWallet.js';
-import {
-  PAYMENT_COMPLETION_TIMEOUT_MS, PAYMENT_FAILED, assertOnline, isUnconfirmedPayment, unconfirmedPayment, withinPaymentDeadline,
-} from '../utils/paymentOutcome.js';
+import { PAYMENT_COMPLETION_TIMEOUT_MS, PAYMENT_FAILED, assertOnline, beforePaymentLeaves, isUnconfirmedPayment, unconfirmedPayment, withinPaymentDeadline } from '../utils/paymentOutcome.js';
 
 /**
  * One fresh synchronization per SDK instance at a time. Keyed by the SDK
@@ -222,8 +221,8 @@ export class BreezSparkWalletProvider extends WalletProvider {
   static decodeInvoiceAmount(invoice) {
     try {
       const cleanInvoice = invoice.replace(/^lightning:/i, '');
-      const decoded = new Invoice({ pr: cleanInvoice });
-      const amount = decoded.satoshi || 0;
+      // The whole figure the review shows (utils/lightningInvoice.js).
+      const amount = invoiceSats(new Invoice({ pr: cleanInvoice }));
       return {
         amount: amount > 0 ? amount : null,
         isZeroAmount: amount === 0
@@ -938,9 +937,11 @@ export class BreezSparkWalletProvider extends WalletProvider {
    * Prepare a send for a raw payment request (bolt11 / spark address /
    * spark invoice / bitcoin address). Cached briefly per input so the
    * fee-estimate → pay sequence costs one SDK prepare, not two.
+   * `feePolicy` 'feesIncluded' takes the fee out of the amount instead of
+   * adding it on top (the SDK's default); it is part of what is cached.
    */
-  async _prepareSend(input, { amountSats = null, fresh = false } = {}) {
-    const key = `${input}::${amountSats ?? ''}`;
+  async _prepareSend(input, { amountSats = null, fresh = false, feePolicy = null } = {}) {
+    const key = `${input}::${amountSats ?? ''}::${feePolicy ?? ''}`;
     if (!fresh) {
       const cached = this._preparedSends.get(key);
       if (cached && Date.now() - cached.at < 30000) {
@@ -951,21 +952,25 @@ export class BreezSparkWalletProvider extends WalletProvider {
     const doPrepare = () => this.sdk.prepareSendPayment({
       paymentRequest: { type: 'input', input },
       amount: amountSats != null ? BigInt(Math.round(amountSats)) : undefined,
+      ...(feePolicy ? { feePolicy } : {}),
     });
 
-    let prepareResponse;
-    try {
-      prepareResponse = await doPrepare();
-    } catch (error) {
-      // "Failed to select leaves" = the wallet is mid-optimization; a sync
-      // then one retry resolves it. Prepare moves no funds — safe to retry.
-      if (String(error?.message || '').toLowerCase().includes('failed to select leaves')) {
-        try { await this.sdk.syncWallet({}); } catch (e) { /* best-effort */ }
-        prepareResponse = await doPrepare();
-      } else {
+    const prepare = async () => {
+      try {
+        return await doPrepare();
+      } catch (error) {
+        // "Failed to select leaves" = the wallet is mid-optimization; a sync
+        // then one retry resolves it. Prepare moves no funds — safe to retry.
+        if (String(error?.message || '').toLowerCase().includes('failed to select leaves')) {
+          try { await this.sdk.syncWallet({}); } catch (e) { /* best-effort */ }
+          return doPrepare();
+        }
         throw error;
       }
-    }
+    };
+    // Preparing moves nothing: a service that never answers ends as a
+    // plain failure, so neither a quote nor a send waits on it for good.
+    const prepareResponse = await beforePaymentLeaves(prepare());
 
     this._preparedSends.set(key, { prepareResponse, at: Date.now() });
     if (this._preparedSends.size > 12) {
@@ -1161,6 +1166,9 @@ export class BreezSparkWalletProvider extends WalletProvider {
         id: payment.id || null,
         preimage: preimageOf(payment),
         fee: Number(payment.fees ?? 0),
+        // What the wallet itself says it sent, without the fee: the figure
+        // History lists this payment with.
+        amountSats: Number(payment.amount ?? 0),
         status: payment.status === PAYMENT_STATUS.COMPLETED
           ? PAYMENT_STATUS.COMPLETED
           : PAYMENT_STATUS.PENDING
@@ -1913,7 +1921,16 @@ export class BreezSparkWalletProvider extends WalletProvider {
   // L1 withdrawals
   // ==========================================
 
-  async getWithdrawalFeeQuote(amountSats, destinationAddress) {
+  /**
+   * The fee, per speed, for a Bitcoin-address payment of `amountSats`.
+   *
+   * With `wholeBalance`, `amountSats` is all the wallet holds and the quote
+   * is the SDK's own for sending all of it, the fee taken out of the amount
+   * (feePolicy 'feesIncluded'): what arrives is the amount less the fee of
+   * the speed chosen. Such a quote only prices. It is never kept to send
+   * with: the amount it leaves is quoted again as any other amount is.
+   */
+  async getWithdrawalFeeQuote(amountSats, destinationAddress, { wholeBalance = false } = {}) {
     this._ensureConnected();
 
     if (!this._isValidBitcoinAddress(destinationAddress)) {
@@ -1925,6 +1942,7 @@ export class BreezSparkWalletProvider extends WalletProvider {
       prep = await this._prepareSend(destinationAddress, {
         amountSats: Number(amountSats),
         fresh: true,
+        ...(wholeBalance ? { feePolicy: 'feesIncluded' } : {}),
       });
     } catch (error) {
       // Quoting here is a real send-prepare, so it can fail on balance.
@@ -1954,12 +1972,14 @@ export class BreezSparkWalletProvider extends WalletProvider {
       throw new Error('No withdrawal fee quote available right now. Please try again.');
     }
 
-    breezSdk.rememberWithdrawQuote(this.walletId, feeQuote.id, {
-      prepareResponse: prep,
-      amountSats: Number(amountSats),
-      destinationAddress,
-      expiresAt: feeQuote.expiresAt,
-    });
+    if (!wholeBalance) {
+      breezSdk.rememberWithdrawQuote(this.walletId, feeQuote.id, {
+        prepareResponse: prep,
+        amountSats: Number(amountSats),
+        destinationAddress,
+        expiresAt: feeQuote.expiresAt,
+      });
+    }
 
     return mapWithdrawFeeQuoteToTiers(feeQuote);
   }
@@ -1986,7 +2006,11 @@ export class BreezSparkWalletProvider extends WalletProvider {
     }
 
     try {
-      let prep = breezSdk.getWithdrawQuote(this.walletId, feeQuoteId)?.prepareResponse || null;
+      // A remembered quote is used only for the very amount and address it
+      // was made for; anything else is prepared afresh below.
+      const remembered = breezSdk.getWithdrawQuote(this.walletId, feeQuoteId);
+      let prep = remembered && remembered.amountSats === Number(amountSats)
+        && remembered.destinationAddress === destinationAddress ? remembered.prepareResponse : null;
 
       // A provider replacement between quote and confirm loses nothing: the
       // request itself carries everything needed to re-prepare.
@@ -1998,7 +2022,7 @@ export class BreezSparkWalletProvider extends WalletProvider {
         if (deductFeeFromWithdrawalAmount) {
           request.feePolicy = 'feesIncluded';
         }
-        prep = await this.sdk.prepareSendPayment(request);
+        prep = await beforePaymentLeaves(this.sdk.prepareSendPayment(request));
       }
 
       if (prep?.paymentMethod?.type !== 'bitcoinAddress') {

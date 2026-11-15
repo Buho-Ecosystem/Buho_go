@@ -15,6 +15,8 @@
  * - PATCH /api/v1/wallet - With an empty body: the wallet's read-only invoice
  *   key, once (LNbits 0.12 to 1.6 change nothing but its "updated" time)
  * - POST /api/v1/payments - Create invoice (out: false) or pay invoice (out: true)
+ * - GET  /api/v1/payments/fee-reserve - What the server lets an invoice cost
+ *   on top of its amount (getFeeReserveSats)
  * - GET  /api/v1/payments/<hash> - Check payment status
  * - GET  /api/v1/payments - List payments
  * - POST /api/v1/payments/decode - Decode invoice
@@ -40,6 +42,7 @@ import { WalletProvider } from './WalletProvider';
 import { payLinksStatusOf } from '../utils/lnbitsAddress.js';
 import { SUCCESS_ACTION_MAX_CHARS } from '../utils/successAction.js';
 import { readInvoice } from '../utils/nwcWallet.js';
+import { wholeSats } from '../utils/lightningInvoice.js';
 import { PAYMENT_COMPLETION_TIMEOUT_MS, PAYMENT_FAILED, PAYMENT_LOOKUP_WAIT_MS, assertOnline, unconfirmedPayment, withinPaymentDeadline } from '../utils/paymentOutcome.js';
 
 /**
@@ -269,13 +272,18 @@ export class LNBitsWalletProvider extends WalletProvider {
    * itself refused (lnbitsRefusedPayment). A dropped connection, a wait
    * past PAYMENT_COMPLETION_TIMEOUT_MS or an answer that cannot be read
    * is PAYMENT_UNCONFIRMED: LNbits may have paid.
+   *
+   * There is no fee limit to pass: the pay call has no field for one. The
+   * server holds the payment to its own fee reserve (getFeeReserveSats).
    */
-  async payInvoice({ invoice, maxFee, completionTimeoutMs = PAYMENT_COMPLETION_TIMEOUT_MS }) {
+  async payInvoice({ invoice, completionTimeoutMs = PAYMENT_COMPLETION_TIMEOUT_MS }) {
     this._ensureConnected();
 
     try {
       const payload = {
         out: true,
+        // The field every LNbits version reads. Newer servers also take
+        // `payment_request` and call this one legacy; older ones know no other.
         bolt11: invoice
       };
 
@@ -308,7 +316,8 @@ export class LNBitsWalletProvider extends WalletProvider {
           const details = record.details && typeof record.details === 'object' ? record.details : record;
           status = this._outgoingStatus(record);
           preimage = record.preimage || details.preimage || preimage;
-          fee = details.fee ? Math.floor(Math.abs(details.fee) / 1000) : 0;
+          // A payment's fee is rounded up like its amount: never below what was charged.
+          fee = details.fee ? wholeSats(Math.abs(details.fee)) : 0;
         }
       } catch (e) {
         // The record could not be read: the pay call's own answer stands.
@@ -327,6 +336,38 @@ export class LNBitsWalletProvider extends WalletProvider {
     } catch (error) {
       this.setError(error);
       throw error;
+    }
+  }
+
+  /**
+   * The most LNbits lets this invoice cost on top of its amount, in sats:
+   * the fee reserve its server holds the payment to (the routing fee limit
+   * it hands its funding source, plus its own service fee where the operator
+   * charges one). The same figure is what the server wants in the wallet
+   * beyond the invoice's amount before it pays at all.
+   *
+   * Asked of the server, never worked out here: both parts are the
+   * operator's settings. Rounded up to whole sats, so the figure is never
+   * below what can be charged.
+   *
+   * Null means the server gave no figure: an invoice without an amount (it
+   * has none for one), a server from before this endpoint, an error, no
+   * answer within PAYMENT_LOOKUP_WAIT_MS, or an answer that is not a count.
+   * Never throws and never guesses.
+   * @param {string} invoice BOLT11
+   * @returns {Promise<number|null>}
+   */
+  async getFeeReserveSats(invoice) {
+    if (!this.isConnected || !(readInvoice(invoice)?.amountSats > 0)) return null;
+    try {
+      const answer = await withinPaymentDeadline(
+        this._apiRequest(`/api/v1/payments/fee-reserve?invoice=${encodeURIComponent(invoice)}`),
+        PAYMENT_LOOKUP_WAIT_MS
+      );
+      const msat = answer?.fee_reserve;
+      return Number.isSafeInteger(msat) && msat >= 0 ? Math.ceil(msat / 1000) : null;
+    } catch {
+      return null;
     }
   }
 
@@ -429,7 +470,10 @@ export class LNBitsWalletProvider extends WalletProvider {
       id: tx.payment_hash || tx.checking_id,
       paymentHash: tx.payment_hash || null,
       type: tx.amount > 0 ? 'receive' : 'send',
-      amount: Math.floor(Math.abs(tx.amount) / 1000), // Convert msats to sats
+      // LNbits counts in thousandths. What left the wallet is the whole
+      // figure the review showed, rounded up (utils/lightningInvoice.js);
+      // what arrived is rounded down, never above what came in.
+      amount: tx.amount > 0 ? Math.floor(tx.amount / 1000) : wholeSats(-tx.amount),
       timestamp: this._parseTimestamp(tx.time || tx.created_at),
       // Keep History's existing display time, but let receipts distinguish
       // verified settlement from an invoice's creation-time fallback.
@@ -442,7 +486,8 @@ export class LNBitsWalletProvider extends WalletProvider {
       created_at: this._parseTimestamp(tx.created_at || tx.time),
       description: tx.memo || '',
       status,
-      fee: tx.fee ? Math.floor(Math.abs(tx.fee) / 1000) : 0,
+      // The fee of what left is rounded up like its amount; a received payment costs nothing here.
+      fee: tx.fee ? (tx.amount > 0 ? Math.floor(Math.abs(tx.fee) / 1000) : wholeSats(Math.abs(tx.fee))) : 0,
       bolt11: tx.bolt11 || tx.payment_request || null,
       preimage: tx.preimage || null,
       expiry: tx.expiry ?? null,

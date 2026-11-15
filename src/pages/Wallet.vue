@@ -164,7 +164,7 @@
         class="arkade-maintenance"
       >
         <q-spinner-dots size="14px" />
-        <span>{{ $t('Updating your wallet...') }}</span>
+        <span>{{ $t('Updating your wallet…') }}</span>
       </div>
 
       <!-- Balance Display -->
@@ -372,7 +372,7 @@
       <q-card class="dialog-card" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'" style="max-width: 400px;">
         <q-card-section>
           <div class="dialog-title" :class="$q.dark.isActive ? 'dialog_title_dark' : 'dialog_title_light'">
-            {{ $t('Security Upgrade') }}
+            {{ $t('Security upgrade') }}
           </div>
         </q-card-section>
         <q-card-section>
@@ -706,12 +706,15 @@ import {classifyDestination, normalizeDestination} from '../utils/clipboardSugge
 import {classifyIdentifier} from '../utils/nostrLookup.js';
 import {canWalletPay} from '../utils/walletCapabilities.js';
 import {
+  APP_MAX_PAYMENT_SATS,
   PAYING_REASON,
   listPayingWallets,
   pickDefaultPayingWallet,
   knownFeeReserveSats,
   payingWalletHint,
   unquotedFeeLimitSats,
+  FEE_LIMIT_HOLDER,
+  feeLimitHolder,
 } from '../utils/payingWallets.js';
 import {
   decodeSparkDestination,
@@ -734,7 +737,7 @@ import {fiatRatesService} from '../utils/fiatRates.js';
 import {fiatSymbol} from '../utils/fiatCurrencies.js';
 import {formatMainBalance as formatMainBalanceUtil, formatAmount} from '../utils/amountFormatting.js';
 import {haptics} from '../utils/haptics.js';
-import { PAYMENT_FAILED, PAYMENT_OUTCOME, outcomeOfError, outcomeOfResult } from '../utils/paymentOutcome.js';
+import { PAYMENT_FAILED, PAYMENT_LOOKUP_WAIT_MS, PAYMENT_OUTCOME, beforePaymentLeaves, outcomeOfError, outcomeOfResult } from '../utils/paymentOutcome.js';
 import {isNfcAvailable} from '../utils/nfc.js';
 import NumberFlow from '@number-flow/vue';
 import LatestTransactionCard from '../components/LatestTransactionCard.vue';
@@ -1042,6 +1045,9 @@ export default {
       estimatedFee: null,
       // The estimate is the provider's guess, not a route quote.
       estimatedFeeIsGuess: false,
+      // The most the paying wallet's server lets the invoice on the sheet
+      // cost (updateServerFeeLimit); null while it has stated none.
+      serverFeeLimitSats: null,
       // Why the fee check reached no server, said before the slide.
       connectionNotice: '',
       isEstimatingFee: false,
@@ -1812,7 +1818,11 @@ export default {
         const wanted = p.prefill?.amountSats;
         if (wanted >= amount.minSats && wanted <= amount.maxSats) amount.defaultAmount = wanted;
       } else {
-        amount = { mode: 'free' };
+        // No maximum from the recipient: the app's own applies
+        // (validatePaymentAmount), and the sheet says it like a recipient's.
+        // A Bitcoin address paid from a Spark wallet is not held to it
+        // (executeSparkL1Withdrawal).
+        amount = { mode: 'free', ...(this.isSparkL1Payment ? {} : { maxSats: APP_MAX_PAYMENT_SATS }) };
         if (p.prefill?.amountSats > 0) amount.defaultAmount = p.prefill.amountSats;
       }
 
@@ -1851,7 +1861,9 @@ export default {
       //   - "Up to" is a limit the payment is then held to (a Spark wallet
       //     paying an address or a payment link, whose invoice exists only
       //     after the confirm, or an invoice it could not quote:
-      //     sendSparkPayment / payLightningAddress);
+      //     sendSparkPayment / payLightningAddress), or one the wallet's own
+      //     server holds the invoice to and stated for it (LNbits:
+      //     updateServerFeeLimit);
       //   - "Free" is said only from a quote of zero (a Spark transfer the
       //     SDK prepared). A transfer between Arkade addresses has no quote
       //     and nothing the app can hold it to, so no fee claim is made;
@@ -1863,20 +1875,27 @@ export default {
       const hasQuotedFee = !this.estimatedFeeIsGuess && Number.isFinite(this.estimatedFee) && this.estimatedFee >= 0;
       const canQuote = (payerType === 'spark' && !p.bitcoinAddress)
         || (payerType === 'arkade' && !!p.bitcoinAddress);
-      if (canQuote && this.isEstimatingFee) {
+      // "Up to" is said only of a wallet something holds to that limit.
+      const appHeld = feeLimitHolder(payerType) === FEE_LIMIT_HOLDER.APP;
+      const serverHeld = feeLimitHolder(payerType) === FEE_LIMIT_HOLDER.SERVER && !!p.invoice;
+      if ((canQuote || serverHeld) && this.isEstimatingFee) {
         feeEstimate = { sats: null, isEstimating: true };
+      } else if (serverHeld && Number.isSafeInteger(this.serverFeeLimitSats)) {
+        // A limit of nothing is a payment that cannot cost anything.
+        // The server's figure covers its own service fee too, where it charges one.
+        feeEstimate = { sats: this.serverFeeLimitSats, isEstimating: false, isLimit: this.serverFeeLimitSats > 0, coversServiceFee: true };
       } else if (canQuote && hasQuotedFee) {
         feeEstimate = {
           sats: this.estimatedFee, isEstimating: false,
           ...(payerType === 'spark' && p.sparkAddress && this.estimatedFee === 0
             ? { label: this.$t('Free · instant') } : {}),
         };
-      } else if (payerType === 'spark' && p.invoice) {
+      } else if (appHeld && p.invoice) {
         // No quote for this invoice (the wallet could only guess): the
         // limit the send is then held to (sparkInvoiceFeeTerms).
         const { limitSats } = this.sparkInvoiceFeeTerms(this.payingAmountSats);
         if (limitSats > 0) feeEstimate = { sats: limitSats, isEstimating: false, isLimit: true };
-      } else if (payerType === 'spark' && (p.lightningAddress || p.lnurl) && p.type !== 'lnurl_withdraw') {
+      } else if (appHeld && (p.lightningAddress || p.lnurl) && p.type !== 'lnurl_withdraw') {
         const limit = unquotedFeeLimitSats(this.payingAmountSats);
         // An amount typed in the recipient's currency is only an estimate in
         // Bitcoin: the service adds its own fee to the invoice, and the
@@ -2412,10 +2431,10 @@ export default {
     withdrawStatusMessage() {
       const messages = {
         'idle': '',
-        'creating': this.$t('Preparing...'),
-        'submitting': this.$t('Requesting funds...'),
-        'monitoring': this.$t('Receiving sats...'),
-        'confirmed': this.$t('Sats received!'),
+        'creating': this.$t('Preparing…'),
+        'submitting': this.$t('Requesting funds…'),
+        'monitoring': this.$t('Receiving…'),
+        'confirmed': this.$t('Bitcoin received'),
         'error': this.lnurlWithdrawError || this.$t('Redeem failed')
       };
       return messages[this.lnurlWithdrawStatus] || '';
@@ -3436,7 +3455,7 @@ export default {
 
       this.isSendingPayment = true;
       try {
-        const provider = await this.walletStore.ensureSparkConnected(walletId);
+        const provider = await beforePaymentLeaves(this.walletStore.ensureSparkConnected(walletId));
         if (!provider?.withdrawToL1) throw new Error('Withdrawal not supported');
 
         const result = await provider.withdrawToL1({
@@ -3521,7 +3540,7 @@ export default {
       const dismissProcessing = this.$q.notify({
         type: 'ongoing',
         message: this.$t('Bitcoin withdrawal submitted'),
-        caption: this.$t('Waiting for on-chain broadcast...'),
+        caption: this.$t('Waiting for the Bitcoin network…'),
         timeout: 0,
         spinner: true
       });
@@ -4010,34 +4029,6 @@ export default {
         'TRY': 'tabler:currency-lira',
       };
       return iconMap[currency.toUpperCase()] || 'tabler:currency-dollar';
-    },
-
-    getSecondaryDisplayValue() {
-      if (!this.secondaryValue) return '';
-      // Remove "₿" prefix if present (for BIP-177)
-      if (this.secondaryValue.startsWith('₿')) {
-        return this.secondaryValue.replace('₿', '').trim();
-      }
-      // Remove "sats" suffix if present (for Legacy format)
-      if (this.secondaryValue.endsWith(' sats')) {
-        return this.secondaryValue.replace(' sats', '').trim();
-      }
-      // Otherwise it's a fiat value, return as is
-      return this.secondaryValue;
-    },
-
-    getSecondaryDisplayType() {
-      if (!this.secondaryValue) return '';
-      // Check if it starts with ₿ symbol (BIP-177 bitcoin format)
-      if (this.secondaryValue.startsWith('₿')) {
-        return 'bitcoin';
-      }
-      // Check if it ends with "sats" (Legacy bitcoin format)
-      if (this.secondaryValue.endsWith(' sats')) {
-        return 'bitcoin';
-      }
-      // Otherwise it's fiat
-      return 'fiat';
     },
 
     async getSecondaryValue(balance) {
@@ -4612,7 +4603,7 @@ export default {
       const provider = this.walletStore.getActiveProvider();
       if (!provider) {
         this.lnurlWithdrawStatus = 'error';
-        this.lnurlWithdrawError = 'No provider available for monitoring';
+        this.lnurlWithdrawError = this.$t('Could not check payment status. Please check again.');
         return;
       }
 
@@ -4630,7 +4621,7 @@ export default {
             this.handleWithdrawConfirmed(data.amount || amountSats);
           } else if (status === PaymentStatus.EXPIRED || status === PaymentStatus.ERROR) {
             this.lnurlWithdrawStatus = 'error';
-            this.lnurlWithdrawError = data.message || 'Payment monitoring failed';
+            this.lnurlWithdrawError = this.$t(status === PaymentStatus.EXPIRED ? 'Payment expired' : 'Could not check payment status. Please check again.');
           }
         }
       });
@@ -4661,7 +4652,7 @@ export default {
             this.handleWithdrawConfirmed(data.amount || amountSats);
           } else if (status === PaymentStatus.EXPIRED || status === PaymentStatus.ERROR) {
             this.lnurlWithdrawStatus = 'error';
-            this.lnurlWithdrawError = data.message || 'Payment monitoring failed';
+            this.lnurlWithdrawError = this.$t(status === PaymentStatus.EXPIRED ? 'Payment expired' : 'Could not check payment status. Please check again.');
           }
         }
       });
@@ -5124,7 +5115,7 @@ export default {
               this.failSendResolution(reason, fromField, { attribution });
               return;
             }
-            const reason = lnurlInfo.error && lnurlInfo.reason ? lnurlInfo.reason : this.$t("We couldn't find this Lightning address");
+            const reason = lnurlInfo.error && lnurlInfo.reason ? lnurlInfo.reason : this.$t("We couldn't find this payment address");
             this.failSendResolution(reason, fromField, { attribution: lnurlInfo.error ? lnurlInfo.attribution : null });
             return;
           }
@@ -5437,6 +5428,11 @@ export default {
       }
     },
 
+    /**
+     * True when the amount may be sent, else why not. A limit is worded as
+     * the sheet words it before its slide can be used (amountInvalidReason),
+     * so a refusal here can be said on the review (confirmPayment).
+     */
     validatePaymentAmount(amount) {
       if (!this.pendingPayment) return 'No payment details';
 
@@ -5447,7 +5443,7 @@ export default {
 
       // Use minSats/maxSats from lightning.js if available
       const minSats = this.pendingPayment.minSats || (this.pendingPayment.minSendable ? Math.ceil(this.pendingPayment.minSendable / 1000) : 1);
-      const maxSats = this.pendingPayment.maxSats || (this.pendingPayment.maxSendable ? Math.floor(this.pendingPayment.maxSendable / 1000) : 100000000);
+      const maxSats = this.pendingPayment.maxSats || (this.pendingPayment.maxSendable ? Math.floor(this.pendingPayment.maxSendable / 1000) : APP_MAX_PAYMENT_SATS);
 
       // Convert to sats if user is entering in fiat
       let satsToValidate = amountNum;
@@ -5458,18 +5454,24 @@ export default {
       }
 
       if (satsToValidate < minSats) {
-        return `Minimum amount is ${formatAmount(minSats, this.walletStore.useBip177Format)}`;
+        return this.$t('Minimum is {amount}', { amount: formatAmount(minSats, this.walletStore.useBip177Format) });
       }
 
       if (satsToValidate > maxSats) {
-        return `Maximum amount is ${formatAmount(maxSats, this.walletStore.useBip177Format)}`;
+        return this.$t('Maximum is {amount}', { amount: formatAmount(maxSats, this.walletStore.useBip177Format) });
       }
 
       return true;
     },
 
     async confirmPayment() {
-      if (!this.canConfirmPayment) return;
+      if (!this.canConfirmPayment) {
+        // An amount outside the limits is never dropped without a word: it
+        // goes back to the review with the limit said.
+        const verdict = this.sendAmountSats > 0 && !this.sendPayout ? this.validatePaymentAmount(this.paymentAmount) : true;
+        if (verdict !== true) this.reviewNotice = verdict;
+        return;
+      }
       if (this.getSendingWalletType() === 'arkade' && this.pendingPayment?.bitcoinAddress && !this.sendSheetCommitGate) return;
 
       this.isSendingPayment = true;
@@ -5553,13 +5555,15 @@ export default {
         const isCompletedSend = outcome === PAYMENT_OUTCOME.SETTLED;
         const status = isCompletedSend ? 'completed' : 'pending';
 
-        // What went to the recipient: the invoice's amount. In the recipient's
-        // currency that is the estimate confirmed plus the service's fee, and
-        // it is what History shows, so the success screen and the records
-        // that find this payment in History use it too. Otherwise it is the
-        // amount confirmed (requestPayInvoice holds the invoice to it).
-        const invoiceSats = Number(result?.invoiceSats);
-        const sentSats = Number.isFinite(invoiceSats) && invoiceSats > 0 ? Math.ceil(invoiceSats) : amount;
+        // What went to the recipient, as the one whole figure the success
+        // screen and the records use. The wallet's own report of the payment
+        // wins where it gives one (a Spark wallet: the figure History lists).
+        // Else the invoice's amount: in the recipient's currency that is the
+        // estimate confirmed plus the service's fee. Else the amount
+        // confirmed (requestPayInvoice holds the invoice to it), which for a
+        // request is its amount as decoded (utils/lightningInvoice.js).
+        const sentSats = [result?.amountSats, result?.invoiceSats].map(Number)
+          .find((sats) => Number.isSafeInteger(sats) && sats > 0) ?? amount;
         // Where a refund goes, as the request path reports it went (none
         // when the service no longer asked): kept for Transaction Details.
         // An address that only said who paid is not a refund address.
@@ -5944,6 +5948,7 @@ export default {
       this.sendPayout = null;
       this.estimatedFee = null;
       this.estimatedFeeIsGuess = false;
+      this.serverFeeLimitSats = null;
       this.isEstimatingFee = false;
       this.connectionNotice = '';
       this.sendDidSucceed = false;
@@ -5997,6 +6002,9 @@ export default {
       // before the executor has marked itself busy.
       if (this.isSendingPayment || this._sendConfirming) return;
       this._sendConfirming = true;
+      // Said app-wide from here until this send has ended, however it ends
+      // and whether or not this page is still there (stores/paymentFlow.js).
+      const sendEnded = this.paymentFlow.beginSend();
       try {
         // Spark on-chain rides its own submit lifecycle (withdrawal request
         // + background monitor), not the instant-payment pipeline.
@@ -6026,6 +6034,7 @@ export default {
         }
       } finally {
         this._sendConfirming = false;
+        sendEnded();
         // Validation/PIN may return before the executor ever marks itself busy.
         if (this.paymentOnly && this.paymentFlow.isCurrent(this.paymentIntent.id) && !this.isSendingPayment && this.paymentFlow.stage !== 'choosing-default') {
           this.paymentFlow.setStage(this.paymentIntent.id, this.showSendSuccess || this.showSaveContactDialog ? 'complete' : 'ready');
@@ -6169,7 +6178,7 @@ export default {
       // What the sheet said about the fee, read before anything is awaited.
       const feeTerms = this.sparkInvoiceFeeTerms(amount);
       // Ensure Spark wallet is connected (auto-connects if session PIN available)
-      const provider = await this.walletStore.ensureSparkConnected(walletId);
+      const provider = await beforePaymentLeaves(this.walletStore.ensureSparkConnected(walletId));
 
       // Spark invoice — must go through fulfill; transfer() rejects invoice
       // strings. Checked before the plain-address branch because invoice
@@ -6180,7 +6189,7 @@ export default {
         // been open past the expiry, and sender pinning could only be
         // finally decided now that the wallet is connected.
         const dest = decodeSparkDestination(invoice);
-        const ownAddress = await provider.getSparkAddress();
+        const ownAddress = await beforePaymentLeaves(provider.getSparkAddress());
         const problem = sparkInvoiceProblem(dest, {
           ownIdentityPublicKey: identityPublicKeyFromSparkAddress(ownAddress),
         });
@@ -6254,7 +6263,7 @@ export default {
      */
     async sendArkadePayment(amount, comment, payout = null, walletId = null, payerData = null, payment = this.pendingPayment) {
       const maxFee = this.currentArkadeFeeQuote?.fee;
-      const provider = await this.walletStore.ensureArkadeConnected(walletId);
+      const provider = await beforePaymentLeaves(this.walletStore.ensureArkadeConnected(walletId));
 
       // Native ark1 → ark1: instant, near-zero fee fast path.
       if (payment.arkadeAddress) {
@@ -6315,7 +6324,7 @@ export default {
       if (!this.getNwcUrl(id)) {
         throw new Error('No active NWC wallet found');
       }
-      const nwc = await this.walletStore.nwcConnection(id);
+      const nwc = await beforePaymentLeaves(this.walletStore.nwcConnection(id));
       const lightningService = new LightningPaymentService(nwc, this.walletStore.nwcPayOptions(id));
       return await lightningService.sendPayment(this.getNwcPaymentData(payment), amount, comment, { payerData });
     },
@@ -6339,7 +6348,7 @@ export default {
       // Route through ensureLNBitsConnected so a stale `isConnected` flag
       // (e.g. cleared by a prior 401) self-heals before the send rather than
       // failing with "wallet is not connected" until app restart.
-      const provider = await this.walletStore.ensureLNBitsConnected(walletId);
+      const provider = await beforePaymentLeaves(this.walletStore.ensureLNBitsConnected(walletId));
 
       // Lightning invoice payment
       if (payment.invoice) {
@@ -6537,7 +6546,7 @@ export default {
         ? { ...verifiedBusiness, name: verifiedBusiness.name || recipient || '' }
         : null;
       this.sendSuccessLabel = isCompleted
-        ? this.$t('Payment Sent')
+        ? this.$t('Payment sent')
         : this.$t('Payment on its way');
       this.sendSuccessPending = !isCompleted;
       this.sendSuccessShowSaveContact = !!showSaveContact && isCompleted && this.isPaymentIdentityCurrent();
@@ -7080,6 +7089,7 @@ export default {
       this._feeEstimateRun = (this._feeEstimateRun || 0) + 1;
       this.estimatedFee = null;
       this.estimatedFeeIsGuess = false;
+      this.serverFeeLimitSats = null;
       this.isEstimatingFee = false;
       this.connectionNotice = '';
       this.arkadeFeeQuote = null;
@@ -7124,18 +7134,42 @@ export default {
         return;
       }
 
-      // === NWC WALLET: No fee estimation available ===
-      // Alby SDK / NIP-47 does not provide fee estimation
-      if (walletType === 'nwc') {
-        this.estimatedFee = null;
+      // A wallet whose server holds each payment to a limit of its own
+      // (LNbits) quotes nothing, but states that limit for an invoice.
+      if (feeLimitHolder(walletType) === FEE_LIMIT_HOLDER.SERVER) {
+        await this.updateServerFeeLimit();
         return;
       }
 
-      // === LNBITS WALLET: No fee estimation available ===
-      // LNbits API does not provide routing fee estimation
-      if (walletType === 'lnbits') {
-        this.estimatedFee = null;
-        return;
+      // Any other wallet (NWC) can say nothing about the fee beforehand,
+      // and nothing holds it to a limit: the fields stay empty.
+    },
+
+    /**
+     * The limit the paying wallet's server holds the invoice on the sheet
+     * to, read from that server. Only an invoice has one: a payment address
+     * or a link gets its invoice after the confirm, when nothing can be
+     * shown any more. Where the server states none (an invoice without an
+     * amount, an older server, no answer) the review says, as before, that
+     * the fee is calculated when sending.
+     */
+    async updateServerFeeLimit() {
+      const invoice = this.pendingPayment.invoice;
+      const walletId = this.getSendingWallet()?.id;
+      if (!invoice || !walletId || !(this.getFixedPaymentSats() > 0)) return;
+      const run = this._feeEstimateRun;
+      this.isEstimatingFee = true;
+      try {
+        // The figure is optional, so connecting and asking share one short
+        // wait. Without an answer the sheet says that the fee is calculated
+        // when sending, which is true, and the person can go on.
+        const ask = async () => (await this.walletStore.ensureWalletConnectedForTransfer(walletId)).getFeeReserveSats(invoice);
+        const limitSats = await beforePaymentLeaves(ask(), PAYMENT_LOOKUP_WAIT_MS);
+        if (run === this._feeEstimateRun) this.serverFeeLimitSats = limitSats;
+      } catch {
+        // The wallet could not be reached: no figure, and the send says why.
+      } finally {
+        if (run === this._feeEstimateRun) this.isEstimatingFee = false;
       }
     },
 
@@ -7161,7 +7195,7 @@ export default {
           await new Promise((resolve) => setTimeout(resolve, TYPED_AMOUNT_QUOTE_DELAY_MS));
           if (run !== this._feeEstimateRun) return;
         }
-        const provider = await this.walletStore.ensureSparkConnected(walletId);
+        const provider = await beforePaymentLeaves(this.walletStore.ensureSparkConnected(walletId));
         if (run !== this._feeEstimateRun) return;
         const estimate = nativeRequest
           ? await provider.getSparkSendFeeEstimate(nativeRequest, amount)

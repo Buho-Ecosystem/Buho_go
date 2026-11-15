@@ -55,7 +55,7 @@
                 no-caps
                 dense
                 size="sm"
-                :label="$t('Select All')"
+                :label="$t('Select all')"
                 class="action-link"
                 @click="selectAll"
                 :disable="selectableContacts.length === 0"
@@ -79,7 +79,7 @@
             <input
               v-model="searchQuery"
               type="text"
-              :placeholder="$t('Search contacts...')"
+              :placeholder="$t('Search contacts…')"
               class="search-input"
             />
             <Icon
@@ -316,7 +316,7 @@
           <div class="balance-card" :class="{ 'balance-warning': isOverSafeLimit, 'balance-error': isOverBalance }">
             <div class="balance-header">
               <Icon icon="tabler:wallet" />
-              <span>{{ $t('Wallet Balance') }}</span>
+              <span>{{ $t('Wallet balance') }}</span>
             </div>
             <div class="balance-details">
               <div class="balance-item">
@@ -449,8 +449,8 @@
               <div class="exec-info">
                 <div class="exec-name">{{ result.contact.name }}</div>
                 <div class="exec-status">
-                  <span v-if="result.status === 'pending'" class="status-text">{{ $t('Waiting...') }}</span>
-                  <span v-else-if="result.status === 'sending'" class="status-text">{{ $t('Sending...') }}</span>
+                  <span v-if="result.status === 'pending'" class="status-text">{{ $t('Waiting…') }}</span>
+                  <span v-else-if="result.status === 'sending'" class="status-text">{{ $t('Sending…') }}</span>
                   <span v-else-if="result.status === 'success'" class="status-text status-success">{{ $t('Sent') }}</span>
                   <span v-else-if="result.status === 'failed'" class="status-text status-failed">{{ result.error }}</span>
                   <span v-else-if="result.status === 'skipped'" class="status-text status-skipped">{{ result.error }}</span>
@@ -477,7 +477,7 @@
             class="cancel-btn"
             @click="cancelBatch"
           >
-            {{ $t('Cancel Remaining') }}
+            {{ $t('Cancel remaining') }}
           </q-btn>
         </section>
 
@@ -505,7 +505,7 @@
             />
 
             <div class="summary-label">
-              {{ failedCount === 0 ? $t('Batch Complete') : $t('Batch Finished') }}
+              {{ failedCount === 0 ? $t('Batch complete') : $t('Batch finished') }}
             </div>
 
             <div class="summary-total">
@@ -635,7 +635,7 @@
             class="btn-secondary"
             @click="retryFailed"
           >
-            {{ $t('Retry Failed') }}
+            {{ $t('Retry failed') }}
           </q-btn>
           <q-btn unelevated no-caps class="btn-primary" @click="close">
             {{ $t('Done') }}
@@ -651,14 +651,14 @@
       <div class="confirm-icon">
         <Icon icon="tabler:alert-circle" />
       </div>
-      <h3 class="confirm-title">{{ $t('Cancel Batch?') }}</h3>
+      <h3 class="confirm-title">{{ $t('Cancel batch?') }}</h3>
       <p class="confirm-message">{{ $t('Your selection will be lost.') }}</p>
       <div class="confirm-actions">
         <button class="confirm-btn confirm-btn-cancel" @click="showConfirmClose = false">
-          {{ $t('Go Back') }}
+          {{ $t('Go back') }}
         </button>
         <button class="confirm-btn confirm-btn-confirm" @click="confirmAndClose">
-          {{ $t('Yes, Cancel') }}
+          {{ $t('Yes, cancel') }}
         </button>
       </div>
     </div>
@@ -670,7 +670,7 @@ import { assertPaymentInput } from '../utils/lud23.js';
 import { ref, computed, watch, nextTick, getCurrentInstance } from 'vue'
 import { normalizePaymentAmountInput } from '../utils/paymentAmountInput.js'
 import { formatPaymentAmount, fiatDecimals } from '../utils/amountFormatting.js'
-import { unquotedFeeLimitSats, feeReserveSats, paymentFeeText, paymentTotalText } from '../utils/payingWallets.js'
+import { FEE_LIMIT_HOLDER, feeLimitHolder, unquotedFeeLimitSats, feeReserveSats, paymentFeeText, paymentTotalText } from '../utils/payingWallets.js'
 import { canWalletPay } from '../utils/walletCapabilities'
 import { useQuasar } from 'quasar'
 import { useWalletStore } from '../stores/wallet'
@@ -880,12 +880,15 @@ const quoteKey = (contact) => `${contact.id}|${contact.address || contact.lightn
  * Never a guess:
  *   exact    an on-chain row: the quote on the review. The same quote is
  *            submitted, and the wallet refuses a fee above it.
- *   limit    a Spark wallet paying an address or a link: at most
+ *   limit    a wallet the app holds to a fee limit (feeLimitHolder: a Spark
+ *            wallet) paying an address or a link: at most
  *            unquotedFeeLimitSats of the amount; the wallet refuses a
  *            dearer route.
  *   free     a Spark wallet paying a Spark address: sent only when no fee
  *            is quoted for it.
- *   unknown  every other wallet: it cannot say before sending.
+ *   unknown  every other wallet: nothing can be said before sending. A limit
+ *            the wallet's server holds is stated for an invoice, and a row's
+ *            invoice is asked for when it is sent.
  *   loading / failed  an on-chain quote that is not on the review (yet).
  */
 function rowCost(contact) {
@@ -897,9 +900,9 @@ function rowCost(contact) {
       if (entry?.status === 'ready') return { kind: 'exact', sats: entry.quote.totalFee }
       return { kind: entry?.status === 'failed' ? 'failed' : 'loading', sats: null }
     }
-    if (type === 'lightning' || type === 'lnurl') {
-      return { kind: 'limit', sats: unquotedFeeLimitSats(getContactAmount(contact)) }
-    }
+  }
+  if ((type === 'lightning' || type === 'lnurl') && feeLimitHolder(walletStore.activeWalletType) === FEE_LIMIT_HOLDER.APP) {
+    return { kind: 'limit', sats: unquotedFeeLimitSats(getContactAmount(contact)) }
   }
   return { kind: 'unknown', sats: null }
 }
@@ -916,7 +919,7 @@ const batchCost = computed(() => {
   const subtotal = totalAmount.value
   const none = { state: '', feeText: '', feeNote: '', totalText: '', blocked: '', warning: '', ready: false }
   if (rows.some(row => row.kind === 'loading')) {
-    return { ...none, state: 'loading', feeNote: t('Calculating fees...') }
+    return { ...none, state: 'loading', feeNote: t('Calculating the fee…') }
   }
   if (rows.some(row => row.kind === 'failed')) {
     return { ...none, state: 'failed', blocked: t('The fee could not be calculated.') }
@@ -950,9 +953,9 @@ const batchCost = computed(() => {
 const stepTitle = computed(() => {
   const titles = {
     1: t('Select Contacts'),
-    2: t('Set Amount'),
+    2: t('Set amount'),
     3: t('Review'),
-    4: t('Sending...'),
+    4: t('Sending…'),
     5: t('Complete')
   }
   return titles[step.value]

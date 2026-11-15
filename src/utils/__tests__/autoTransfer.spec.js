@@ -190,9 +190,9 @@ const ctx = { t, locale: 'en-US', bip177: false, wallets: [shop, savings], now: 
 
 test('a rule reads as one sentence, in the units it was typed in', () => {
   const rule = { threshold: { sats: 500_000 }, keep: { fiat: 50, currency: 'USD' }, destination: { kind: 'wallet', walletId: 'savings' } };
-  assert.equal(ruleSentence(rule, 'Shop', ctx), 'When Shop holds more than 500,000 sats, move everything above $50.00 to Savings.');
-  assert.equal(ruleSentence({ ...rule, keep: null }, 'Shop', ctx), 'When Shop holds more than 500,000 sats, move everything to Savings.');
-  assert.equal(formatRuleAmount({ sats: 1234 }, { bip177: true }), '₿ 1,234');
+  assert.equal(ruleSentence(rule, 'Shop', ctx), 'When Shop holds more than 500,000\u00a0sats, move everything above $50.00 to Savings.');
+  assert.equal(ruleSentence({ ...rule, keep: null }, 'Shop', ctx), 'When Shop holds more than 500,000\u00a0sats, move everything to Savings.');
+  assert.equal(formatRuleAmount({ sats: 1234 }, { bip177: true }), '₿\u00a01,234');
   assert.equal(formatRuleAmount({ fiat: 500, currency: 'EUR' }, { locale: 'de-DE' }).replace(/\s/g, ' '), '500,00 €');
   assert.equal(destinationLabel({ kind: 'bitcoin', address: BTC }), 'bc1qxy2k…hx0wlh');
   assert.equal(destinationLabel({ kind: 'lightning', address: LN, name: 'Satoshi' }), 'Satoshi');
@@ -200,8 +200,8 @@ test('a rule reads as one sentence, in the units it was typed in', () => {
 
 test('a status is a few words; times are relative and translated', () => {
   const now = 10_000_000;
-  assert.deepEqual(statusText({ enabled: true, threshold: { sats: 500_000 }, events: [] }, ctx), { text: 'Over 500,000 sats', tone: '' });
-  assert.deepEqual(statusText({ enabled: true, events: [{ at: now - 3 * 3600e3, outcome: 'sent', amount: 178_722 }] }, { ...ctx, now }), { text: 'Moved 178,722 sats · 3 hours ago', tone: 'good' });
+  assert.deepEqual(statusText({ enabled: true, threshold: { sats: 500_000 }, events: [] }, ctx), { text: 'Over 500,000\u00a0sats', tone: '' });
+  assert.deepEqual(statusText({ enabled: true, events: [{ at: now - 3 * 3600e3, outcome: 'sent', amount: 178_722 }] }, { ...ctx, now }), { text: 'Moved 178,722\u00a0sats · 3 hours ago', tone: 'good' });
   assert.equal(statusText({ enabled: true, events: [{ at: 1, outcome: 'failed', reason: 'offline' }] }, ctx).text, "Couldn't send");
   assert.equal(statusText({ enabled: true, events: [{ at: 1, outcome: 'skipped', reason: 'cannot_pay' }] }, ctx).text, "Can't send");
   assert.equal(statusText({ enabled: false, pausedReason: 'failures', events: [] }, ctx).text, 'Paused after failed tries');
@@ -241,5 +241,5 @@ test('a rule stuck on its balance check is a warning with Try Again (#430)', () 
   const copy = attentionCopy(rule, { walletName: 'Shop', balanceSats: 15_962 }, ctx);
   assert.equal(copy.line, "Auto-Transfer can't check Shop's balance");
   assert.equal(copy.canRetry, true);
-  assert.match(copy.text, /^Checking the balance took too long\. 15,962 sats stays in Shop\.$/);
+  assert.match(copy.text, /^Checking the balance took too long\. 15,962\u00a0sats stays in Shop\.$/);
 });

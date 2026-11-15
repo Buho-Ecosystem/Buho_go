@@ -2,6 +2,8 @@ import { strict as assert } from 'node:assert';
 import { test } from 'node:test';
 import { bech32 } from 'bech32';
 import { parseLightningInvoice } from '../lightningInvoice.js';
+import { readInvoice } from '../nwcWallet.js';
+import { formatAmount } from '../amountFormatting.js';
 import { parseBip21, selectBip21Destination, bip21AmountToSats } from '../bip21.js';
 
 // The reported QR's actual regtest invoice. Decoding requires no network calls.
@@ -43,6 +45,20 @@ test('network prefixes and all BOLT11 amount units decode correctly', () => {
       assert.equal(parseLightningInvoice(invoice).amount, sats, network + amount);
     }
   }
+});
+
+test('a request for a fraction of the smallest unit is one whole figure, rounded up where it is decoded', () => {
+  // 2,407,123 thousandths: never 2,407 (less than leaves the wallet) and never 2,407.123.
+  const invoice = bech32.encode('lnbcrt24071230p', words, 4096);
+  const decoded = parseLightningInvoice(invoice);
+  assert.equal(decoded.amount, 2408);
+  assert.equal(readInvoice(invoice).amountSats, 2408, 'every decoder reads the same figure');
+  // Whichever space the formatter puts after the sign, the figure is whole.
+  assert.equal(formatAmount(decoded.amount).replace(/\s/g, ' '), `₿ ${(2408).toLocaleString()}`);
+  // The exact amount stays for the check that an invoice is for the amount asked for.
+  assert.equal(decoded.amountMsat, 2407123);
+  // A whole amount is itself, to the last unit.
+  assert.deepEqual([parseLightningInvoice(bech32.encode('lnbcrt24070000p', words, 4096)).amount, parseLightningInvoice(bech32.encode('lnbcrt10p', words, 4096)).amount], [2407, 1]);
 });
 
 test('malformed invoices fail instead of being displayed as amountless', () => {

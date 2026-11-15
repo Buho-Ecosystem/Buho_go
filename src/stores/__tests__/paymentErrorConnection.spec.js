@@ -47,7 +47,7 @@ await test('no server answered: the dialog checks the connection, then says what
   const { store, check } = storeWithCheck();
   store.showPaymentError(new Error(SPARK_UNREACHABLE), { context: 'payment', walletType: 'spark' });
   assert.equal(store.paymentError.visible, true);
-  assert.equal(store.paymentError.reason, 'Checking your connection...');
+  assert.equal(store.paymentError.reason, 'Checking your connection…');
   check.answer('service');
   await settle();
   assert.equal(store.paymentError.reason, "Spark can't be reached right now. Your internet works, so try again in a moment.");

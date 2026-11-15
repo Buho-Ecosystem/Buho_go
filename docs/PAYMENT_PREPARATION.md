@@ -21,9 +21,9 @@ What a payment costs is said before it is confirmed, in one fee slot with the to
 | What is known | Network fee | Total |
 |---|---|---|
 | A valid SDK-prepared quote | the fee | amount plus fee |
-| A limit the payment is held to (a Spark wallet paying a payment address or a payment link, whose invoice exists only after the confirm) | Up to the limit | Up to amount plus limit |
+| A limit the payment is held to (a Spark wallet paying a payment address or a payment link, whose invoice exists only after the confirm; an LNbits wallet paying an invoice with an amount, held by its server to the fee reserve that server states for it) | Up to the limit | Up to amount plus limit |
 | A Spark transfer the SDK prepared with a fee of zero | Free · instant | the amount |
-| Nothing beforehand (a wallet that cannot quote, and a transfer between Arkade addresses, which has no quote) | “Fee calculated when sending.” | the amount “+ fee” |
+| Nothing beforehand (a wallet that cannot quote: an NWC wallet, which no limit can be set for, and an LNbits wallet whose server states no fee reserve or which pays an address or a link; and a transfer between Arkade addresses, which has no quote) | “Fee calculated when sending.” | the amount “+ fee” |
 | A quote on its way, or the payment still being made ready | a placeholder in the same slot | a placeholder |
 
 A percentage guess is never shown as a number, and a fee that comes later is named, never added into the sum. The slot and the total keep their place through all of these states, so nothing below them moves when a quote lands. The existing zero-fee execution guard remains.
@@ -53,7 +53,7 @@ Matching text Cancel/Back controls in form-sheet headers use familiar icons: an 
 | Complete | Existing receipt and optional Save Contact flow retain ownership until dismissed. On-chain submission retains the existing provider notification monitor. |
 | Choosing default | Optional popup after the receipt has fully closed. It can be dismissed or replaced without affecting the completed payment. |
 
-Each preparation attempt captures a lease. Results are checked after every asynchronous resolution and before mutation. Cancel, navigation, identity changes, app lock and kiosk/address-sharing transitions invalidate uncommitted work. A retry owns a new attempt. Late responses cannot reopen or overwrite another payment. The intent's abort signal reaches the request lookup, so a cancelled payment asks the recipient's address for nothing more. Once a send begins, context changes cannot move its debit to another wallet.
+Each preparation attempt captures a lease. Results are checked after every asynchronous resolution and before mutation. Cancel, navigation, identity changes, app lock and kiosk/address-sharing transitions invalidate uncommitted work. A retry owns a new attempt. Late responses cannot reopen or overwrite another payment. The intent's abort signal reaches the request lookup, so a cancelled payment asks the recipient's address for nothing more. Once a send begins, context changes cannot move its debit to another wallet. From the confirm to the end of that send, however it ends, the `paymentFlow` store says app-wide that a payment is being sent (`paymentBeingSent`, for Home and contact payments alike), and the identity in use cannot change: the identity store refuses every switch, new identity, restore and erase, and the identity screens show those controls unavailable with one line saying why, until the payment has ended. The hold has no timer of its own: it ends when the send does, and how long a send may take is bounded by the send pipeline (`utils/paymentOutcome.js`).
 
 ## Default wallet
 
