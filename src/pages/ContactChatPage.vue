@@ -20,9 +20,9 @@
   closes it.
 
   Paying (a request's Pay, or Send) is handed to the existing pipeline
-  (usePayContact -> /wallet -> confirm sheet with "Pay with"). The chat is gone
-  by the time that payment succeeds, so the announcement to the partner is not
-  made here: see services/dm/paymentAnnouncer.js.
+  (usePayContact -> the confirm sheet, opened over this page). The chat may be
+  gone by the time that payment succeeds, so the announcement to the partner
+  is not made here: see services/dm/paymentAnnouncer.js.
 
   Height: the page is as tall as the visible viewport (`visualViewport` where
   there is one, so the composer sits above the on-screen keyboard on iOS too;
@@ -370,7 +370,7 @@ export default {
       contact,
       store,
       runtime,
-      pay: usePayContact({ $q, $t: t, $router: router }),
+      pay: usePayContact({ $q, $t: t }),
       payability,
       loadIncomingTransactions: () => loadIncomingTransactions({
         wallets: walletStore.wallets || [],

@@ -95,3 +95,74 @@ export function formatAmountWithPrefix(amount, useBip177 = true, sign = '') {
     return sign + formattedNumber + ' sats'
   }
 }
+
+const NBSP = ' '
+
+/**
+ * The digits a fiat currency is written with (2 for EUR, 0 for JPY).
+ * @param {string} code - ISO 4217 code
+ * @returns {number}
+ */
+export function fiatDecimals(code) {
+  try {
+    return new Intl.NumberFormat(undefined, { style: 'currency', currency: code || 'USD' }).resolvedOptions().maximumFractionDigits
+  } catch {
+    return 2
+  }
+}
+
+/**
+ * One payment amount as number and unit, in the device's number format: the
+ * same source the balance, the paid screen, the receipt and History use.
+ *
+ * The denomination says what the amount is shown in:
+ *   { kind: 'sats', bip177 }                     whole Bitcoin units (₿ or sats)
+ *   { kind: 'btc' }                              BTC with all eight digits
+ *   { kind: 'fiat', code, rate, decimals }       rate = currency per BTC
+ *   { kind: 'local', code, multiplier, decimals } multiplier = millisats per unit
+ * A converted amount is marked `approximate`.
+ *
+ * @param {number} sats
+ * @param {object} [denomination]
+ * @param {object} [options]
+ * @param {string} [options.locale] - Only for tests; the device's when omitted.
+ * @returns {{ number: string, unit: string, approximate?: boolean }}
+ */
+export function paymentAmountParts(sats, denomination = {}, { locale } = {}) {
+  const { kind = 'sats', code, rate, multiplier, decimals = 0, bip177 = true } = denomination
+  const number = (value, digits = 0) => new Intl.NumberFormat(locale, { minimumFractionDigits: digits, maximumFractionDigits: digits }).format(value)
+  // A converted amount below the last shown digit never pretends to be zero.
+  const small = (value, digits) => value > 0 && value < 10 ** -digits ? `<${NBSP}${number(10 ** -digits, digits)}` : number(value, digits)
+  if (kind === 'btc') {
+    // Keep all eight satoshi digits exact, including the largest supported
+    // integer. Dividing a Number first can round its final satoshi away.
+    if (!Number.isSafeInteger(sats)) return { number: number(NaN, 8), unit: 'BTC' }
+    const exact = BigInt(sats)
+    const decimal = new Intl.NumberFormat(locale).formatToParts(1.1).find(part => part.type === 'decimal')?.value || '.'
+    const fraction = new Intl.NumberFormat(locale, { useGrouping: false, minimumIntegerDigits: 8, maximumFractionDigits: 0 }).format(exact % 100000000n)
+    return { number: `${number(exact / 100000000n)}${decimal}${fraction}`, unit: 'BTC' }
+  }
+  if (kind === 'local' && multiplier > 0) return { number: small(sats * 1000 / multiplier, decimals), unit: code, approximate: true }
+  if (kind === 'fiat' && rate > 0) return { number: small(sats * rate / 100000000, decimals), unit: code, approximate: true }
+  return { number: number(sats), unit: bip177 ? '₿' : 'sats' }
+}
+
+/**
+ * A payment amount on one line: "₿ 2,407", "2,407 sats", "0.00002407 BTC" or
+ * "≈ 1.87 EUR". Number and unit never break apart at a line end.
+ */
+export function formatPaymentAmount(sats, denomination, options) {
+  const { number, unit, approximate } = paymentAmountParts(sats, denomination, options)
+  const value = unit === '₿' ? `₿${NBSP}${number}` : `${number}${NBSP}${unit}`
+  return approximate ? `≈${NBSP}${value}` : value
+}
+
+/**
+ * A fiat value with its symbol, in the device's number format: "€1,87" on a
+ * German phone, "€1.87" on an English one.
+ */
+export function formatFiatAmount(value, code, { symbol, locale } = {}) {
+  const digits = fiatDecimals(code)
+  const number = new Intl.NumberFormat(locale, { minimumFractionDigits: digits, maximumFractionDigits: digits }).format(value)
+  return `${symbol ?? `${code} `}${number}`
+}

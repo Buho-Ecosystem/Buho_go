@@ -1298,7 +1298,7 @@ export default {
      * it: { name, avatar } (avatar null without a logo), or null.
      */
     getTxVerifiedBusiness(tx) {
-      if (!tx?.id || !this.metadataStore) return null;
+      if (!tx?.id || tx.type !== 'outgoing' || !this.metadataStore) return null;
       const verified = this.metadataStore.getMerchantVerificationForTransaction(tx.id, this.historyWalletId);
       if (!verified || !verified.name) return null;
       return { name: verified.name, avatar: brantaAvatar(verified) };

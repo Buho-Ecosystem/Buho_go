@@ -664,8 +664,8 @@ try {
     await navigate(alice.page, '/settings');
     await alice.page.locator('.hub-nav').waitFor();
     await alice.page.evaluate(() => window.scrollTo(0, 100));
-    // Recreate the original nav tint in the same session for a comparable baseline.
-    const originalTint = await alice.page.addStyleTag({ content: '.hub-nav-light { background: rgba(255, 255, 255, 0.52) !important; } .hub-nav-dark { background: rgba(18, 20, 24, 0.46) !important; }' });
+    // Recreate the original nav (thin tint over a backdrop blur) in the same session for a comparable baseline.
+    const originalTint = await alice.page.addStyleTag({ content: '.hub-nav { backdrop-filter: blur(32px) saturate(1.9) !important; -webkit-backdrop-filter: blur(32px) saturate(1.9) !important; } .hub-nav-light { background: rgba(255, 255, 255, 0.52) !important; } .hub-nav-dark { background: rgba(18, 20, 24, 0.46) !important; }' });
     await snap(alice, '19-settings-nav-before');
     await originalTint.evaluate(node => node.remove());
     await snap(alice, '19-settings-nav');
@@ -673,6 +673,8 @@ try {
       await setTheme(alice.page, dark);
       const tint = await alice.page.locator('.hub-nav').evaluate(node => getComputedStyle(node).backgroundColor);
       assert.match(tint, /0\.95\)/);
+      const blur = await alice.page.locator('.hub-nav').evaluate(node => getComputedStyle(node).backdropFilter);
+      assert.equal(blur, 'none', 'an opaque bar pays for no blur');
     }
   });
 
@@ -767,7 +769,7 @@ async function payWithOptionsMatrix(page) {
 }
 
 async function confirmPayment(page) {
-  await page.getByRole('button', { name: /^Send .*sats$/ }).click();
+  await page.locator('.sheet-card:visible .confirm-cta button.primary-cta').click();
 }
 
 async function deliverFromCarol(template) {

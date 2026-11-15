@@ -634,6 +634,7 @@
 <script setup>
 import { assertPaymentInput } from '../utils/lud23.js';
 import { ref, computed, watch, nextTick, getCurrentInstance } from 'vue'
+import { parsePaymentAmount } from '../utils/paymentAmountInput.js'
 import { canWalletPay } from '../utils/walletCapabilities'
 import { useQuasar } from 'quasar'
 import { useWalletStore } from '../stores/wallet'
@@ -754,7 +755,7 @@ const hasSparkOnlySelected = computed(() => {
 // Computed - Amount
 // ─────────────────────────────────────────────────────────────
 const amountPerRecipient = computed(() => {
-  const val = parseFloat(amountDisplay.value.replace(/,/g, '')) || 0
+  const val = typedAmount() || 0
   if (currency.value === 'sats') {
     return Math.floor(val)
   }
@@ -1032,24 +1033,28 @@ function clearSelection() {
 // ─────────────────────────────────────────────────────────────
 // Methods - Amount
 // ─────────────────────────────────────────────────────────────
+/**
+ * The typed amount as a number, or null when it cannot be read with
+ * certainty. A comma is a decimal where the phone or the app language says
+ * so; it is never dropped (2,5 must not become 25).
+ */
+function typedAmount() {
+  return parsePaymentAmount(amountDisplay.value, {
+    locales: [proxy.$i18n?.locale, undefined],
+    precision: currency.value === 'sats' ? 0 : 2
+  })
+}
+
 function onAmountInput(e) {
-  // Allow only numbers and decimal point
-  let val = e.target.value.replace(/[^0-9.]/g, '')
-  // Only one decimal point
-  const parts = val.split('.')
-  if (parts.length > 2) {
-    val = parts[0] + '.' + parts.slice(1).join('')
-  }
-  amountDisplay.value = val
+  // Digits and the separators an amount is written with; the reading happens in typedAmount.
+  amountDisplay.value = e.target.value.replace(/[^0-9.,\u00a0\u202f ]/g, '')
 }
 
 function formatAmount() {
   if (!amountDisplay.value) return
-  const val = parseFloat(amountDisplay.value)
-  if (isNaN(val)) {
-    amountDisplay.value = ''
-    return
-  }
+  const val = typedAmount()
+  // Unreadable as typed: left in place for correction, counted as nothing.
+  if (val === null) return
   if (currency.value === 'sats') {
     amountDisplay.value = Math.floor(val).toString()
   } else {

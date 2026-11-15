@@ -135,7 +135,7 @@ Vue, Pinia or i18n; they return data and error codes. Strings live in the UI.
 All application messages are NIP-17 rumors (unsigned events), sealed (kind 13)
 and gift-wrapped (kind 1059) individually for every recipient **and** the sender
 (self copy). `content` always carries a human-readable English fallback so other
-NIP-17 clients (0xchat, Amethyst, …) show something sensible.
+NIP-17 clients show something sensible.
 
 | Type | Rumor kind | Tags | Fallback content |
 |---|---|---|---|
@@ -234,7 +234,7 @@ AUTH must be invisible:
 
 Every seal, decrypt and AUTH goes through `dmSigner.js`, so the chat works the
 same for a key on this phone and for a signer app. What changes with a signer
-app (patterns from Lotus, Coracle/welshman, Amethyst, NDK, noStrudel):
+app (the patterns are the ones established among NIP-17 clients):
 
 - Opt-in: receiving starts only after the person taps "Turn on messages"
   (`signerAppMessages`, per identity). The notice asks them to choose "always
@@ -428,7 +428,7 @@ store, clock) so they can be unit tested without network or Pinia.
 - Sync cursor (`lastSyncAt`), blocked pubkeys, per-contact mute flags.
 - Blocks follow the person (`services/dm/muteList.js`): the blocked keys are
   kept in step with their NIP-51 mute list (kind 10000) on the discovery
-  relays, as Lotus and 0xchat keep theirs. The store logs block and unblock
+  relays, the way NIP-17 clients keep theirs. The store logs block and unblock
   changes not yet saved (`blockChanges`); a sync on start and after each
   change reads the newest list, writes those changes into it (a block goes in
   the private NIP-44 part, an unblock leaves both parts) and keeps every
@@ -470,9 +470,9 @@ Paying a request / sending:
   requester's current kind 0 profile and takes its `lud16` (else the one signed
   in the request), pulls an invoice via LNURL-pay for exactly the amount and
   checks it silently (`bolt11.decode`, section 8a).
-- Hand over to the existing pipeline (`payContactDestination` →
-  `onPaymentDetected` → `PaymentConfirmSheet` → slide to send) with the chosen
-  `sendingWalletId`.
+- Hand over to the existing pipeline (`usePayContact().preparePayment` →
+  the contextual payment → `onPaymentDetected` → `PaymentConfirmSheet` →
+  slide to send). The sheet opens over the chat and picks the paying wallet.
 
 | | Spark (Breez) | NWC | LNbits | Arkade |
 |---|---|---|---|---|
@@ -508,7 +508,7 @@ the invoice does not exist until the payer taps Pay.
   (preimage hash, else amount + time window, one tx per claim) → the request
   becomes `paid` (verified), the tx is linked to the contact and the card says
   where it was received. The ledger match is always preferred.
-- **LUD-21 for addresses outside the app** (Alby, Wallet of Satoshi, ...): when
+- **LUD-21 for addresses hosted outside the app**: when
   no ledger match exists and the payment message has a `verify` URL, the
   requester asks it, but only if it is `https:` and its host equals the domain
   of the request's signed `lud16` or of their current profile `lud16`

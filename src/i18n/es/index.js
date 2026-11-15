@@ -1,4 +1,5 @@
 import emoji from './emoji.js';
+import brantaReview from './brantaReview.js';
 import paymentSheetReview from './paymentSheetReview.js';
 import paymentPreparation from './paymentPreparation.js';
 import requests from './requests.js';
@@ -19,6 +20,7 @@ import refundAddress from './refundAddress.js';
 import tillCodes from './tillCodes.js';
 export default {
   ...emoji,
+  ...brantaReview,
   ...paymentSheetReview,
   ...paymentPreparation,
   ...requests,
@@ -738,7 +740,6 @@ export default {
   "No Lightning address yet": "Aún sin dirección Lightning",
   "Copy Nostr identifier": "Copiar identificador Nostr",
   "This profile has no Lightning address yet, so we cannot save it for payments.": "Este perfil aún no tiene dirección Lightning, así que no podemos guardarlo para pagos.",
-  "{name} hasn't published a Lightning address. Open Address Book to check again later.": "{name} no ha publicado una dirección Lightning. Abre la Libreta de Direcciones para volver a comprobarlo más tarde.",
   "Restore contacts from Nostr": "Restaurar contactos desde Nostr",
   "Sync already running": "La sincronización ya está en curso",
   "Pull contacts you saved on another device": "Recupera los contactos que guardaste en otro dispositivo",
@@ -1563,7 +1564,6 @@ export default {
   "Wallet not ready": "Billetera no lista",
   "Please make sure your wallet is unlocked.": "Por favor asegúrate de que tu billetera esté desbloqueada.",
   "Something went wrong": "Algo salió mal",
-  "Please try again in a moment.": "Por favor intenta de nuevo en un momento.",
   "Still confirming": "Aún confirmando",
   "Please wait for more confirmations before claiming.": "Por favor espera más confirmaciones antes de reclamar.",
   "Deposit not available": "Depósito no disponible",
@@ -1918,7 +1918,6 @@ export default {
   "Camera not supported in this browser.": "Tu navegador no soporta la cámara.",
   "Camera permission denied. Please allow camera access and try again.": "Acceso a la cámara denegado. Permítelo e inténtalo de nuevo.",
   "Cannot pay Spark address": "No se puede pagar esta dirección Spark",
-  "Cannot pay this contact": "No se puede pagar este contacto",
   "Confirm payment": "Confirmar pago",
   "Contact": "Contacto",
   "Copy Address": "Copiar dirección",
@@ -2508,13 +2507,7 @@ export default {
   "Nearby Bitcoin places": "Lugares Bitcoin cercanos",
   "Close filters": "Cerrar filtros",
   "Close search": "Cerrar búsqueda",
-  "Verified by Branta": "Verificado por Branta",
   "Checking the business": "Comprobando el comercio",
-  "Opens Branta's verification.": "Abre la verificación de Branta.",
-  "This code was changed": "Este código fue modificado",
-  "The address in it is not the one the business registered with Branta. Sending could pay someone else.": "La dirección que contiene no es la que el comercio registró en Branta. El pago podría llegar a otra persona.",
-  "Nothing was sent. Ask the business for a new code.": "No se envió nada. Pide al comercio un código nuevo.",
-  "Shows a business's verified name and logo before you pay. Checked privately with Branta; your payment details are never shared.": "Muestra el nombre y el logotipo verificados de un comercio antes de pagar. Se comprueba de forma privada con Branta; tus datos de pago nunca se comparten.",
   "About Branta": "Acerca de Branta",
   "You are about to pay a Kenyan phone number": "Estás a punto de pagar a un número de teléfono de Kenia",
   "You are about to pay a Zambian phone number": "Estás a punto de pagar a un número de teléfono de Zambia",
@@ -2539,7 +2532,6 @@ export default {
   "Lightning payment": "Pago Lightning",
   "Bitcoin payment": "Pago en Bitcoin",
   "Spark payment": "Pago Spark",
-  "Merchant verification": "Verificación de comercios",
 
   // ── Envío por Nostr: pagar a un npub/nprofile + reserva NIP-05 ──
   "Nostr profile": "Perfil de Nostr",
@@ -2588,7 +2580,6 @@ export default {
   // ── Lenguaje de pago unificado (solo "Pago Bitcoin") ──
   "Show details": "Mostrar detalles",
   "Free · instant": "Gratis · instantáneo",
-  "Includes a small network fee": "Incluye una pequeña comisión de red",
   "Change identity": "Cambiar identidad",
   "Switch identities or create another one": "Cambia de identidad o crea otra",
   "One recovery phrase backs every identity here. Each identity has its own profile and contacts.": "Una sola frase de recuperación respalda todas las identidades aquí. Cada identidad tiene su propio perfil y sus propios contactos.",
@@ -2813,7 +2804,6 @@ export default {
   "Check you wrote them down": "Comprueba que las anotaste",
   "Choose a username": "Elige un nombre de usuario",
   "Free · instant": "Gratis · al instante",
-  "Includes a small network fee": "Incluye una pequeña comisión de red",
   "It doesn't look like a payment request": "No parece una solicitud de pago",
   "On a website that offers sign-in with your card, tap it and paste the copied link here.": "En una web que ofrezca entrar con tu tarjeta, tócalo y pega aquí el enlace copiado.",
   "Paste a link instead": "Pegar un enlace en su lugar",
@@ -3488,7 +3478,6 @@ export default {
   "Not available while kiosk mode is on": "No disponible mientras el modo quiosco esté activo",
   "Set up a wallet in BuhoGO first": "Configura primero una cartera en BuhoGO",
   "This contact was removed": "Este contacto se quitó",
-  "Getting ready to pay {name}": "Preparando el pago a {name}",
   "Only the owner can leave the register.": "Solo el propietario puede salir de la caja.",
   "Resume": "Reanudar",
   "You need this PIN to leave the register.": "Necesitas este PIN para salir de la caja.",

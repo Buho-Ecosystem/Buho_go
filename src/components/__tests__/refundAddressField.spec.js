@@ -67,8 +67,7 @@ function load(file, extra = {}) {
 }
 
 const RefundAddressField = load('../RefundAddressField.vue')
-const PayWithField = load('../PayWithField.vue')
-const ConfirmSheet = load('../PaymentConfirmSheet.vue', { './PayWithField.vue': PayWithField, './RefundAddressField.vue': RefundAddressField })
+const ConfirmSheet = load('../PaymentConfirmSheet.vue', { './RefundAddressField.vue': RefundAddressField })
 
 async function render(component, props, { data } = {}) {
   const options = data ? { ...component, data: () => ({ ...(component.data?.() || {}), ...data }) } : component
@@ -366,7 +365,7 @@ const sheetProps = (payment = {}) => ({
 
 test('the refund row sits right under the network fee, the two as one group', async () => {
   const html = await render(ConfirmSheet, sheetProps({ feeEstimate: { sats: 3 }, refund: row() }))
-  const group = html.indexOf('class="fact-group"')
+  const group = html.indexOf('class="fact-group payment-summary"')
   assert.ok(group > 0)
   assert.match(html, /class="fee-row fee-row--joined"/)
   assert.ok(html.indexOf('fee-row') < html.indexOf('refund-row'))
@@ -375,7 +374,7 @@ test('the refund row sits right under the network fee, the two as one group', as
 
 test('without a fee row the refund row stands alone; without either there is no group', async () => {
   const alone = await render(ConfirmSheet, sheetProps({ refund: row() }))
-  assert.match(alone, /class="fact-group"/)
+  assert.match(alone, /class="fact-group payment-summary"/)
   assert.doesNotMatch(alone, /refund-row--joined|fee-row--joined/)
   const feeOnly = await render(ConfirmSheet, sheetProps({ feeEstimate: { sats: 3 } }))
   assert.match(feeOnly, /class="fee-row"/)
