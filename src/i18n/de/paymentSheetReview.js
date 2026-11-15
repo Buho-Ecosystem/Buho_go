@@ -11,4 +11,11 @@ export default {
   "Minimum is {amount}": "Mindestens {amount}",
   "Maximum is {amount}": "Höchstens {amount}",
   "Change currency": "Währung wechseln",
+  "No current exchange rate. Enter the amount in Bitcoin.": "Kein aktueller Wechselkurs. Gib den Betrag in Bitcoin ein.",
+  "{amount} + fees": "{amount} + Gebühren",
+  "Remaining before fees": "Verbleibend vor Gebühren",
+  "Fees come on top. Your balance may not cover every payment.": "Gebühren kommen noch dazu. Dein Guthaben reicht vielleicht nicht für jede Zahlung.",
+  "The fee could not be calculated.": "Die Gebühr konnte nicht berechnet werden.",
+  "{amount} stays in {wallet} for the fee.": "{amount} bleibt für die Gebühr in {wallet}.",
+  "{amount} today": "{amount} heute",
 };

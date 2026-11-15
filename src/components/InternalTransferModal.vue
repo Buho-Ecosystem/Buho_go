@@ -114,16 +114,17 @@
               placeholder="0"
               @input="onAmountInput"
             />
-            <span class="amount-unit">sats</span>
+            <span class="amount-unit">{{ bitcoinUnit }}</span>
           </div>
           <p class="hint">{{ $t('Available') }}: {{ fmt(state.fromWallet?.balance || 0) }}</p>
           <div class="quick-row">
             <button v-for="p in [25, 50, 75]" :key="p" type="button" class="quick-chip" @click="setPercent(p)">{{ p }}%</button>
-            <button type="button" class="quick-chip quick-chip--max" @click="setMax">Max</button>
+            <button type="button" class="quick-chip quick-chip--max" @click="setMax">{{ $t('Max') }}</button>
           </div>
-          <p v-if="state.isMaxAmount" class="fee-hint">
+          <!-- "Max" says what it keeps back, as a figure. -->
+          <p v-if="maxKeptText" class="fee-hint">
             <Icon icon="tabler:info-circle" width="12" height="12" />
-            {{ $t('Small buffer reserved for network fees. If transfer fails, try lowering the amount.') }}
+            {{ maxKeptText }}
           </p>
           <div v-if="state.amountError" class="banner banner--error">
             <Icon icon="tabler:alert-circle" width="14" height="14" />
@@ -149,7 +150,22 @@
               <span>{{ state.toWallet?.name }}</span>
             </div>
           </div>
-          <p class="note">{{ transferNote }}</p>
+          <!-- What the transfer can cost, said before it is confirmed, in the
+               payment review's words: a limit the send is held to ("Up to"),
+               "Free", or one line where the wallet cannot tell beforehand. -->
+          <div class="cost-rows">
+            <div class="cost-row">
+              <template v-if="transferCost.feeText">
+                <span>{{ $t('Network fee') }}</span>
+                <span>{{ transferCost.feeText }}</span>
+              </template>
+              <span v-else role="status">{{ transferCost.feeNote }}</span>
+            </div>
+            <div class="cost-row cost-row--total">
+              <span>{{ $t('Total') }}</span>
+              <strong>{{ transferCost.totalText }}</strong>
+            </div>
+          </div>
         </section>
 
         <!--
@@ -164,7 +180,9 @@
         <section v-if="state.transferComplete" class="step-panel step-panel--center transfer-success">
           <SuccessCheckmark :animate="state.transferComplete" accent="green" />
           <div class="success-label">{{ $t('Transfer Complete') }}</div>
-          <div class="success-amount">{{ fmt(amountSats() || 0) }}</div>
+          <!-- What was moved, and what it cost when the paying wallet reports it. -->
+          <div class="success-amount">{{ fmt(state.movedSats) }}</div>
+          <div v-if="state.feePaidSats > 0" class="success-route">{{ $t('Network fee') }} · {{ fmt(state.feePaidSats) }}</div>
           <div class="success-route">{{ state.fromWallet?.name }} → {{ state.toWallet?.name }}</div>
         </section>
 
@@ -264,6 +282,8 @@
 <script setup>
 import { ref, reactive, computed, watch, nextTick, h, getCurrentInstance } from 'vue';
 import { parsePaymentAmount } from '../utils/paymentAmountInput.js';
+import { formatPaymentAmount } from '../utils/amountFormatting.js';
+import { unquotedFeeLimitSats, feeReserveSats, paymentFeeText, paymentTotalText } from '../utils/payingWallets.js';
 import { useQuasar } from 'quasar';
 import { useWalletStore } from '../stores/wallet';
 import { haptics } from '../utils/haptics';
@@ -394,7 +414,12 @@ const state = reactive({
   transferComplete: false,
   transactionId: null,
   isReconnecting: false,
-  isMaxAmount: false
+  isMaxAmount: false,
+  // What "Max" left in the source wallet, and what the finished transfer
+  // moved and cost (the fee only when the paying wallet reported one).
+  maxKeptSats: 0,
+  movedSats: 0,
+  feePaidSats: 0
 });
 
 // ─────────────────────────────────────────────────────────────
@@ -410,14 +435,41 @@ const detailsRoute = computed(() => internalTransferDetailsRoute(state.transacti
 const wallets = computed(() => store.getTransferableWallets());
 const sameWalletSelected = computed(() => state.fromWallet && state.toWallet && state.fromWallet.id === state.toWallet.id);
 
-// An Arkade leg rides a Lightning swap, so a small swap fee applies — say so
-// instead of promising a plain instant Lightning hop.
-const transferNote = computed(() => {
-  const arkadeLeg = state.fromWallet?.type === 'arkade' || state.toWallet?.type === 'arkade';
-  return arkadeLeg
-    ? t('This transfer happens via Lightning and includes a small swap fee')
-    : t('This transfer happens instantly via Lightning');
+const walletKind = (wallet) => (wallet?.type || 'nwc').toLowerCase();
+const bitcoinUnit = computed(() => (store.useBip177Format ? '₿' : 'sats'));
+
+/**
+ * What the transfer can cost on top of its amount, by what the send is held
+ * to. Never a guess:
+ *   free     between two Spark wallets: sent only when no fee is quoted.
+ *   limit    from a Spark wallet to another kind: the wallet refuses a
+ *            route that costs more than unquotedFeeLimitSats of the amount.
+ *   unknown  from any other wallet: it cannot say before sending.
+ */
+const transferCost = computed(() => {
+  const amount = amountSats() || 0;
+  const from = walletKind(state.fromWallet);
+  if (from !== 'spark') {
+    return {
+      kind: 'unknown', feeText: '',
+      feeNote: t('Fee calculated when sending.'),
+      totalText: paymentTotalText(amount, null, false, fmt, t),
+    };
+  }
+  const free = walletKind(state.toWallet) === 'spark';
+  const feeSats = free ? 0 : unquotedFeeLimitSats(amount);
+  // Worded by the payment review's own functions (payingWallets).
+  return {
+    kind: free ? 'free' : 'limit', feeNote: '',
+    feeText: paymentFeeText(feeSats, !free, fmt, t),
+    totalText: paymentTotalText(amount, feeSats, !free, fmt, t),
+  };
 });
+
+/** "Max" names what it left in the wallet. */
+const maxKeptText = computed(() => (state.isMaxAmount && state.maxKeptSats > 0
+  ? t('{amount} stays in {wallet} for the fee.', { amount: fmt(state.maxKeptSats), wallet: state.fromWallet?.name || t('Wallet') })
+  : ''));
 
 const canProceed = computed(() => {
   if (state.isTransferring) return false;
@@ -433,7 +485,8 @@ const canProceed = computed(() => {
 // ─────────────────────────────────────────────────────────────
 // Helpers
 // ─────────────────────────────────────────────────────────────
-const fmt = (sats) => sats ? `${sats.toLocaleString()} sats` : '0 sats';
+// Amounts as Settings writes them ("₿ 1,234" or "1,234 sats"), through the app's formatter.
+const fmt = (sats) => formatPaymentAmount(sats || 0, { kind: 'sats', bip177: !!store.useBip177Format });
 
 // ─────────────────────────────────────────────────────────────
 // Methods
@@ -504,25 +557,31 @@ function setPercent(p) {
   validateAmount();
 }
 
+/**
+ * The most that can be moved so the amount and what the transfer can cost
+ * both fit in the balance. Between Spark wallets nothing is kept back.
+ * Otherwise the app's fee reserve for the amount stays behind
+ * (feeReserveSats: for a Spark wallet exactly the limit the payment is held
+ * to, for the others the reserve every "has enough" check uses).
+ */
+function maxTransferable(balance) {
+  if (transferCost.value.kind === 'free') return balance;
+  let low = 0;
+  let high = balance;
+  while (low < high) {
+    const mid = Math.ceil((low + high) / 2);
+    if (mid + feeReserveSats(mid) <= balance) low = mid;
+    else high = mid - 1;
+  }
+  return low;
+}
+
 function setMax() {
   if (!state.fromWallet) return;
-  const balance = state.fromWallet.balance || 0;
-
-  // Calculate fee buffer based on balance size (all integers)
-  let feeBuffer;
-  if (balance < 100) {
-    // Small balance: reserve ~5% with minimum 1 sat
-    feeBuffer = Math.max(1, Math.ceil(balance * 0.05));
-  } else if (balance < 1000) {
-    // Medium balance: reserve ~2% with minimum 5 sats
-    feeBuffer = Math.max(5, Math.ceil(balance * 0.02));
-  } else {
-    // Large balance: reserve ~1% with minimum 10 sats, max 100 sats
-    feeBuffer = Math.min(100, Math.max(10, Math.ceil(balance * 0.01)));
-  }
-
-  const maxAmount = Math.floor(Math.max(0, balance - feeBuffer));
+  const balance = Math.max(0, Math.floor(state.fromWallet.balance || 0));
+  const maxAmount = maxTransferable(balance);
   state.amount = maxAmount.toString();
+  state.maxKeptSats = balance - maxAmount;
   state.isMaxAmount = true;
   validateAmount();
 }
@@ -532,8 +591,8 @@ function validateAmount() {
   if (state.amount === '' || state.amount == null) return;
   const n = amountSats();
   if (n === null) state.amountError = t('Check the amount format.');
-  else if (n <= 0) state.amountError = 'Amount must be greater than 0';
-  else if (n > (state.fromWallet?.balance || 0)) state.amountError = 'Insufficient balance';
+  else if (n <= 0) state.amountError = t('Amount must be greater than 0');
+  else if (n > (state.fromWallet?.balance || 0)) state.amountError = t('Insufficient balance');
 }
 
 function onAmountInput() {
@@ -561,11 +620,17 @@ async function doTransfer() {
   if (state.isTransferring) return;
   state.isTransferring = true;
   try {
-    const result = await store.transferBetweenWallets(state.fromWallet.id, state.toWallet.id, amountSats());
+    const amount = amountSats();
+    const result = await store.transferBetweenWallets(state.fromWallet.id, state.toWallet.id, amount);
     state.transactionId = result.transactionId;
+    // The finished transfer's own figures, not the field's: the amount that
+    // was moved and, only when the paying wallet reports one, the fee paid.
+    state.movedSats = Number.isSafeInteger(result.amount) && result.amount > 0 ? result.amount : amount;
+    const feePaid = Number(result.paymentResult?.fee);
+    state.feePaidSats = Number.isSafeInteger(feePaid) && feePaid > 0 ? feePaid : 0;
     state.transferComplete = true;
     haptics.success();
-    emit('transfer-complete', { fromWallet: state.fromWallet, toWallet: state.toWallet, amount: amountSats() });
+    emit('transfer-complete', { fromWallet: state.fromWallet, toWallet: state.toWallet, amount: state.movedSats });
   } catch (e) {
     // Surface the failure in the global payment-error dialog so the
     // transfer-fail screen looks the same as every other payment
@@ -596,6 +661,9 @@ function resetState() {
     transferComplete: false,
     transactionId: null,
     isMaxAmount: false,
+    maxKeptSats: 0,
+    movedSats: 0,
+    feePaidSats: 0,
     isReconnecting: false
   });
   Object.keys(connStatus).forEach(k => delete connStatus[k]);
@@ -907,7 +975,10 @@ watch(() => props.modelValue, (open) => { if (open) init(); });
   align-items: center;
   justify-content: center;
 }
-.note { margin: 0; font-size: 13px; color: var(--c-text2); }
+.cost-rows { width: 100%; max-width: 320px; margin: 0 auto; display: flex; flex-direction: column; gap: 8px; }
+.cost-row { display: flex; justify-content: space-between; gap: 12px; font-size: 14px; color: var(--c-text2); text-align: left; }
+.cost-row--total { padding-top: 8px; border-top: 1px solid var(--c-border); color: var(--c-text); }
+.cost-row--total strong { font-weight: 700; }
 
 /* ════════════════════════════════════════════════════════════
    Success

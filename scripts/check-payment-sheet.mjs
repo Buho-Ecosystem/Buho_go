@@ -281,11 +281,14 @@ try {
     await sheet().locator('.top-btn').click(); await cancel();
   });
 
-  await step('Guesses and failed quote requests never appear as prepared numeric fees', async () => {
+  await step('Guesses and failed quote requests never appear as fees: the sheet states the limit the payment is held to', async () => {
     for (const mode of ['guess', 'failure']) {
       quoteMode = mode; await open(invoice); await page.waitForTimeout(450);
-      assert.equal(await sheet().locator('.fee-row-value').count(), 0, `${mode} fee is not displayed as a quote`);
-      assert.ok(!(await sheet().innerText()).includes('9876')); await cancel();
+      // No quote exists, so no fee is stated. What is stated is the limit
+      // the send is then held to, marked as one; the guess never shows.
+      assert.match((await sheet().locator('.fee-row-value').innerText()).trim(), /^Up to /, `${mode}: a limit, not a quote`);
+      assert.match((await sheet().locator('.payment-total-row strong').innerText()).trim(), /^Up to /, `${mode}: the total is a limit too`);
+      assert.ok(!(await sheet().innerText()).includes('9876'), `${mode}: the guess is never shown`); await cancel();
     }
     quoteMode = 'real';
   });

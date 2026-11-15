@@ -372,6 +372,7 @@ import { Invoice } from '@getalby/lightning-tools';
 import { useWalletStore } from '../../stores/wallet';
 import { payWithNwc } from '../../services/nwcPayment.js';
 import { buildPaymentError } from '../../utils/userErrors.js';
+import { isUnconfirmedPayment } from '../../utils/paymentOutcome.js';
 import { useNadanadaOrdersStore } from '../../stores/nadanadaOrders';
 import {
   redeemOrder, orderReceiptText, ORDER_KIND, ORDER_STATE,
@@ -858,9 +859,11 @@ export default {
           walletType: wallet.type,
           useBip177Format: this.walletStore.useBip177Format,
         }, this.$t.bind(this)).reason : '';
-        this.payError = msg
-          ? this.$t('Payment didn’t go through: {msg}', { msg })
-          : this.$t('Payment didn’t go through. Try again.');
+        // A payment whose outcome is unknown is not one that "didn't go
+        // through": its own sentence says to check History first.
+        this.payError = isUnconfirmedPayment(err) && msg ? msg
+          : msg ? this.$t('Payment didn’t go through: {msg}', { msg })
+            : this.$t('Payment didn’t go through. Try again.');
         this.actionInflight = false;
         return;
       }

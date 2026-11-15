@@ -12,7 +12,7 @@
  */
 
 import assert from 'node:assert/strict'
-import { test } from 'node:test'
+import { test, after } from 'node:test'
 import { readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { transformSync } from 'esbuild'
@@ -22,6 +22,21 @@ import * as amountFormatting from '../../utils/amountFormatting.js'
 import { normalizePaymentAmountInput } from '../../utils/paymentAmountInput.js'
 import * as payingWallets from '../../utils/payingWallets.js'
 import { safeBrantaUrl, brantaAvatar } from '../../utils/branta.js'
+import '../../__tests__/memoryStorage.js'
+
+// The real rates service, off the network: the sheet reads its rule for
+// turning a typed fiat amount into Bitcoin.
+const realFetch = globalThis.fetch
+globalThis.fetch = async () => ({ ok: false, status: 503, statusText: 'offline', json: async () => ({}) })
+const { warn, error } = console
+console.warn = console.error = () => {}
+const { FiatRatesService, fiatRatesService: appRates } = await import('../../utils/fiatRates.js')
+appRates.stopAutoUpdate()
+// The app's own instance asks for rates once when it loads: let that end, unheard.
+await appRates.inflight
+Object.assign(console, { warn, error })
+const ratesService = new FiatRatesService()
+after(() => { globalThis.fetch = realFetch })
 
 const sfc = createRequire(import.meta.url)('@vue/compiler-sfc')
 
@@ -83,7 +98,7 @@ const ConfirmSheet = load('../PaymentConfirmSheet.vue', {
   ...baseDeps,
   '../utils/amountFormatting.js': amountFormatting,
   '../utils/fiatCurrencies.js': { FIAT_SYMBOLS: {} },
-  '../utils/fiatRates.js': { fiatRatesService: {} },
+  '../utils/fiatRates.js': { fiatRatesService: ratesService },
 })
 
 async function render(component, props, { data, directives = [], locale } = {}) {
@@ -901,10 +916,10 @@ test('legacy sats and BIP177 stay consistent and small converted fees never pret
     assert.equal(ConfirmSheet.computed.feeRowValueText.call(vm), useBip177Format ? '₿\u00a07' : '7\u00a0sats')
     assert.equal(ConfirmSheet.computed.totalRowValueText.call(vm), useBip177Format ? `₿\u00a0${n(2407)}` : `${n(2407)}\u00a0sats`)
   }
-  const fiat = { currentCurrency: 'usd', fiatCurrencyCode: 'USD', fiatRates: { USD: 85000 }, payment: { feeEstimate: { sats: 1 } } }
+  const fiat = { currentCurrency: 'usd', fiatCurrencyCode: 'USD', fiatRate: 85000, payment: { feeEstimate: { sats: 1 } } }
   assert.equal(ConfirmSheet.computed.feeRowValueText.call(fiat), `≈\u00a0<\u00a0${(0.01).toLocaleString()}\u00a0USD`)
   // The anchor of a fixed amount shown in fiat is a conversion too, and says so.
-  const anchor = { currentCurrency: 'usd', fiatCurrencyCode: 'USD', fiatRates: { USD: 100000 }, fixedSats: 2400 }
+  const anchor = { currentCurrency: 'usd', fiatCurrencyCode: 'USD', fiatRate: 100000, fixedSats: 2400 }
   assert.equal(ConfirmSheet.computed.fixedAmountDisplay.call(anchor), `≈\u00a0${(2.4).toLocaleString(undefined, { minimumFractionDigits: 2 })}`)
 })
 
@@ -1108,4 +1123,56 @@ test('blur pads canonical decimals without floating-point rounding or changing a
   ConfirmSheet.methods.onAmountBlur.call(unsafe)
   assert.equal(unsafe.displayAmount, '9007199254740992')
   assert.equal(ConfirmSheet.computed.amountInSats.call(unsafe), 0)
+})
+
+test('an amount typed in fiat is turned into Bitcoin only at a rate fetched within the hour, and never sent at an older one', async () => {
+  const HOUR = 60 * 60 * 1000
+  // The service holds a euro rate fetched `age` ago, and a shilling rate its own source has failed to renew for a month.
+  const hold = (age) => Object.assign(ratesService, {
+    rates: { EUR: 90000, KES: 9_000_000 }, rateTimes: { EUR: Date.now() - age, KES: Date.now() - 30 * 24 * HOUR },
+    lastUpdate: new Date(), ratesAvailable: true,
+  })
+  // The sheet as a live object: every computed reads the state it has now.
+  const emitted = []
+  const vm = {
+    ...ConfirmSheet.methods, ...ConfirmSheet.data.call({ payment: null }), $t: t, $emit: (...event) => emitted.push(event),
+    $refs: {}, $nextTick: (next) => next?.(), show: true, payment: { amount: { mode: 'free' } }, verb: 'send', walletCanPay: true, commitGate: true, payingWallets: [],
+  }
+  for (const [name, compute] of Object.entries(ConfirmSheet.computed)) {
+    if (typeof compute === 'function' && !(name in vm)) Object.defineProperty(vm, name, { get: compute.bind(vm) })
+  }
+  walletState.preferredFiatCurrency = 'EUR'
+  walletState.denominationCurrency = 'eur'
+  try {
+    hold(10 * 60 * 1000)
+    vm.resetForFreshOpen()
+    await vm.loadFiatRates()
+    vm.displayAmount = '50.00'
+    assert.equal(vm.amountInSats, 55555)
+    assert.equal(vm.canSubmit, true)
+
+    // The reviewer's probe: the last good fetch was three hours ago, and the service still hands the rate out.
+    hold(3 * HOUR)
+    assert.equal((await ratesService.getRates()).EUR, 90000)
+    assert.equal(vm.amountInSats, 0, 'nothing is converted at a three-hour-old rate')
+    vm.emitConfirm()
+    assert.deepEqual(emitted.filter(([name]) => name === 'confirm'), [], 'and nothing is sent')
+    // What Vue's watcher does once the rate is gone: the amount is typed in Bitcoin, and one line says why.
+    ConfirmSheet.watch.fiatUnavailable.call(vm, vm.fiatUnavailable)
+    assert.deepEqual([vm.currentCurrency, vm.displayAmount], ['sats', ''])
+    assert.equal(vm.rateNotice, 'No current exchange rate. Enter the amount in Bitcoin.')
+    vm.toggleCurrency()
+    assert.equal(vm.currentCurrency, 'sats', 'fiat is not offered')
+    await Promise.resolve()
+
+    // A currency is not current because the others were just fetched.
+    hold(10 * 60 * 1000)
+    walletState.preferredFiatCurrency = 'KES'
+    Object.assign(vm, { currentCurrency: 'kes', displayAmount: '5000' })
+    assert.equal(ratesService.areRatesStale(), false)
+    assert.equal(vm.amountInSats, 0, 'a month-old rate converts nothing')
+  } finally {
+    delete walletState.preferredFiatCurrency
+    delete walletState.denominationCurrency
+  }
 })

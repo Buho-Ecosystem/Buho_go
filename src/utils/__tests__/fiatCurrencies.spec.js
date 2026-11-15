@@ -18,6 +18,7 @@ import {
   fiatSymbol,
   fiatFlag,
   freshRate,
+  fiatToSats,
   RATE_MAX_AGE_MS,
 } from '../fiatCurrencies.js'
 
@@ -103,6 +104,16 @@ test('freshRate uses a price for an hour after it was fetched, then not at all (
   assert.equal(freshRate(rates, {}, 'USD', now), 0, 'a price of unknown age is not used')
   assert.equal(freshRate({ usd: 0 }, { usd: now }, 'USD', now), 0)
   assert.equal(freshRate(undefined, undefined, 'USD', now), 0)
+})
+
+test('fiatToSats converts in exact arithmetic, rounded down, and reads nothing it is not sure of', () => {
+  assert.equal(Math.floor((0.21 / 100000) * 100000000), 209, 'the float this replaces')
+  assert.equal(fiatToSats('0.21', 100000), 210)
+  assert.equal(fiatToSats(0.21, 100000), 210)
+  assert.equal(fiatToSats('50.00', 90000), 55555)
+  assert.equal(fiatToSats('1', 3), 33_333_333, 'rounded down, never up')
+  for (const amount of ['', 'abc', '1,5', '1e3', '-5', null]) assert.equal(fiatToSats(amount, 100000), 0, String(amount))
+  for (const rate of [0, -1, NaN, Infinity, undefined]) assert.equal(fiatToSats('50', rate), 0, String(rate))
 })
 
 console.log(`\n${passed} passed, ${failed} failed`)

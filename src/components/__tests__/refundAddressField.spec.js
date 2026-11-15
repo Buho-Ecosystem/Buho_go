@@ -46,7 +46,7 @@ const deps = {
   '../utils/amountFormatting.js': amountFormatting,
   '../utils/payingWallets.js': payingWallets,
   '../utils/fiatCurrencies.js': { FIAT_SYMBOLS: {} },
-  '../utils/fiatRates.js': { fiatRatesService: {} },
+  '../utils/fiatRates.js': { fiatRatesService: { freshRate: () => 0 } },
 }
 
 function run(code, extra = {}) {

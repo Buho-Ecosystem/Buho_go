@@ -1546,8 +1546,9 @@ export const useTransactionMetadataStore = defineStore('transactionMetadata', {
       await this._ensureLoaded()
       if (!Array.isArray(transactions) || transactions.length === 0) return 0
       const cur = String(currency || 'USD').toUpperCase()
-      if (!fiatRatesService.ratesAvailable) return 0
-      const rate = fiatRatesService.rates[cur]
+      // The value at settlement is stamped only at a current rate: an old
+      // one would be kept as that payment's value for good.
+      const rate = fiatRatesService.freshRate(cur)
       if (!rate) return 0
 
       const now = Date.now()

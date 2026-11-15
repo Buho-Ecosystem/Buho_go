@@ -61,6 +61,19 @@ import {
   arkadeIdentityFromMnemonic,
 } from '../utils/arkadeKeys';
 
+import { assertOnline, isUnconfirmedPayment, unconfirmedPayment, withinPaymentDeadline } from '../utils/paymentOutcome.js';
+
+/**
+ * True when the SDK stopped a send before the Arkade server was asked for
+ * anything: the wallet holds too little, or the amount or its change cannot
+ * be sent as asked. Every other error from a send (a batch that broke off,
+ * a dropped connection) says nothing about the payment.
+ */
+export function arkadeRefusedPayment(error) {
+  if (error?.name === 'DustChangeError' || error?.name === 'OversizedChangeError') return true;
+  return /\binsufficient funds\b|^selected vtxos net\b|\bmust be positive\b|\bbelow dust\b/i.test(String(error?.message || error || ''));
+}
+
 // Arkade brand accent (light-mode orange). Matches the Spark `#15DE72` /
 // LNbits `#FF1FE1` convention for `getInfo().color`.
 const ARKADE_COLOR = '#F14317';
@@ -518,7 +531,7 @@ export class ArkadeWalletProvider extends WalletProvider {
    */
   async transferToArkadeAddress({ arkadeAddress, amount }) {
     this._ensureConnected();
-    const txid = await this.wallet.send({ address: arkadeAddress, amount: Math.floor(Number(amount)) });
+    const txid = await this._dispatch(() => this.wallet.send({ address: arkadeAddress, amount: Math.floor(Number(amount)) }));
     // An ark-to-ark send can strand its change below dust, same as a Lightning
     // send. See _recoverChangeAfterSend.
     this._recoverChangeAfterSend();
@@ -578,6 +591,24 @@ export class ArkadeWalletProvider extends WalletProvider {
     return createDefaultPaymentRouter(this.wallet).route({ raw: bitcoinAddress, amount: sats, selectedVtxos });
   }
 
+  /**
+   * Run a send. Once the SDK has it, an error is a failure only when it
+   * names a reason that stops a send before the server is asked
+   * (arkadeRefusedPayment). Any other error, and a wait past
+   * PAYMENT_COMPLETION_TIMEOUT_MS, is PAYMENT_UNCONFIRMED: the server may
+   * have taken the payment on.
+   */
+  async _dispatch(send) {
+    // Without a network nothing leaves: a plain failure.
+    assertOnline();
+    try {
+      return await withinPaymentDeadline(send());
+    } catch (error) {
+      if (isUnconfirmedPayment(error) || arkadeRefusedPayment(error)) throw error;
+      throw unconfirmedPayment(error);
+    }
+  }
+
   async getBitcoinSendFeeEstimate(params) {
     const { amount, fee, total } = await this._quoteOffboard(params);
     return { amount, fee, total };
@@ -591,8 +622,9 @@ export class ArkadeWalletProvider extends WalletProvider {
         err.code = 'ARKADE_OFFBOARD_FEE_CHANGED';
         throw err;
       }
-      const handle = await quote.send();
-      const { txid } = await handle.settled();
+      // The settlement is a batch with the server: it gets the wait every
+      // send has, and past it the payment is unconfirmed, never failed.
+      const { txid } = await this._dispatch(async () => (await quote.send()).settled());
       return { id: txid, status: 'completed', fee: quote.fee };
     } catch (error) {
       if (!error.code) error.code = 'ARKADE_OFFBOARD_FAILED';

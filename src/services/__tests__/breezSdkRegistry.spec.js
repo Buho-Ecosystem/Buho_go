@@ -63,7 +63,7 @@ globalThis.__breezFakeCtl = {
   build: async () => makeFakeSdk(),
 };
 
-const { ensureWasmInit, acquire, release, subscribe, peek } =
+const { ensureWasmInit, acquire, release, subscribe, peek, lookupLightningAddress } =
   await import('../breezSdk.js');
 
 const OPTS = { mnemonic: 'not-a-real-seed', accountNumber: 1, network: 'MAINNET' };
@@ -144,6 +144,58 @@ await test('forceReinit keeps subscribers hearing events on the new instance', a
 
 await test('release without a live instance is a quiet no-op', async () => {
   await release('never-acquired');
+});
+
+await test('authoritative address checks use quiet, empty storage and leave live instances alone', async () => {
+  const options = [];
+  const lookupSdks = [];
+  globalThis.__breezFakeCtl.build = async (opts) => {
+    options.push(opts);
+    const sdk = makeFakeSdk();
+    sdk.getLightningAddress = async () => ({ lightningAddress: 'fresh@breez.tips', username: 'fresh' });
+    lookupSdks.push(sdk);
+    return sdk;
+  };
+  const live = peek('w3');
+  const first = await lookupLightningAddress(OPTS.mnemonic, OPTS);
+  const second = await lookupLightningAddress(OPTS.mnemonic, OPTS);
+  assert.equal(first.username, 'fresh');
+  assert.equal(second.username, 'fresh');
+  assert.notEqual(options[0].storageDir, options[1].storageDir);
+  assert.equal(options[0].config.backgroundTasksEnabled, false);
+  assert.equal(options[0].config.realTimeSyncServerUrl, undefined);
+  assert.equal(options[0].config.lnurlDomain, 'breez.tips');
+  assert.equal(options[0].accountNumber, OPTS.accountNumber);
+  assert.ok(lookupSdks.every(sdk => sdk.disconnected));
+  assert.equal(peek('w3'), live);
+});
+
+await test('an unavailable address lookup throws and always tears down its disposable instance', async () => {
+  let lookupSdk;
+  globalThis.__breezFakeCtl.build = async () => {
+    lookupSdk = makeFakeSdk();
+    lookupSdk.getLightningAddress = async () => { throw new Error('address server unavailable'); };
+    return lookupSdk;
+  };
+  await assert.rejects(() => lookupLightningAddress(OPTS.mnemonic, OPTS), /address server unavailable/);
+  assert.equal(lookupSdk.disconnected, true);
+});
+
+await test('a timed-out lookup never publishes its late answer and still cleans up', async () => {
+  let releaseBuild;
+  let lookupSdk;
+  globalThis.__breezFakeCtl.build = () => new Promise(resolve => {
+    releaseBuild = () => {
+      lookupSdk = makeFakeSdk();
+      lookupSdk.getLightningAddress = async () => ({ lightningAddress: 'late@breez.tips' });
+      resolve(lookupSdk);
+    };
+  });
+  await assert.rejects(() => lookupLightningAddress(OPTS.mnemonic, { ...OPTS, timeoutMs: 10 }), /timed out/);
+  releaseBuild();
+  await tick();
+  await tick();
+  assert.equal(lookupSdk.disconnected, true);
 });
 
 console.log(`\n${passed} passed, ${failed} failed`);

@@ -93,6 +93,12 @@ async function seedUnreachableSpark() {
 }
 
 const sheet = page.locator('.sheet-card:not(.sheet-card--redeem)');
+// Without a quote the sheet states no fee. It may state the limit the payment is
+// held to ("Up to …"), which is enforced when sending and is not a guess.
+const noGuessedFee = async (label) => {
+  const value = sheet.locator('.fee-row-value');
+  if (await value.count()) assert.match((await value.first().innerText()).trim(), /^Up to /, label);
+};
 const notice = sheet.locator('.wallet-hint[role="status"]');
 const dialog = page.locator('.error-dialog');
 
@@ -114,7 +120,7 @@ async function openSheet() {
 
 /** Send, and read what the error says once its connection check is done. */
 async function sendAndRead() {
-  await sheet.getByRole('button', { name: /^Send .*sats$/ }).click();
+  await sheet.getByRole('button', { name: /^Send/ }).click();
   await dialog.waitFor();
   await page.waitForFunction((checking) => document.querySelector('.error-dialog .error-reason')?.textContent.trim() !== checking, SAYS.checking);
   await page.waitForTimeout(400); // faded in, so its screenshot is readable
@@ -163,7 +169,7 @@ try {
   assert.ok(await sheet.locator('.top-btn svg path').count() > 0, 'the back arrow draws');
   await notice.waitFor();
   assert.equal((await notice.textContent()).trim(), SAYS.noInternet);
-  assert.equal(await sheet.locator('.fee-row').count(), 0, 'no guessed fee');
+  await noGuessedFee('no guessed fee');
   await page.screenshot({ path: `${output}/sheet-no-internet.png` });
   console.log('✓ no internet: said in the sheet before the slide, no guessed fee');
 

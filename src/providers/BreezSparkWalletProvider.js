@@ -58,6 +58,10 @@ import {
 import { reportSparkAttempt } from '../services/sparkReachabilityCheck.js';
 import { classifyTransportFailure } from '../utils/userErrors.js';
 import { FEE_RESERVE_MIN_SATS, unquotedFeeLimitSats } from '../utils/payingWallets.js';
+import { readInvoice } from '../utils/nwcWallet.js';
+import {
+  PAYMENT_COMPLETION_TIMEOUT_MS, PAYMENT_FAILED, assertOnline, isUnconfirmedPayment, unconfirmedPayment, withinPaymentDeadline,
+} from '../utils/paymentOutcome.js';
 
 /**
  * One fresh synchronization per SDK instance at a time. Keyed by the SDK
@@ -86,6 +90,32 @@ function preparedRouteOf(method, input, useSpark = false) {
   };
 }
 
+/**
+ * True when the SDK stopped a send before anything left the wallet: it
+ * holds too little for it, or it will not take the input. Every other
+ * error from a send says nothing about the payment (a dropped connection,
+ * a service error after the request went out), so it is never a failure.
+ */
+export function sparkRefusedPayment(error) {
+  const message = String(error?.message || error || '');
+  return /\binsufficient funds\b/i.test(message) || /\binvalid (input|uuid)\b/i.test(message);
+}
+
+/**
+ * The same for a send to a Bitcoin address, where the service also turns a
+ * request down over the wallet's balance or a fee quote it no longer
+ * honours. Nothing was taken on in either case.
+ */
+function sparkRefusedWithdrawal(error) {
+  const message = String(error?.message || error || '').toLowerCase();
+  return sparkRefusedPayment(error) || message.includes('insufficient') || message.includes('balance') || message.includes('quote');
+}
+
+/** A new key for one payment, where the platform can make one. */
+function newIdempotencyKey() {
+  return (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : undefined;
+}
+
 function syncError(message, code) {
   const err = new Error(message);
   err.code = code;
@@ -112,6 +142,7 @@ export class BreezSparkWalletProvider extends WalletProvider {
 
     this._identityPubkey = null;
     this._lightningAddress = null;
+    this._hasLightningAddressSnapshot = false;
     this._cachedL1Address = null;
     this._eventUnsubscribers = new Set();
     // invoice -> { prepareResponse, at } (fee estimate reused by the send)
@@ -326,8 +357,12 @@ export class BreezSparkWalletProvider extends WalletProvider {
    *   wallet is known to have held (user@domain or bare username)
    * @returns {Promise<string>} the wallet's address (kept, reclaimed, or new)
    */
-  async ensureLightningAddress({ previousAddress = null } = {}) {
+  async ensureLightningAddress({ previousAddress = null, beforeRegister = async () => {} } = {}) {
     this._ensureConnected();
+    if (this._hasLightningAddressSnapshot) {
+      if (this._lightningAddress) return this._lightningAddress;
+      return registerRandomLightningAddress(this, { beforeRegister });
+    }
 
     let info;
     try {
@@ -344,18 +379,19 @@ export class BreezSparkWalletProvider extends WalletProvider {
       ? String(previousAddress).trim().split('@')[0]
       : '';
     if (previousUsername) {
-      try {
-        const reclaimed = await this.sdk.registerLightningAddress({ username: previousUsername });
+      // Only a confirmed collision justifies abandoning the remembered name.
+      // Network errors and rate limits must not consume another reservation.
+      if (await this.checkLightningAddressAvailable(previousUsername)) {
+        await beforeRegister(previousUsername);
+        const reclaimed = await this.registerLightningAddress(previousUsername);
         if (reclaimed?.lightningAddress) {
           this._lightningAddress = reclaimed.lightningAddress;
           return reclaimed.lightningAddress;
         }
-      } catch (err) {
-        console.warn('Could not reclaim the previous Lightning address:', err?.message || err);
       }
     }
 
-    return registerRandomLightningAddress(this);
+    return registerRandomLightningAddress(this, { beforeRegister });
   }
 
   async connect() {
@@ -382,6 +418,7 @@ export class BreezSparkWalletProvider extends WalletProvider {
     this._lightningAddress = null;
     this._cachedL1Address = null;
     this.isConnected = false;
+    this._hasLightningAddressSnapshot = false;
   }
 
   enablePrivacyMode() {
@@ -627,15 +664,20 @@ export class BreezSparkWalletProvider extends WalletProvider {
     return this._lightningAddress;
   }
 
+  /** A server lookup by the store can be newer than the SDK's local cache. */
+  noteLightningAddress(info) {
+    this._lightningAddress = info?.lightningAddress || null;
+    this._hasLightningAddressSnapshot = true;
+  }
+
   async getLightningAddress() {
     this._ensureConnected();
-    try {
-      const info = await this.sdk.getLightningAddress();
-      this._lightningAddress = info?.lightningAddress || null;
-      return info || null;
-    } catch (error) {
-      return null;
+    if (this._hasLightningAddressSnapshot) {
+      return this._lightningAddress ? { lightningAddress: this._lightningAddress, username: this._lightningAddress.split('@')[0] } : null;
     }
+    const info = await this.sdk.getLightningAddress();
+    this._lightningAddress = info?.lightningAddress || null;
+    return info || null;
   }
 
   async checkLightningAddressAvailable(username) {
@@ -646,6 +688,7 @@ export class BreezSparkWalletProvider extends WalletProvider {
   async registerLightningAddress(username, description = undefined) {
     this._ensureConnected();
     const info = await this.sdk.registerLightningAddress({ username, description });
+    if (!info?.lightningAddress) throw new Error('Registration returned no address');
     this._lightningAddress = info?.lightningAddress || null;
     return info;
   }
@@ -943,6 +986,32 @@ export class BreezSparkWalletProvider extends WalletProvider {
     }
   }
 
+  /**
+   * Hand a prepared payment to the SDK. From here on the payment may be
+   * made, so an error is a failure only when the SDK names a reason that
+   * stops a send before it leaves (`refused`, sparkRefusedPayment unless
+   * the kind of send knows more). Any other error, and a wait past
+   * `deadlineMs`, is PAYMENT_UNCONFIRMED, carrying what the payment can be
+   * found by (`found`).
+   *
+   * `idempotencyKey` belongs to one payment: sent again with the same
+   * key, Spark recognises it and does not pay a second time.
+   */
+  async _sendPrepared(request, { idempotencyKey = null, deadlineMs = PAYMENT_COMPLETION_TIMEOUT_MS, found = {}, refused = sparkRefusedPayment } = {}) {
+    // Without a network nothing leaves: a plain failure.
+    assertOnline();
+    try {
+      return await withinPaymentDeadline(
+        this.sdk.sendPayment({ ...request, idempotencyKey: idempotencyKey || newIdempotencyKey() }),
+        deadlineMs,
+        found,
+      );
+    } catch (error) {
+      if (isUnconfirmedPayment(error) || refused(error)) throw error;
+      throw unconfirmedPayment(error, found);
+    }
+  }
+
   async getLightningSendFeeEstimate(invoice, amountSats = null) {
     this._ensureConnected();
 
@@ -986,9 +1055,11 @@ export class BreezSparkWalletProvider extends WalletProvider {
 
   /**
    * Pay a BOLT11 invoice. The route fee is capped before any funds move:
-   *   - `maxFee` is a fee the person was shown as a quote; the cap allows
-   *     5 sats more, so a quote refreshed since then does not refuse over
-   *     rounding.
+   *   - `maxFee` is a fee the person was shown as a quote, and the payment
+   *     is held to exactly that. A route that has become dearer since is
+   *     not paid and is not a failure: it goes back for another look
+   *     (PAYMENT_REVIEW_REQUIRED, reason 'fee'), with the new quote kept
+   *     for the next estimate.
    *   - `feeLimitSats` is a limit the person was shown ("Up to"); it holds
    *     as it is.
    *   - With neither, nothing was shown, and the cap is unquotedFeeLimitSats
@@ -1006,8 +1077,9 @@ export class BreezSparkWalletProvider extends WalletProvider {
     preferSpark = false,
     amountSats = null,
     awaitCompletion = true,
-    completionTimeoutMs = 60000,
+    completionTimeoutMs = PAYMENT_COMPLETION_TIMEOUT_MS,
     onPreparedRoute = null,
+    idempotencyKey = null,
   }) {
     this._ensureConnected();
 
@@ -1033,9 +1105,16 @@ export class BreezSparkWalletProvider extends WalletProvider {
       // against the quoted route fee (see the method's comment).
       const paidSats = [decoded.isZeroAmount ? amountSats : decoded.amount, prep?.amount]
         .map(Number).find((sats) => Number.isFinite(sats) && sats > 0);
+      const quoted = typeof feeLimitSats !== 'number' && typeof maxFee === 'number';
       const feeCap = typeof feeLimitSats === 'number' ? feeLimitSats
-        : typeof maxFee === 'number' ? maxFee + 5
+        : quoted ? maxFee
           : paidSats ? unquotedFeeLimitSats(paidSats) : FEE_RESERVE_MIN_SATS;
+      if (routeFee > feeCap && quoted) {
+        throw Object.assign(
+          new Error(`The route now costs ${routeFee} sats, more than the ${maxFee} sats quoted`),
+          { code: 'PAYMENT_REVIEW_REQUIRED', reason: 'fee', feeSats: routeFee, quotedSats: maxFee },
+        );
+      }
       if (routeFee > feeCap) {
         throw Object.assign(
           new Error(`Lightning payment failed: fee ${routeFee} sats exceeds the ${feeCap} sats limit`),
@@ -1050,28 +1129,32 @@ export class BreezSparkWalletProvider extends WalletProvider {
         await onPreparedRoute(preparedRouteOf(pm, cleanInvoice, useSpark));
       }
 
-      const sendResponse = await this.sdk.sendPayment({
-        prepareResponse: prep,
-        options: {
-          type: 'bolt11Invoice',
-          preferSpark: useSpark,
-          completionTimeoutSecs: awaitCompletion
-            ? Math.max(1, Math.round(completionTimeoutMs / 1000))
-            : 1,
-        },
-        idempotencyKey: (typeof crypto !== 'undefined' && crypto.randomUUID)
-          ? crypto.randomUUID()
-          : undefined,
-      });
-
-      this._consumePrepared(cleanInvoice);
+      // The SDK waits `completionSecs` for the payment to complete after it
+      // has sent it; the send itself gets the same wait again on top.
+      const completionSecs = awaitCompletion ? Math.max(1, Math.round(completionTimeoutMs / 1000)) : 1;
+      // The invoice's hash is what History lists the payment under.
+      const found = { paymentHash: readInvoice(cleanInvoice)?.paymentHash ?? null };
+      let sendResponse;
+      try {
+        sendResponse = await this._sendPrepared({
+          prepareResponse: prep,
+          options: {
+            type: 'bolt11Invoice',
+            preferSpark: useSpark,
+            completionTimeoutSecs: completionSecs,
+          },
+        }, { idempotencyKey, deadlineMs: completionSecs * 1000 + PAYMENT_COMPLETION_TIMEOUT_MS, found });
+      } finally {
+        // Sent or not, this prepare is spent: another try prepares afresh.
+        this._consumePrepared(cleanInvoice);
+      }
 
       const payment = sendResponse?.payment;
       if (!payment) {
-        throw new Error('Lightning payment failed');
+        throw unconfirmedPayment('The wallet returned no payment', found);
       }
       if (payment.status === PAYMENT_STATUS.FAILED) {
-        throw new Error('Lightning payment failed');
+        throw Object.assign(new Error('Lightning payment failed'), { code: PAYMENT_FAILED, ...found });
       }
 
       return {
@@ -1141,7 +1224,7 @@ export class BreezSparkWalletProvider extends WalletProvider {
    * @param {{ payerData?: { identifier?: string|null }|null }} [options]  LUD-18
    *   details the person agreed to share
    */
-  async payLightningAddress(lightningAddress, amountSats, comment = '', payout = null, { payerData = null } = {}) {
+  async payLightningAddress(lightningAddress, amountSats, comment = '', payout = null, { payerData = null, idempotencyKey = null } = {}) {
     this._ensureConnected();
 
     try {
@@ -1162,6 +1245,7 @@ export class BreezSparkWalletProvider extends WalletProvider {
         invoice: invoice.pr,
         preferSpark: true,
         feeLimitSats: unquotedFeeLimitSats(amountSats),
+        idempotencyKey,
       });
 
       return {
@@ -1221,7 +1305,7 @@ export class BreezSparkWalletProvider extends WalletProvider {
     return { estimatedFeeSats: fee, isEstimated: false, request, preparedRoute: preparedRouteOf(method, request) };
   }
 
-  async transferToSparkAddress(sparkAddress, amount) {
+  async transferToSparkAddress(sparkAddress, amount, { idempotencyKey = null } = {}) {
     this._ensureConnected();
 
     if (!WalletProvider.isSparkAddress(sparkAddress)) {
@@ -1242,19 +1326,22 @@ export class BreezSparkWalletProvider extends WalletProvider {
       }
       this._assertZeroSparkFee(prep.paymentMethod);
 
-      const sendResponse = await this.sdk.sendPayment({
-        prepareResponse: prep,
-        options: { type: 'sparkAddress' },
-        idempotencyKey: (typeof crypto !== 'undefined' && crypto.randomUUID)
-          ? crypto.randomUUID()
-          : undefined,
-      });
-
-      this._consumePrepared(sparkAddress);
+      let sendResponse;
+      try {
+        sendResponse = await this._sendPrepared({
+          prepareResponse: prep,
+          options: { type: 'sparkAddress' },
+        }, { idempotencyKey });
+      } finally {
+        this._consumePrepared(sparkAddress);
+      }
 
       const payment = sendResponse?.payment;
-      if (!payment || payment.status === PAYMENT_STATUS.FAILED) {
-        throw new Error('Spark transfer failed');
+      if (!payment) {
+        throw unconfirmedPayment('The wallet returned no payment');
+      }
+      if (payment.status === PAYMENT_STATUS.FAILED) {
+        throw Object.assign(new Error('Spark transfer failed'), { code: PAYMENT_FAILED });
       }
       return {
         id: payment.id || null,
@@ -1288,7 +1375,7 @@ export class BreezSparkWalletProvider extends WalletProvider {
     };
   }
 
-  async fulfillSparkInvoice(invoice, { amountSats = null } = {}) {
+  async fulfillSparkInvoice(invoice, { amountSats = null, idempotencyKey = null } = {}) {
     this._ensureConnected();
 
     try {
@@ -1308,21 +1395,19 @@ export class BreezSparkWalletProvider extends WalletProvider {
         pm.sparkInvoiceDetails.amount = null;
       }
 
-      const sendResponse = await this.sdk.sendPayment({
-        prepareResponse: prep,
-        idempotencyKey: (typeof crypto !== 'undefined' && crypto.randomUUID)
-          ? crypto.randomUUID()
-          : undefined,
-      });
-
-      this._consumePrepared(invoice);
+      let sendResponse;
+      try {
+        sendResponse = await this._sendPrepared({ prepareResponse: prep }, { idempotencyKey });
+      } finally {
+        this._consumePrepared(invoice);
+      }
 
       const payment = sendResponse?.payment;
       if (!payment) {
-        throw new Error('Spark invoice payment did not complete');
+        throw unconfirmedPayment('The wallet returned no payment');
       }
       if (payment.status === PAYMENT_STATUS.FAILED) {
-        throw new Error('Spark invoice payment failed');
+        throw Object.assign(new Error('Spark invoice payment failed'), { code: PAYMENT_FAILED });
       }
       return {
         id: payment.id || null,
@@ -1885,7 +1970,8 @@ export class BreezSparkWalletProvider extends WalletProvider {
     speed = 'medium',
     feeQuoteId,
     feeAmountSats,
-    deductFeeFromWithdrawalAmount = false
+    deductFeeFromWithdrawalAmount = false,
+    idempotencyKey = null,
   }) {
     this._ensureConnected();
 
@@ -1940,17 +2026,17 @@ export class BreezSparkWalletProvider extends WalletProvider {
         throw err;
       }
 
-      const sendResponse = await this.sdk.sendPayment({
+      // A Bitcoin-address payment cannot be taken back: from here on an
+      // error is a failure only on the service's own refusal, and the
+      // caller's key makes a second try of the same payment the same one.
+      const sendResponse = await this._sendPrepared({
         prepareResponse: prep,
         options: { type: 'bitcoinAddress', confirmationSpeed },
-        idempotencyKey: (typeof crypto !== 'undefined' && crypto.randomUUID)
-          ? crypto.randomUUID()
-          : undefined,
-      });
+      }, { idempotencyKey, refused: sparkRefusedWithdrawal });
 
       const payment = sendResponse?.payment;
       if (!payment?.id) {
-        throw new Error('Withdrawal failed: no request ID came back');
+        throw unconfirmedPayment('The wallet returned no request for the withdrawal');
       }
 
       return {
@@ -1963,6 +2049,11 @@ export class BreezSparkWalletProvider extends WalletProvider {
     } catch (error) {
       if (error?.code === 'BREEZ_NO_QUOTE' || error?.code === 'BREEZ_FEE_DRIFT') {
         throw error; // already user-facing; don't let the substring mapper rewrite it
+      }
+      // Sent off with no word on how it ended: kept as it is, by its code.
+      if (isUnconfirmedPayment(error)) {
+        this.setError(error);
+        throw error;
       }
       const msg = String(error?.message || '').toLowerCase();
       if (msg.includes('balance') || msg.includes('insufficient')) {

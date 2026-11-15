@@ -46,15 +46,15 @@ test('all three speeds translate service/network/total fees', () => {
 
   assert.deepEqual(tiers.fast, {
     serviceFee: 210, networkFee: 900, totalFee: 1110,
-    feeQuoteId: 'quote-123', timeEstimate: 'Next block',
+    feeQuoteId: 'quote-123',
   });
   assert.deepEqual(tiers.medium, {
     serviceFee: 150, networkFee: 450, totalFee: 600,
-    feeQuoteId: 'quote-123', timeEstimate: '~30 min',
+    feeQuoteId: 'quote-123',
   });
   assert.deepEqual(tiers.slow, {
     serviceFee: 100, networkFee: 200, totalFee: 300,
-    feeQuoteId: 'quote-123', timeEstimate: '~1 hour',
+    feeQuoteId: 'quote-123',
   });
 });
 
@@ -73,7 +73,7 @@ test('missing speed legs degrade to zero fees, never NaN', () => {
   const tiers = mapWithdrawFeeQuoteToTiers({ id: 'q2', expiresAt: 0 });
   assert.deepEqual(tiers.medium, {
     serviceFee: 0, networkFee: 0, totalFee: 0,
-    feeQuoteId: 'q2', timeEstimate: '~30 min',
+    feeQuoteId: 'q2',
   });
   assert.equal(Number.isNaN(tiers.fast.totalFee), false);
 });

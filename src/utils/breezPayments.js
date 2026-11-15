@@ -117,10 +117,11 @@ export function mapBreezPaymentToTx(payment) {
 /**
  * Map a Breez on-chain SendOnchainFeeQuote onto BuhoGO's withdrawal
  * fee-tier shape: per speed `userFeeSat` is the service fee and
- * `l1BroadcastFeeSat` the network fee.
+ * `l1BroadcastFeeSat` the network fee. The quote says nothing about how
+ * long a speed takes, so a tier carries no time: the cards name the speed.
  */
 export function mapWithdrawFeeQuoteToTiers(feeQuote) {
-  const tier = (speedQuote, timeEstimate) => {
+  const tier = (speedQuote) => {
     const serviceFee = Number(speedQuote?.userFeeSat || 0);
     const networkFee = Number(speedQuote?.l1BroadcastFeeSat || 0);
     return {
@@ -128,13 +129,12 @@ export function mapWithdrawFeeQuoteToTiers(feeQuote) {
       networkFee,
       totalFee: serviceFee + networkFee,
       feeQuoteId: feeQuote.id,
-      timeEstimate,
     };
   };
   return {
-    slow: tier(feeQuote.speedSlow, '~1 hour'),
-    medium: tier(feeQuote.speedMedium, '~30 min'),
-    fast: tier(feeQuote.speedFast, 'Next block'),
+    slow: tier(feeQuote.speedSlow),
+    medium: tier(feeQuote.speedMedium),
+    fast: tier(feeQuote.speedFast),
     expiresAt: Number(feeQuote.expiresAt || 0),
   };
 }

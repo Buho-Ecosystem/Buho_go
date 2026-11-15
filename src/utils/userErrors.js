@@ -25,6 +25,7 @@
 import { isCounterpartyError } from './errorOrigin.js';
 import { formatAmount } from './amountFormatting.js';
 import { nwcErrorText } from './nwcErrors.js';
+import { PAYMENT_UNCONFIRMED, isUnconfirmedPayment } from './paymentOutcome.js';
 
 const REASON_MAX_LENGTH = 280;
 
@@ -77,6 +78,12 @@ export function getUnsupportedSilentPaymentCopy($t = null) {
  *   'passthrough' — any other text that passed the safety filter (a
  *                wallet SDK, BuhoGO's own message). Shown as is, with no
  *                label: who wrote it is not known, so nobody is named.
+ *                Never for a payment the person's own wallet makes
+ *                ('payment'): there such text stays in the
+ *                technical details and BuhoGO says "Nothing was sent."
+ *                instead, which holds because every provider reports a
+ *                payment that may have left as unconfirmed, by code
+ *                (utils/paymentOutcome.js).
  *   'curated'  — we synthesised the text (insufficient-funds breakdown or
  *                shortfall, tech-jargon translation). BuhoGO is speaking.
  *   'fallback' — generic "Please try again." when the raw is unsafe.
@@ -167,6 +174,16 @@ export function buildPaymentError(error, ctx = {}, $t = null) {
       reasonSource = 'curated';
     } else if (translated) {
       reason = translated;
+      reasonSource = 'curated';
+    } else if (isOwnWords(error) && raw.trim()) {
+      // One of BuhoGO's own sentences, already in the person's language.
+      reason = raw.trim();
+      reasonSource = 'curated';
+    } else if (!theirs && context === 'payment') {
+      // A wallet's or a library's raw text is no reason to give a person.
+      // It reached here without an outcome code, so the payment was stopped
+      // before it left or refused by the wallet.
+      reason = t('Nothing was sent.');
       reasonSource = 'curated';
     } else if (isUserSafeMessage(raw) && !(theirs && speaksForBuhoGo(raw))) {
       reason = truncate(raw.trim(), REASON_MAX_LENGTH);
@@ -323,6 +340,20 @@ const INSUFFICIENT_FUNDS_PATTERNS = [
 /** Contexts where the user's own wallet pays, so a shortfall is its own. */
 const OWN_WALLET_PAYS = new Set(['payment', 'transfer']);
 
+/**
+ * An error whose text is one of BuhoGO's own sentences, already translated:
+ * it is shown as it is, in every context.
+ * @param {string} message  the translated sentence
+ * @param {object} [extra]
+ */
+export function ownWordsError(message, extra = {}) {
+  return Object.assign(new Error(message), extra, { ownWords: true });
+}
+
+function isOwnWords(error) {
+  return Boolean(error && typeof error === 'object' && error.ownWords === true);
+}
+
 function isInsufficientFunds(error, raw) {
   if (error && typeof error === 'object' && error.code === 'INSUFFICIENT_BALANCE') return true;
   return INSUFFICIENT_FUNDS_PATTERNS.some((pattern) => pattern.test(raw || ''));
@@ -398,6 +429,10 @@ export function translateErrorCode(error, t, { walletName = '', useBip177Format 
   if (!code || typeof code !== 'string') return null;
 
   switch (code) {
+    // Handed to the wallet, outcome unknown (utils/paymentOutcome.js): never
+    // "failed", and never an invitation to pay again unseen.
+    case PAYMENT_UNCONFIRMED:
+      return t('This payment may have gone through. Check History before you pay again, so you do not pay twice.');
     case 'WALLET_STATE_UNAVAILABLE':
       return t('Your wallets could not be loaded, so nothing was changed. Close and reopen BuhoGO, then try again.');
     case 'WALLET_STATE_CONFLICT':
@@ -470,8 +505,8 @@ function titleForErrorCode(error, context, t) {
   if (context === 'connect' && ['WALLET_STATE_UNAVAILABLE', 'WALLET_STATE_CONFLICT', 'WALLET_ALREADY_CONNECTED'].includes(code)) {
     return t("Couldn't add the wallet");
   }
-  // Not a failure: the outcome is unknown until the wallet says (services/nwcPayment).
-  if (code === 'NWC_PAYMENT_UNCONFIRMED') return t('Payment not confirmed');
+  // Not a failure: the outcome is unknown until the wallet says (utils/paymentOutcome).
+  if (isUnconfirmedPayment(error)) return t('Payment not confirmed');
   return null;
 }
 

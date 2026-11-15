@@ -14,6 +14,7 @@
  */
 import { NWC_ERROR, isNotOffered, isUncertainPaymentError, nwcError } from '../utils/nwcErrors.js';
 import { readInvoice, spendingLimitFrom } from '../utils/nwcWallet.js';
+import { PAYMENT_LOOKUP_WAIT_MS } from '../utils/paymentOutcome.js';
 
 /** Waits between lookups of an unconfirmed payment, half a minute in all. */
 export const LOOKUP_DELAYS_MS = Object.freeze([2000, 5000, 8000, 15000]);
@@ -23,7 +24,7 @@ export const LOOKUP_DELAYS_MS = Object.freeze([2000, 5000, 8000, 15000]);
  * reply; a wallet that is silent would stretch the check to five minutes.
  * 10 s, like the SDK's other reads, keeps the whole check near 70 s.
  */
-export const LOOKUP_WAIT_MS = 10000;
+export const LOOKUP_WAIT_MS = PAYMENT_LOOKUP_WAIT_MS;
 
 async function sha256Hex(hex) {
   const bytes = new Uint8Array(hex.match(/.{2}/g).map((b) => parseInt(b, 16)));
@@ -90,7 +91,10 @@ export async function payWithNwc(nwc, invoice, {
   } catch (error) {
     // An invoice without an amount says nothing about how low the limit is.
     if (error?.code === 'QUOTA_EXCEEDED' && amountSats > 0) tell(onLimitRefused, { amountSats });
-    if (!paymentHash || !isUncertainPaymentError(error)) throw error;
+    if (!isUncertainPaymentError(error)) throw error;
+    // No hash to look the payment up by: its outcome stays unknown, which
+    // is not a failure either.
+    if (!paymentHash) throw nwcError(NWC_ERROR.UNCONFIRMED, 'Payment not confirmed', { paymentHash: null, cause: error });
   }
 
   if (answer && (!paymentHash || await provesPayment(answer.preimage, paymentHash))) {

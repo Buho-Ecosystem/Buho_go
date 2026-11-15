@@ -15,7 +15,7 @@ import { WALLET_TYPES } from '../providers/WalletFactory'
 import { fetchPayRequest, lightningAddressUrl, requestPayInvoice } from '../utils/lnurlPay.js'
 import { migratePocketConfigKeys, settleRulesForWallets } from '../utils/autoWithdrawKeys.js'
 import { payWithNwc } from '../services/nwcPayment.js'
-import { NWC_ERROR } from '../utils/nwcErrors.js'
+import { isUnconfirmedPayment } from '../utils/paymentOutcome.js'
 import { fiatRatesService } from '../utils/fiatRates.js'
 import {
   DESTINATION_KIND,
@@ -43,9 +43,9 @@ const COOLDOWN_MS = 60_000 // between transfers of one rule
 // A failure retries sooner than the success cooldown: most are blips (a
 // dropped connection, an address that did not answer once).
 const FAILURE_RETRY_MS = 15_000
-// A payment whose outcome is unknown (services/nwcPayment) may have gone
-// out. Retrying would pay again, so the rule rests long enough for the
-// balance to show what happened.
+// A payment whose outcome is unknown (utils/paymentOutcome, whichever wallet
+// said so) may have gone out. Retrying would pay again, so the rule rests
+// long enough for the balance to show what happened.
 const UNCONFIRMED_HOLD_MS = 10 * 60_000
 // A Spark balance counts as confirmed when a network sync of that wallet
 // finished this recently. The run is usually triggered by exactly such a
@@ -303,7 +303,7 @@ export const useAutoWithdrawStore = defineStore('autoWithdraw', {
         this.lastResult = { walletId, amount, destinationName: name }
       } catch (error) {
         console.error('[Auto-Transfer] Failed:', error?.message || error)
-        const holdMs = error?.code === NWC_ERROR.UNCONFIRMED ? UNCONFIRMED_HOLD_MS : FAILURE_RETRY_MS
+        const holdMs = isUnconfirmedPayment(error) ? UNCONFIRMED_HOLD_MS : FAILURE_RETRY_MS
         _lastTriggerTime.set(walletId, Date.now() - COOLDOWN_MS + holdMs)
         this._record(walletId, { at: Date.now(), outcome: OUTCOME.FAILED, amount, reason: failureReason(error) })
       } finally {

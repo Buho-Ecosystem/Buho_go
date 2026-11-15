@@ -87,20 +87,20 @@
         <div class="detail-group-row">
           <span class="detail-group-copy">
             <span class="detail-group-label">{{ $t('Lightning Address') }}</span>
-            <span class="detail-group-value" :class="{ 'is-placeholder': !lightningAddress }">{{ lightningAddress || $t('Assigned when the wallet connects') }}</span>
+            <span class="detail-group-value" :class="{ 'is-placeholder': !lightningAddress }">{{ lightningAddress || (wallet.metadata?.lightningAddressPending ? $t('Check address') : $t('Assigned when the wallet connects')) }}</span>
           </span>
           <button v-if="lightningAddress" type="button" class="detail-icon-button" :aria-label="$t('Copy address')" @click="$emit('copy-address', lightningAddress)">
             <Icon icon="tabler:copy" width="18" height="18" />
           </button>
         </div>
         <button type="button" class="detail-group-action" :disabled="!connected" @click="$emit('change-address', wallet.id)">
-          {{ $t('Change address') }}
+          {{ wallet.metadata?.lightningAddressPending ? $t('Check address') : $t('Change address') }}
         </button>
         <button v-if="canMoveAddress" type="button" class="detail-group-action" :disabled="!connected || !lightningAddress" @click="$emit('move-address', wallet.id)">
           {{ $t('Move to another wallet') }}
         </button>
         <p v-if="!connected" class="detail-group-note">{{ $t('Available once this wallet is connected.') }}</p>
-        <p v-else-if="canMoveAddress && !lightningAddress" class="detail-group-note">{{ $t('This wallet has no address to move right now.') }}</p>
+        <p v-else-if="canMoveAddress && !lightningAddress && !wallet.metadata?.lightningAddressPending" class="detail-group-note">{{ $t('This wallet has no address to move right now.') }}</p>
       </section>
 
       <!-- Its Auto-Transfer rule, or the way to set one up. -->
