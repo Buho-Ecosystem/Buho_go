@@ -15,6 +15,7 @@ import * as Vue from 'vue'
 import * as amountFormatting from '../../utils/amountFormatting.js'
 import * as paymentAmountInput from '../../utils/paymentAmountInput.js'
 import * as payingWallets from '../../utils/payingWallets.js'
+import * as paymentOutcome from '../../utils/paymentOutcome.js'
 import * as walletCapabilities from '../../utils/walletCapabilities.js'
 
 const file = readFileSync(new URL('../BatchSendModal.vue', import.meta.url), 'utf8')
@@ -71,6 +72,7 @@ function harness(ctx, { type = 'spark', balance = 100_000, provider = {}, store 
     '../utils/paymentAmountInput.js': paymentAmountInput,
     '../utils/amountFormatting.js': amountFormatting,
     '../utils/payingWallets.js': payingWallets,
+    '../utils/paymentOutcome.js': paymentOutcome,
     '../utils/fiatRates.js': { fiatRatesService: { freshRate: () => 0, convertFiatToSatsSync: () => null, formatSatsAsFiat: () => '', getRates: async () => ({}) } },
     '../utils/walletCapabilities': walletCapabilities,
     '../stores/wallet': { useWalletStore: () => walletStore },
