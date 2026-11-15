@@ -54,7 +54,7 @@
       </div>
       <div v-else class="preview-pay-chip preview-pay-chip--missing">
         <Icon icon="tabler:bolt-off" width="13" height="13" />
-        <span class="preview-pay-value">{{ $t('No Lightning address yet') }}</span>
+        <span class="preview-pay-value">{{ $t('No payment address yet') }}</span>
       </div>
     </div>
 
@@ -90,7 +90,7 @@
 
       <template v-else>
         <div class="preview-status preview-status--muted">
-          {{ $t('No Lightning address yet, so you cannot pay them. Saving them now means you can the moment they add one.') }}
+          {{ $t('No payment address yet, so you cannot pay them. Saving them now means you can the moment they add one.') }}
         </div>
         <button
           type="button"

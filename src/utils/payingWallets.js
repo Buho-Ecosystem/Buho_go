@@ -223,9 +223,9 @@ export function payingWalletReasonText(reason, t) {
 
 /**
  * The sentence for the sheet's warning banner (the existing walletHint slot)
- * when the selected wallet is blocked. A rail problem keeps the shared
- * switch-wallet words every other surface uses; another wallet is only
- * suggested when there is one that can pay.
+ * when the selected wallet is blocked. A wallet that cannot pay this kind of
+ * destination gets the shared words every other surface uses; another wallet
+ * is only suggested when there is one that can pay.
  * @param {{name?: string, reason: string|null}|null} wallet the list entry
  * @param {string} destinationType payment type or addressType
  * @param {(key: string, params?: object) => string} t vue-i18n translate
@@ -236,7 +236,7 @@ export function payingWalletHint(wallet, destinationType, t, { hasAlternative = 
   const name = wallet?.name || t('Wallet')
   switch (wallet?.reason) {
     case PAYING_REASON.UNSUPPORTED_DESTINATION:
-      return walletSwitchHint(destinationType, t)
+      return walletSwitchHint(destinationType, t, { wallet: name, hasAlternative })
     case PAYING_REASON.INSUFFICIENT_BALANCE:
       return hasAlternative
         ? t('Not enough balance in {wallet}. Choose another wallet or send less.', { wallet: name })

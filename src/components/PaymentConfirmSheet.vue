@@ -552,7 +552,6 @@ import BrantaVerificationDetails from './BrantaVerificationDetails.vue'
 import ProgressCta from './ProgressCta.vue'
 import WalletBrandMark from './WalletBrandMark.vue'
 import HiddenAmount from './HiddenAmount.vue'
-import { WALLET_TYPE_LABELS } from '../providers/WalletFactory'
 import { payingWalletReasonText } from '../utils/payingWallets.js'
 import RefundAddressField from './RefundAddressField.vue'
 import CardFace from './CardFace.vue'
@@ -1535,7 +1534,9 @@ export default {
       if (wallet.connectionFailed) return this.$t('Unavailable right now')
       if (wallet.hint) return wallet.hint
       if (wallet.reason) return payingWalletReasonText(wallet.reason, this.$t.bind(this))
-      return WALLET_TYPE_LABELS[wallet.type] || wallet.type || this.$t('Wallet')
+      // The figure beside it is what the wallet has to spend. Which kind of
+      // wallet it is, its mark already says.
+      return this.$t('Available')
     },
 
     walletPickerBalance(wallet) {

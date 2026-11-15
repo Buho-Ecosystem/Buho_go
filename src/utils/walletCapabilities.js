@@ -74,24 +74,27 @@ export function canWalletPay(walletType, type) {
 }
 
 /**
- * The one localized "switch wallet" explanation per rail — every
- * surface shows the same words for the same constraint. Callers only
- * render this after canWalletPay() said no; since Arkade is the only
- * wallet that can fail the lightning rail (temporary outage), the
- * lightning fallback names it. Revisit if another wallet ever blocks
- * that rail.
- * @param {string} type  payment type or addressType
- * @param {(key: string) => string} t  vue-i18n translate
+ * The one localized explanation for a wallet that cannot pay a destination:
+ * every surface shows the same words for the same constraint. Callers only
+ * render this after canWalletPay() said no.
+ *
+ * The words name the wallet, never the technology: which kind of wallet a
+ * destination needs is not something the person paying has to know, and the
+ * "Pay with" rows already show which of their wallets can pay. Another wallet
+ * is suggested only when the caller says there is one. Without a wallet name
+ * the sentence speaks about all of the person's wallets (the Send field asks
+ * before any wallet is chosen).
+ * @param {string} type  payment type or addressType; the words are the same
+ *   for every rail
+ * @param {(key: string, params?: object) => string} t  vue-i18n translate
+ * @param {{ wallet?: string, hasAlternative?: boolean }} [options]
  * @returns {string}
  */
-export function walletSwitchHint(type, t) {
-  const kind = destinationKind(type)
-  if (kind === 'spark') return t('Switch to your Spark wallet to pay this address')
-  if (kind === 'arkade') return t('Switch to your Arkade wallet to pay this address')
-  if (kind === 'bitcoin') return t('Switch to a Spark or Arkade wallet to send Bitcoin')
-  // Only Arkade ever fails the lightning kind (see canWalletPay), so the
-  // hint can name it.
-  return t('Lightning is temporarily unavailable on Arkade - switch to another wallet')
+export function walletSwitchHint(type, t, { wallet = '', hasAlternative = true } = {}) {
+  if (!wallet) return t('You have no wallet that can make this payment.')
+  return hasAlternative
+    ? t("{wallet} can't make this payment. Choose another wallet.", { wallet })
+    : t("{wallet} can't make this payment.", { wallet })
 }
 
 /**

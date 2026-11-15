@@ -103,9 +103,9 @@ export function usePayContact(ctx) {
     if (contact.source === 'nostr' && !store.isEntryPayable(contact)) {
       ctx.$q.notify({
         type: 'info',
-        message: ctx.$t('No Lightning address yet'),
+        message: ctx.$t('No payment address yet'),
         caption: ctx.$t(
-          "{name} hasn't published a Lightning address. We'll use it automatically once they do.",
+          "{name} hasn't published a payment address. We'll use it automatically once they do.",
           { name: contact.name },
         ),
         timeout: 4500,
@@ -117,7 +117,7 @@ export function usePayContact(ctx) {
     if (!address) {
       ctx.$q.notify({
         type: 'info',
-        message: ctx.$t('No Lightning address yet'),
+        message: ctx.$t('No payment address yet'),
         caption: ctx.$t('Add an address for this contact to pay them.'),
         timeout: 4000,
       });

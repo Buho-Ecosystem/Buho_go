@@ -14,7 +14,7 @@
       withdrawal is submitted with the matching `feeQuoteId`
     - Economy / Standard / Priority speed cards built from the per-tier
       quote
-    - explicit fee breakdown (send amount, Spark service fee, Bitcoin
+    - explicit fee breakdown (send amount, service fee, Bitcoin
       network fee, total) and the balance-including-fee check
 
   Contract with the parent:
@@ -89,7 +89,7 @@
         <span class="summary-value">{{ formatAmount(amountSats) }}</span>
       </div>
       <div class="summary-row summary-row--muted">
-        <span>{{ $t('Spark service fee') }}</span>
+        <span>{{ $t('Service fee') }}</span>
         <span class="summary-value">{{ formatAmount(selectedFee.serviceFee) }}</span>
       </div>
       <div class="summary-row summary-row--muted">
