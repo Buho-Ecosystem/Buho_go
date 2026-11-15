@@ -378,6 +378,8 @@ const card = (props, opts) => render(RequestCard, { amountSats: 25000, ...props 
 test('request card: failed delivery offers retry; a queued request cannot send a reminder', async () => {
   const failed = await card({ outgoing: true, delivery: 'failed' })
   assert.match(failed, /role="status"[^>]*>[\s\S]*Not sent/)
+  // A failed delivery is a tone of the state line, named like its other tones.
+  assert.match(failed, /class="[^"]*\brequest-card__state--failed\b[^"]*" role="status"/)
   assert.match(failed, />\s*Send again\s*</)
   assert.doesNotMatch(failed, />\s*Remind\s*</)
   const queued = await card({ outgoing: true, delivery: 'queued' })

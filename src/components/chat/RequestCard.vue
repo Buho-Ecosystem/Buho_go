@@ -59,7 +59,7 @@
       {{ stateLine }}
     </p>
 
-    <p v-if="outgoing && state === 'pending' && delivery !== 'sent'" class="request-card__state" :class="{ 'request-card__delivery--failed': delivery === 'failed' }" role="status">
+    <p v-if="outgoing && state === 'pending' && delivery !== 'sent'" class="request-card__state" :class="{ 'request-card__state--failed': delivery === 'failed' }" role="status">
       <Icon :icon="delivery === 'failed' ? 'tabler:alert-circle' : 'tabler:clock'" width="15" height="15" />
       {{ delivery === 'failed' ? $t('Not sent') : delivery === 'sending' ? $t('Sending…') : $t('Waiting to send') }}
     </p>
@@ -346,7 +346,7 @@ export default {
 .request-card__state :deep(svg) { flex: 0 0 auto; margin-top: 0.1em; }
 .request-card__state { margin-top: 10px; font-size: 0.8125rem; font-weight: 700; }
 .request-card__state--ok { color: var(--brand-accent-text); }
-.request-card__delivery--failed { color: var(--chat-danger); }
+.request-card__state--failed { color: var(--chat-danger); }
 .request-card__reason { color: var(--color-warn); font-weight: 650; }
 
 .request-card__actions {
