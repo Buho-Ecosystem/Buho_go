@@ -483,7 +483,7 @@ export const useTransactionMetadataStore = defineStore('transactionMetadata', {
      *
      * `merchantVerification` ({ name, logoUrl, logoLightUrl, description,
      * verifyUrl }) carries the Branta-verified business behind the send
-     * (Wallet.vue brantaReceipt), so History and Transaction Details name it
+     * (the review's receipt, services/brantaVerification.js), so History and Transaction Details name it
      * after sending. It has no address to prove its payment, so it needs a
      * matching amount. Per-payment like counterpartyAvatar above — never
      * merged into an existing link.
@@ -788,7 +788,19 @@ export const useTransactionMetadataStore = defineStore('transactionMetadata', {
         if (!link.transactionId && needsAmountProof && !exact && !proven && !merchantProven) continue
         if (link.payAgain && !proven && now - linkSentAt < PAY_AGAIN_PROOF_WAIT_MS) continue
 
-        if (link.merchantVerification && !merchantProven) continue
+        // A verified business is named only on the payment its ids prove.
+        // Give that payment a while to show up; after that the claim is
+        // dropped and everything else the link carries (contact, address,
+        // label, refund address) is stamped the way it always was. Losing
+        // the seal must never cost the payment its contact.
+        if (link.merchantVerification && !merchantProven) {
+          if (now - linkSentAt < PAY_AGAIN_PROOF_WAIT_MS) continue
+          // A link that carries nothing but the claim has nothing else to
+          // stamp: it keeps waiting for its payment and never takes another's.
+          const carriesMore = link.recipientAddress || link.contactId || link.successAction || link.verifyUrl || link.payLink
+            || link.label || link.source || link.counterpartyAvatar || link.saleBreakdown || link.refundAddress || link.payAgain
+          if (!carriesMore) continue
+        }
         const pick = merchantProven || proven || exact || eligible[0]
 
         try {
@@ -821,7 +833,7 @@ export const useTransactionMetadataStore = defineStore('transactionMetadata', {
           if (link.counterpartyAvatar) {
             await this.setCounterpartyAvatarForTransaction(pick.tx.id, walletId, link.counterpartyAvatar)
           }
-          if (link.merchantVerification) {
+          if (link.merchantVerification && merchantProven) {
             await this.setMerchantVerificationForTransaction(pick.tx.id, walletId, link.merchantVerification)
           }
           if (link.saleBreakdown) {

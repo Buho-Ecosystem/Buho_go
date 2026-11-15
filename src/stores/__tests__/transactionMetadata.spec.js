@@ -869,6 +869,58 @@ await test('merchant proof may name an exact provider hash or preimage in the sa
   assert.deepEqual(store.getMerchantVerificationForTransaction('history-id', 'w1'), business);
 });
 
+await test('a verified send whose payment cannot be proven keeps its contact and address, and loses only the claim', async () => {
+  const store = freshStore();
+  const business = { name: 'Coffee', checkedAt: 123, environment: 'Production' };
+  await store.enqueuePendingContactLink({
+    contactId: 'c1', recipientAddress: 'shop@example.com', label: 'Coffee', amountSats: 4200,
+    merchantVerification: business, merchantProof: ['preimage-the-history-never-shows'], walletId: 'w1',
+  });
+  const tx = makeTx('history-id', { amount: -4200 });
+  // Inside the wait the payment may still show up with its ids: nothing is guessed.
+  assert.equal(await store.consumePendingContactLinks([tx], 'w1'), 0);
+  assert.equal(store.getMetadataForTransaction('history-id', 'w1')?.contactId ?? null, null);
+  // After it, the claim is dropped and the rest is stamped as for any send.
+  const sentAt = Date.now() - 11 * 60 * 1000;
+  store.pendingContactLinks[0].sentAt = sentAt;
+  tx.timestamp = Math.floor(sentAt / 1000);
+  assert.equal(await store.consumePendingContactLinks([tx], 'w1'), 1);
+  assert.equal(store.getMetadataForTransaction('history-id', 'w1')?.contactId, 'c1');
+  assert.equal(store.getMetadataForTransaction('history-id', 'w1')?.recipientAddress, 'shop@example.com');
+  assert.equal(store.getLabelForTransaction('history-id', 'w1'), 'Coffee');
+  assert.equal(store.getMerchantVerificationForTransaction('history-id', 'w1'), null, 'never named by amount or time');
+  assert.equal(store.pendingContactLinks.length, 0);
+});
+
+await test('a link that carries only the claim never takes a payment it cannot prove, however long it waits', async () => {
+  const store = freshStore();
+  await store.enqueuePendingContactLink({ amountSats: 4200, merchantVerification: { name: 'Coffee' }, merchantProof: ['unseen'], walletId: 'w1' });
+  const sentAt = Date.now() - 11 * 60 * 1000;
+  store.pendingContactLinks[0].sentAt = sentAt;
+  const tx = makeTx('same-amount', { amount: -4200, timestamp: Math.floor(sentAt / 1000) });
+  assert.equal(await store.consumePendingContactLinks([tx], 'w1'), 0);
+  assert.equal(store.pendingContactLinks.length, 1);
+  // The transaction stays free for the link that does belong to it.
+  await store.enqueuePendingContactLink({ amountSats: 4200, label: 'Transfer to Savings', source: 'internal-transfer', walletId: 'w1' });
+  store.pendingContactLinks[1].sentAt = sentAt;
+  assert.equal(await store.consumePendingContactLinks([tx], 'w1'), 1);
+  assert.equal(store.getLabelForTransaction('same-amount', 'w1'), 'Transfer to Savings');
+});
+
+await test('the invoice payment hash proves a verified send for a wallet that returns only a preimage', async () => {
+  const store = freshStore();
+  const business = { name: 'Coffee', checkedAt: 123, environment: 'Production' };
+  await store.enqueuePendingContactLink({
+    contactId: 'c1', amountSats: 4200, merchantVerification: business,
+    merchantProof: [null, undefined, 'returned-preimage', 'INVOICE-HASH'], walletId: 'w1',
+  });
+  const actual = { ...makeTx('history-id', { amount: -4212 }), payment_hash: 'invoice-hash' };
+  assert.equal(await store.consumePendingContactLinks([makeTx('other', { amount: -4200 }), actual], 'w1'), 1);
+  assert.deepEqual(store.getMerchantVerificationForTransaction('history-id', 'w1'), business);
+  assert.equal(store.getMetadataForTransaction('history-id', 'w1')?.contactId, 'c1');
+  assert.equal(store.getMetadataForTransaction('other', 'w1')?.contactId ?? null, null);
+});
+
 await test('merchant-only links without exact evidence, explicit wallet or outgoing direction cannot invent a receipt', async () => {
   for (const options of [{ walletId: 'w1' }, { merchantProof: ['known'] }, { walletId: 'w1', merchantProof: ['known'], direction: 'incoming' }]) {
     const store = freshStore();
