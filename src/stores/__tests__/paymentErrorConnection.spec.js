@@ -74,7 +74,9 @@ await test("a caller's own reason wins, and no check runs", async () => {
 await test('a server that answered with an error is not a connection problem', async () => {
   const { store, check } = storeWithCheck();
   store.showPaymentError(new Error('Route not found'), { context: 'payment' });
-  assert.equal(store.paymentError.reason, 'Route not found');
+  // The wallet's own text stays in the technical details (userErrors).
+  assert.equal(store.paymentError.reason, 'Nothing was sent.');
+  assert.equal(store.paymentError.technical.raw, 'Route not found');
   assert.equal(check.asked, 0);
 });
 
