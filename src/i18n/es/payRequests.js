@@ -18,4 +18,5 @@ export default {
   "This payment may have gone through. Check History before you pay again, so you do not pay twice.": "Es posible que este pago se haya realizado. Revisa el Historial antes de volver a pagar, para no pagar dos veces.",
   // Under "Payment on its way" on the screen after a send (PaymentConfirmation `pending`).
   "It is not confirmed yet. History shows when it has arrived.": "Aún no está confirmado. En el Historial verás cuándo ha llegado.",
+  "The wallet didn't answer in time. Nothing was sent.": "La cartera no respondió a tiempo. No se ha enviado nada.",
 };

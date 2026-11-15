@@ -18,4 +18,5 @@ export default {
   "This payment may have gone through. Check History before you pay again, so you do not pay twice.": "This payment may have gone through. Check History before you pay again, so you do not pay twice.",
   // Under "Payment on its way" on the screen after a send (PaymentConfirmation `pending`).
   "It is not confirmed yet. History shows when it has arrived.": "It is not confirmed yet. History shows when it has arrived.",
+  "The wallet didn't answer in time. Nothing was sent.": "The wallet didn't answer in time. Nothing was sent.",
 };

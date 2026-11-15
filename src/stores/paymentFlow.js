@@ -53,8 +53,10 @@ export const usePaymentFlowStore = defineStore('contextual-payment-flow', () => 
    * send's own `finally`: there it runs on every ending (paid, on its way,
    * not confirmed, failed, back to the review), also for a send whose page
    * is gone by then. There is no timer here: how long a send may take is the
-   * send pipeline's to bound (utils/paymentOutcome), in one place, and a
-   * second clock here could free the identity under a payment still running.
+   * send pipeline's to bound (utils/paymentOutcome: what comes before the
+   * hand-over to the wallet ends as a failure, the hand-over itself as not
+   * confirmed), and a second clock here could free the identity under a
+   * payment still running.
    * @returns {() => void}
    */
   function beginSend() {

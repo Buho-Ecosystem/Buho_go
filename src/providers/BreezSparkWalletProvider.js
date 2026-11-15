@@ -60,9 +60,7 @@ import { reportSparkAttempt } from '../services/sparkReachabilityCheck.js';
 import { classifyTransportFailure } from '../utils/userErrors.js';
 import { FEE_RESERVE_MIN_SATS, unquotedFeeLimitSats } from '../utils/payingWallets.js';
 import { readInvoice } from '../utils/nwcWallet.js';
-import {
-  PAYMENT_COMPLETION_TIMEOUT_MS, PAYMENT_FAILED, assertOnline, isUnconfirmedPayment, unconfirmedPayment, withinPaymentDeadline,
-} from '../utils/paymentOutcome.js';
+import { PAYMENT_COMPLETION_TIMEOUT_MS, PAYMENT_FAILED, assertOnline, beforePaymentLeaves, isUnconfirmedPayment, unconfirmedPayment, withinPaymentDeadline } from '../utils/paymentOutcome.js';
 
 /**
  * One fresh synchronization per SDK instance at a time. Keyed by the SDK
@@ -957,19 +955,22 @@ export class BreezSparkWalletProvider extends WalletProvider {
       ...(feePolicy ? { feePolicy } : {}),
     });
 
-    let prepareResponse;
-    try {
-      prepareResponse = await doPrepare();
-    } catch (error) {
-      // "Failed to select leaves" = the wallet is mid-optimization; a sync
-      // then one retry resolves it. Prepare moves no funds — safe to retry.
-      if (String(error?.message || '').toLowerCase().includes('failed to select leaves')) {
-        try { await this.sdk.syncWallet({}); } catch (e) { /* best-effort */ }
-        prepareResponse = await doPrepare();
-      } else {
+    const prepare = async () => {
+      try {
+        return await doPrepare();
+      } catch (error) {
+        // "Failed to select leaves" = the wallet is mid-optimization; a sync
+        // then one retry resolves it. Prepare moves no funds — safe to retry.
+        if (String(error?.message || '').toLowerCase().includes('failed to select leaves')) {
+          try { await this.sdk.syncWallet({}); } catch (e) { /* best-effort */ }
+          return doPrepare();
+        }
         throw error;
       }
-    }
+    };
+    // Preparing moves nothing: a service that never answers ends as a
+    // plain failure, so neither a quote nor a send waits on it for good.
+    const prepareResponse = await beforePaymentLeaves(prepare());
 
     this._preparedSends.set(key, { prepareResponse, at: Date.now() });
     if (this._preparedSends.size > 12) {
@@ -2017,7 +2018,7 @@ export class BreezSparkWalletProvider extends WalletProvider {
         if (deductFeeFromWithdrawalAmount) {
           request.feePolicy = 'feesIncluded';
         }
-        prep = await this.sdk.prepareSendPayment(request);
+        prep = await beforePaymentLeaves(this.sdk.prepareSendPayment(request));
       }
 
       if (prep?.paymentMethod?.type !== 'bitcoinAddress') {

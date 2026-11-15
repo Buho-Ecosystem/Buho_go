@@ -25,7 +25,7 @@
 import { isCounterpartyError } from './errorOrigin.js';
 import { formatAmount } from './amountFormatting.js';
 import { nwcErrorText } from './nwcErrors.js';
-import { PAYMENT_UNCONFIRMED, isUnconfirmedPayment } from './paymentOutcome.js';
+import { PAYMENT_NOT_STARTED, PAYMENT_UNCONFIRMED, isUnconfirmedPayment } from './paymentOutcome.js';
 
 const REASON_MAX_LENGTH = 280;
 
@@ -433,6 +433,10 @@ export function translateErrorCode(error, t, { walletName = '', useBip177Format 
     // "failed", and never an invitation to pay again unseen.
     case PAYMENT_UNCONFIRMED:
       return t('This payment may have gone through. Check History before you pay again, so you do not pay twice.');
+    // The wallet or a service gave no answer before the payment could be
+    // handed over: nothing left, so trying again is safe.
+    case PAYMENT_NOT_STARTED:
+      return t("The wallet didn't answer in time. Nothing was sent.");
     case 'WALLET_STATE_UNAVAILABLE':
       return t('Your wallets could not be loaded, so nothing was changed. Close and reopen BuhoGO, then try again.');
     case 'WALLET_STATE_CONFLICT':

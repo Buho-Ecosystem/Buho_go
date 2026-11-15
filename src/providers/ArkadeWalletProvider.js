@@ -61,7 +61,7 @@ import {
   arkadeIdentityFromMnemonic,
 } from '../utils/arkadeKeys';
 
-import { assertOnline, isUnconfirmedPayment, unconfirmedPayment, withinPaymentDeadline } from '../utils/paymentOutcome.js';
+import { assertOnline, beforePaymentLeaves, isUnconfirmedPayment, unconfirmedPayment, withinPaymentDeadline } from '../utils/paymentOutcome.js';
 
 /**
  * True when the SDK stopped a send before the Arkade server was asked for
@@ -610,13 +610,13 @@ export class ArkadeWalletProvider extends WalletProvider {
   }
 
   async getBitcoinSendFeeEstimate(params) {
-    const { amount, fee, total } = await this._quoteOffboard(params);
+    const { amount, fee, total } = await beforePaymentLeaves(this._quoteOffboard(params));
     return { amount, fee, total };
   }
 
   async offboardToBitcoin({ bitcoinAddress, amount, maxFee }) {
     try {
-      const quote = await this._quoteOffboard({ bitcoinAddress, amount });
+      const quote = await beforePaymentLeaves(this._quoteOffboard({ bitcoinAddress, amount }));
       if (!Number.isSafeInteger(maxFee) || maxFee < 0 || quote.fee > maxFee) {
         const err = new Error('The Bitcoin fee changed. Review the updated fee and try again.');
         err.code = 'ARKADE_OFFBOARD_FEE_CHANGED';

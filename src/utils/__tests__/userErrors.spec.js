@@ -241,6 +241,7 @@ test('a wallet that is already connected is said by BuhoGO, in every language', 
 test('a pay request that cannot be paid is explained by BuhoGO, and says nothing was sent', () => {
   const cases = [
     [{ code: 'LNURL_REFUSED' }, "The recipient's service declined. Nothing was sent."],
+    [{ code: 'PAYMENT_NOT_STARTED' }, "The wallet didn't answer in time. Nothing was sent."],
     [{ code: 'LNURL_NOT_PAY_REQUEST' }, "This link can't receive a payment."],
     [{ code: 'LNURL_PAY_REQUEST_INVALID' }, "The recipient's payment details aren't valid. Ask them for another way to pay."],
     [{ code: 'LNURL_AMOUNT_OUT_OF_RANGE', minSats: 1000, maxSats: 2500000 }, `This recipient accepts ₿\u00a0${(1000).toLocaleString()} to ₿\u00a0${(2500000).toLocaleString()}.`],

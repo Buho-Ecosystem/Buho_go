@@ -737,7 +737,7 @@ import {fiatRatesService} from '../utils/fiatRates.js';
 import {fiatSymbol} from '../utils/fiatCurrencies.js';
 import {formatMainBalance as formatMainBalanceUtil, formatAmount} from '../utils/amountFormatting.js';
 import {haptics} from '../utils/haptics.js';
-import { PAYMENT_FAILED, PAYMENT_OUTCOME, outcomeOfError, outcomeOfResult } from '../utils/paymentOutcome.js';
+import { PAYMENT_FAILED, PAYMENT_OUTCOME, beforePaymentLeaves, outcomeOfError, outcomeOfResult } from '../utils/paymentOutcome.js';
 import {isNfcAvailable} from '../utils/nfc.js';
 import NumberFlow from '@number-flow/vue';
 import LatestTransactionCard from '../components/LatestTransactionCard.vue';
@@ -3454,7 +3454,7 @@ export default {
 
       this.isSendingPayment = true;
       try {
-        const provider = await this.walletStore.ensureSparkConnected(walletId);
+        const provider = await beforePaymentLeaves(this.walletStore.ensureSparkConnected(walletId));
         if (!provider?.withdrawToL1) throw new Error('Withdrawal not supported');
 
         const result = await provider.withdrawToL1({
@@ -6205,7 +6205,7 @@ export default {
       // What the sheet said about the fee, read before anything is awaited.
       const feeTerms = this.sparkInvoiceFeeTerms(amount);
       // Ensure Spark wallet is connected (auto-connects if session PIN available)
-      const provider = await this.walletStore.ensureSparkConnected(walletId);
+      const provider = await beforePaymentLeaves(this.walletStore.ensureSparkConnected(walletId));
 
       // Spark invoice — must go through fulfill; transfer() rejects invoice
       // strings. Checked before the plain-address branch because invoice
@@ -6216,7 +6216,7 @@ export default {
         // been open past the expiry, and sender pinning could only be
         // finally decided now that the wallet is connected.
         const dest = decodeSparkDestination(invoice);
-        const ownAddress = await provider.getSparkAddress();
+        const ownAddress = await beforePaymentLeaves(provider.getSparkAddress());
         const problem = sparkInvoiceProblem(dest, {
           ownIdentityPublicKey: identityPublicKeyFromSparkAddress(ownAddress),
         });
@@ -6290,7 +6290,7 @@ export default {
      */
     async sendArkadePayment(amount, comment, payout = null, walletId = null, payerData = null, payment = this.pendingPayment) {
       const maxFee = this.currentArkadeFeeQuote?.fee;
-      const provider = await this.walletStore.ensureArkadeConnected(walletId);
+      const provider = await beforePaymentLeaves(this.walletStore.ensureArkadeConnected(walletId));
 
       // Native ark1 → ark1: instant, near-zero fee fast path.
       if (payment.arkadeAddress) {
@@ -6351,7 +6351,7 @@ export default {
       if (!this.getNwcUrl(id)) {
         throw new Error('No active NWC wallet found');
       }
-      const nwc = await this.walletStore.nwcConnection(id);
+      const nwc = await beforePaymentLeaves(this.walletStore.nwcConnection(id));
       const lightningService = new LightningPaymentService(nwc, this.walletStore.nwcPayOptions(id));
       return await lightningService.sendPayment(this.getNwcPaymentData(payment), amount, comment, { payerData });
     },
@@ -6375,7 +6375,7 @@ export default {
       // Route through ensureLNBitsConnected so a stale `isConnected` flag
       // (e.g. cleared by a prior 401) self-heals before the send rather than
       // failing with "wallet is not connected" until app restart.
-      const provider = await this.walletStore.ensureLNBitsConnected(walletId);
+      const provider = await beforePaymentLeaves(this.walletStore.ensureLNBitsConnected(walletId));
 
       // Lightning invoice payment
       if (payment.invoice) {
@@ -7187,7 +7187,7 @@ export default {
       const run = this._feeEstimateRun;
       this.isEstimatingFee = true;
       try {
-        const provider = await this.walletStore.ensureWalletConnectedForTransfer(walletId);
+        const provider = await beforePaymentLeaves(this.walletStore.ensureWalletConnectedForTransfer(walletId));
         const limitSats = await provider.getFeeReserveSats(invoice);
         if (run === this._feeEstimateRun) this.serverFeeLimitSats = limitSats;
       } catch {
@@ -7219,7 +7219,7 @@ export default {
           await new Promise((resolve) => setTimeout(resolve, TYPED_AMOUNT_QUOTE_DELAY_MS));
           if (run !== this._feeEstimateRun) return;
         }
-        const provider = await this.walletStore.ensureSparkConnected(walletId);
+        const provider = await beforePaymentLeaves(this.walletStore.ensureSparkConnected(walletId));
         if (run !== this._feeEstimateRun) return;
         const estimate = nativeRequest
           ? await provider.getSparkSendFeeEstimate(nativeRequest, amount)
