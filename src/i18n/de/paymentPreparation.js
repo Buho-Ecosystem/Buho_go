@@ -10,7 +10,6 @@ export default {
   "For payments to contacts": "Für Zahlungen an Kontakte",
   "Use the wallet on Home when it can pay.": "Die Wallet auf der Startseite verwenden, wenn sie bezahlen kann.",
   "Choose a wallet for payments to contacts. You can pick another before you pay.": "Wähle eine Wallet für Zahlungen an Kontakte. Vor dem Bezahlen kannst du eine andere wählen.",
-  "This wallet is no longer available. Choose another wallet or Automatic.": "Diese Wallet ist nicht mehr verfügbar. Wähle eine andere Wallet oder Automatisch.",
   "You still check each payment before sending.": "Du prüfst weiterhin jede Zahlung vor dem Senden.",
   "Couldn't save this choice. Try again.": "Deine Auswahl konnte nicht gespeichert werden. Versuche es erneut.",
   "Getting ready to pay": "Zahlung wird vorbereitet",
@@ -21,6 +20,8 @@ export default {
   "This is taking longer than usual. You can try again later.": "Es dauert länger als üblich. Du kannst es später erneut versuchen.",
   "This wallet isn't available. Choose another wallet.": "Diese Wallet ist nicht verfügbar. Wähle eine andere Wallet.",
   "Please try again in a moment.": "Versuche es gleich noch einmal.",
-  "Use {name} for future payments?": "{name} für künftige Zahlungen verwenden?",
-  "You can change this in Settings.": "Du kannst das in den Einstellungen ändern."
+  "Use {name} when you pay contacts?": "{name} für Zahlungen an Kontakte verwenden?",
+  "It becomes your default wallet for payments to contacts. You can change this in Settings.": "Sie wird deine Standard-Wallet für Zahlungen an Kontakte. Du kannst das in den Einstellungen ändern.",
+  "{wallet} can't make this payment. {other} pays this time.": "{wallet} kann diese Zahlung nicht ausführen. Dieses Mal zahlt {other}.",
+  "This request can no longer be paid.": "Diese Anfrage kann nicht mehr bezahlt werden."
 };

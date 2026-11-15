@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { beforeEach, test } from 'node:test'
 import { createPinia, setActivePinia } from 'pinia'
-import { PAYMENT_PREFERENCES_KEY, usePaymentPreferencesStore } from '../paymentPreferences.js'
+import { PAYMENT_PREFERENCES_KEY, settledWalletIds, usePaymentPreferencesStore } from '../paymentPreferences.js'
 
 class MemoryStorage {
   data = new Map()
@@ -57,14 +57,32 @@ test('Not now persists without inventing a preferred wallet', () => {
   assert.equal(store.preferredWalletId, null)
 })
 
-test('a deleted wallet id is retained until the person explicitly replaces it', () => {
+test('a default wallet that left this phone returns to Automatic and may be offered again', () => {
   const store = usePaymentPreferencesStore()
   store.setPreferred('removed-wallet')
+  assert.equal(store.forgetMissing(['removed-wallet', 'other']), false, 'a wallet still here keeps the preference')
+  assert.equal(store.forgetMissing(null), false, 'wallets not known for sure change nothing')
+  assert.equal(store.preferredWalletId, 'removed-wallet')
+  assert.equal(store.forgetMissing(['other']), true)
+  assert.equal(store.preferredWalletId, null)
+  assert.equal(store.shouldPrompt, true)
   const next = reloaded()
-  assert.equal(next.preferredWalletId, 'removed-wallet')
-  assert.equal(next.shouldPrompt, false)
-  next.setPreferred('replacement-wallet')
-  assert.equal(reloaded().preferredWalletId, 'replacement-wallet')
+  assert.equal(next.preferredWalletId, null)
+  assert.equal(next.shouldPrompt, true)
+})
+
+test('Automatic and an unanswered offer are left alone when wallets change', () => {
+  const store = usePaymentPreferencesStore()
+  store.initialize()
+  store.dismissPrompt()
+  assert.equal(store.forgetMissing([]), false)
+  assert.equal(store.shouldPrompt, false, 'a declined offer stays declined')
+})
+
+test('wallet ids are settled only once saved wallets were read', () => {
+  assert.equal(settledWalletIds({ hydrated: false, wallets: [] }), null)
+  assert.equal(settledWalletIds({ hydrated: true, savedStateLoaded: false, wallets: [] }), null)
+  assert.deepEqual(settledWalletIds({ hydrated: true, savedStateLoaded: true, wallets: [{ id: 'a' }] }), ['a'])
 })
 
 test('a full or blocked storage cannot turn a failed save into a success', () => {

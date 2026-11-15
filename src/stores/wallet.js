@@ -28,6 +28,7 @@ import {
   probeAccountActivity as probeSparkAccountActivity,
 } from '../services/breezSdk';
 import { useAutoWithdrawStore } from './autoWithdraw';
+import { usePaymentPreferencesStore } from './paymentPreferences.js';
 import { useNotificationsStore } from './notifications';
 import { formatAmount } from '../utils/amountFormatting.js';
 import { internalTransferTransactionId } from '../utils/internalTransferDetails.js';
@@ -3341,6 +3342,13 @@ export const useWalletStore = defineStore('wallet', {
       // and its secret would be back on the next start.
       await this.persistState({ requireDurable: true });
       this._noteWalletsChanged();
+
+      // A default wallet for contact payments that just left returns to Automatic.
+      try {
+        usePaymentPreferencesStore().forgetMissing(this.wallets.map((w) => w.id));
+      } catch (error) {
+        console.warn('default wallet could not be reset:', error?.message || error);
+      }
 
       // A profile pointing at a removed address falls back to the next
       // default (oldest remaining Spark wallet, then the bucket).
