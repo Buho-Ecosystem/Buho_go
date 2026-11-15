@@ -23,7 +23,7 @@ function loadModule() {
   return load('../LNBitsWalletProvider.js', { './WalletProvider': base, '../utils/paymentOutcome.js': paymentOutcome, '../utils/nwcWallet.js': nwcWallet });
 }
 
-const { LNBitsWalletProvider, lnbitsPaymentHint, lnbitsRefusedPayment } = loadModule();
+const { LNBitsWalletProvider, lnbitsPaymentHint } = loadModule();
 
 const ADMIN = 'a'.repeat(32);
 const INVOICE = 'b'.repeat(32);
