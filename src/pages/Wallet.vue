@@ -5569,13 +5569,15 @@ export default {
         const isCompletedSend = outcome === PAYMENT_OUTCOME.SETTLED;
         const status = isCompletedSend ? 'completed' : 'pending';
 
-        // What went to the recipient: the invoice's amount. In the recipient's
-        // currency that is the estimate confirmed plus the service's fee, and
-        // it is what History shows, so the success screen and the records
-        // that find this payment in History use it too. Otherwise it is the
-        // amount confirmed (requestPayInvoice holds the invoice to it).
-        const invoiceSats = Number(result?.invoiceSats);
-        const sentSats = Number.isFinite(invoiceSats) && invoiceSats > 0 ? Math.ceil(invoiceSats) : amount;
+        // What went to the recipient, as the one whole figure the success
+        // screen and the records use. The wallet's own report of the payment
+        // wins where it gives one (a Spark wallet: the figure History lists).
+        // Else the invoice's amount: in the recipient's currency that is the
+        // estimate confirmed plus the service's fee. Else the amount
+        // confirmed (requestPayInvoice holds the invoice to it), which for a
+        // request is its amount as decoded (utils/lightningInvoice.js).
+        const sentSats = [result?.amountSats, result?.invoiceSats].map(Number)
+          .find((sats) => Number.isSafeInteger(sats) && sats > 0) ?? amount;
         // Where a refund goes, as the request path reports it went (none
         // when the service no longer asked): kept for Transaction Details.
         // An address that only said who paid is not a refund address.

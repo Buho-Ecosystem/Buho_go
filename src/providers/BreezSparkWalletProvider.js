@@ -34,6 +34,7 @@ import { Invoice } from '@getalby/lightning-tools';
 import { fetchPayRequest, lightningAddressUrl, requestPayInvoice } from '../utils/lnurlPay.js';
 import { fiatRatesService } from '../utils/fiatRates.js';
 import { isBitcoinAddress } from '../utils/addressUtils.js';
+import { invoiceSats } from '../utils/lightningInvoice.js';
 import { decodeSparkDestination, identityPublicKeyFromSparkAddress } from '../utils/sparkPayment.js';
 import { registerRandomLightningAddress } from '../utils/lightningAddressNames.js';
 import * as breezSdk from '../services/breezSdk.js';
@@ -222,8 +223,8 @@ export class BreezSparkWalletProvider extends WalletProvider {
   static decodeInvoiceAmount(invoice) {
     try {
       const cleanInvoice = invoice.replace(/^lightning:/i, '');
-      const decoded = new Invoice({ pr: cleanInvoice });
-      const amount = decoded.satoshi || 0;
+      // The whole figure the review shows (utils/lightningInvoice.js).
+      const amount = invoiceSats(new Invoice({ pr: cleanInvoice }));
       return {
         amount: amount > 0 ? amount : null,
         isZeroAmount: amount === 0
@@ -1164,6 +1165,9 @@ export class BreezSparkWalletProvider extends WalletProvider {
         id: payment.id || null,
         preimage: preimageOf(payment),
         fee: Number(payment.fees ?? 0),
+        // What the wallet itself says it sent, without the fee: the figure
+        // History lists this payment with.
+        amountSats: Number(payment.amount ?? 0),
         status: payment.status === PAYMENT_STATUS.COMPLETED
           ? PAYMENT_STATUS.COMPLETED
           : PAYMENT_STATUS.PENDING

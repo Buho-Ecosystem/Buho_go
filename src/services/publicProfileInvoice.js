@@ -58,7 +58,8 @@ export async function requestProfileInvoice(
   }
   let decoded;
   try { decoded = decode(data.pr); } catch { throw new ProfileInvoiceError('invalid'); }
-  if (decoded.amount !== amountSats) throw new ProfileInvoiceError('invalid');
+  // To the thousandth: a fraction off is another amount than the one asked for.
+  if (decoded.amountMsat !== msat) throw new ProfileInvoiceError('invalid');
   if (!Number.isFinite(decoded.expiry) || decoded.expiry * 1000 <= now()) {
     throw new ProfileInvoiceError('expired');
   }

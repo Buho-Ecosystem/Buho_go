@@ -1163,7 +1163,8 @@ test('a fee limit the payment is held to is shown as a limit; a fallback guess i
 });
 
 test('the success screen and History records carry what the invoice charged, in the recipient\'s currency too', async () => {
-  for (const [invoiceSats, shown] of [[2060, 2060], [2500, 2500], [undefined, 2500], [2059.4, 2060]]) {
+  // The invoice's amount arrives as a whole figure: a fraction is rounded up where it is decoded (utils/lightningInvoice.js).
+  for (const [invoiceSats, shown] of [[2060, 2060], [2500, 2500], [undefined, 2500]]) {
     const { vm, sent } = payingHarness({ active: 'biz' });
     vm.fetchLightningAddressInvoice = async () => ({ pr: 'lnbc-resolved', invoiceSats, successAction: null, verify: null });
     Object.assign(vm, { pendingPayment: lnAddressPayment(), sendingWalletId: 'lnb', paymentAmount: '2500', sendSheetAmountSats: 2500 });

@@ -510,7 +510,12 @@ function payerDetails(payRequest, payerData, callback) {
   }
 }
 
-/** The invoice in a callback answer, decoded. */
+/**
+ * The invoice in a callback answer, decoded. Its amount comes as two
+ * figures: `amountMsat`, what it asks for to the thousandth, which the
+ * check in requestPayInvoice holds it to, and `amountSats`, the whole figure
+ * the screens and records show (utils/lightningInvoice.js).
+ */
 function readInvoice(data, decode) {
   const missing = (message) => payRequestError(PAY_REQUEST_ERROR.INVOICE_MISSING, message)
   const pr = typeof data?.pr === 'string' ? data.pr.trim() : ''
@@ -521,11 +526,12 @@ function readInvoice(data, decode) {
   } catch {
     throw missing('The invoice could not be read')
   }
-  const amountSats = Number(decoded?.amount)
-  if (!Number.isFinite(amountSats) || amountSats <= 0) throw missing('The invoice has no amount')
+  const amountMsat = Number(decoded?.amountMsat)
+  if (!Number.isFinite(amountMsat) || amountMsat <= 0) throw missing('The invoice has no amount')
   return {
     pr: typeof decoded.invoice === 'string' && decoded.invoice ? decoded.invoice : pr,
-    amountSats,
+    amountMsat,
+    amountSats: Number(decoded.amount),
     expiresAt: Number.isFinite(decoded.expiry) ? decoded.expiry : null,
   }
 }
@@ -556,7 +562,8 @@ function readInvoice(data, decode) {
  *   now?: () => number }} [options]  `now` is the phone's clock in milliseconds
  * @returns {Promise<{ pr: string, amountSats: number, successAction: object|null,
  *   verify: string|null, storeable: boolean, payerData: { identifier: string }|null }>}
- *   `amountSats` is the invoice's; `successAction` is the LUD-09 action as
+ *   `amountSats` is the invoice's, as the whole figure every screen shows
+ *   (in sats it is the amount confirmed); `successAction` is the LUD-09 action as
  *   utils/successAction.js reads it, `verify` the LUD-21 URL on the
  *   callback's own host, `storeable` the LUD-11 verdict (isStoreablePayLink),
  *   and `payerData` the payer details that went with it (null: none).
@@ -611,12 +618,15 @@ export async function requestPayInvoice(
   }
   const data = serviceAnswer(response)
   const invoice = readInvoice(data, decode)
-  const tooMuch = sats === null ? invoice.amountSats > payoutCeilingSats(confirmed) : invoice.amountSats !== sats
+  // Held to the thousandth: an invoice a fraction above or below the amount
+  // confirmed is another amount, whatever whole figure it would be shown as.
+  const tooMuch = sats === null ? invoice.amountMsat > payoutCeilingSats(confirmed) * 1000 : invoice.amountMsat !== sats * 1000
   if (tooMuch) {
+    const exactSats = invoice.amountMsat / 1000
     throw payRequestError(
       PAY_REQUEST_ERROR.INVOICE_MISMATCH,
-      `The invoice is for ${invoice.amountSats} sats, not the ${confirmed} sats confirmed`,
-      { askedSats: confirmed, invoiceSats: invoice.amountSats },
+      `The invoice is for ${exactSats} sats, not the ${confirmed} sats confirmed`,
+      { askedSats: confirmed, invoiceSats: exactSats },
     )
   }
   const clock = serviceClockSeconds(response) ?? now() / 1000

@@ -40,6 +40,7 @@ import { WalletProvider } from './WalletProvider';
 import { payLinksStatusOf } from '../utils/lnbitsAddress.js';
 import { SUCCESS_ACTION_MAX_CHARS } from '../utils/successAction.js';
 import { readInvoice } from '../utils/nwcWallet.js';
+import { wholeSats } from '../utils/lightningInvoice.js';
 import { PAYMENT_COMPLETION_TIMEOUT_MS, PAYMENT_FAILED, PAYMENT_LOOKUP_WAIT_MS, assertOnline, unconfirmedPayment, withinPaymentDeadline } from '../utils/paymentOutcome.js';
 
 /**
@@ -429,7 +430,10 @@ export class LNBitsWalletProvider extends WalletProvider {
       id: tx.payment_hash || tx.checking_id,
       paymentHash: tx.payment_hash || null,
       type: tx.amount > 0 ? 'receive' : 'send',
-      amount: Math.floor(Math.abs(tx.amount) / 1000), // Convert msats to sats
+      // LNbits counts in thousandths. What left the wallet is the whole
+      // figure the review showed, rounded up (utils/lightningInvoice.js);
+      // what arrived is rounded down, never above what came in.
+      amount: tx.amount > 0 ? Math.floor(tx.amount / 1000) : wholeSats(-tx.amount),
       timestamp: this._parseTimestamp(tx.time || tx.created_at),
       // Keep History's existing display time, but let receipts distinguish
       // verified settlement from an invoice's creation-time fallback.

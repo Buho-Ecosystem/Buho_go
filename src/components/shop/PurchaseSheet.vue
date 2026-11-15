@@ -369,6 +369,7 @@
 import { Icon } from '@iconify/vue';
 import VueQrcode from '@chenfengyuan/vue-qrcode';
 import { Invoice } from '@getalby/lightning-tools';
+import { invoiceSats } from '../../utils/lightningInvoice.js';
 import { useWalletStore } from '../../stores/wallet';
 import { payWithNwc } from '../../services/nwcPayment.js';
 import { buildPaymentError } from '../../utils/userErrors.js';
@@ -659,7 +660,7 @@ export default {
     decodeSats(pr) {
       try {
         const clean = String(pr || '').replace(/^lightning:/i, '');
-        return new Invoice({ pr: clean }).satoshi || 0;
+        return invoiceSats(new Invoice({ pr: clean }));
       } catch { return 0; }
     },
 
