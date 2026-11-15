@@ -23,5 +23,6 @@ export default {
   "Use {name} when you pay contacts?": "Use {name} when you pay contacts?",
   "It becomes your default wallet for payments to contacts. You can change this in Settings.": "It becomes your default wallet for payments to contacts. You can change this in Settings.",
   "{wallet} can't make this payment. {other} pays this time.": "{wallet} can't make this payment. {other} pays this time.",
-  "This request can no longer be paid.": "This request can no longer be paid."
+  "This request can no longer be paid.": "This request can no longer be paid.",
+  "This wallet can only pay a request that names an amount.": "This wallet can only pay a request that names an amount.",
 };

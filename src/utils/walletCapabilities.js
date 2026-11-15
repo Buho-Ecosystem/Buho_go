@@ -45,6 +45,14 @@ const KIND_BY_TYPE = {
 }
 
 /**
+ * A Lightning invoice that names no amount, as its own destination type.
+ * It rides the Lightning rail like any invoice, but only a wallet that can
+ * be told the amount can pay it: an LNbits server refuses such an invoice,
+ * and an NWC connection is not asked to carry an amount it may ignore.
+ */
+export const AMOUNTLESS_INVOICE = 'amountless_invoice'
+
+/**
  * Collapse a payment type or address-book addressType to its rail.
  * @param {string} type
  * @returns {'spark'|'arkade'|'bitcoin'|'lightning'}
@@ -61,6 +69,9 @@ export function destinationKind(type) {
  * @returns {boolean}
  */
 export function canWalletPay(walletType, type) {
+  // Before the rails: of the wallets on the Lightning rail, only Spark
+  // takes the amount for an invoice that names none.
+  if (type === AMOUNTLESS_INVOICE) return walletType === 'spark'
   const kind = destinationKind(type)
   if (kind === 'spark') return walletType === 'spark'
   if (kind === 'arkade') return walletType === 'arkade'
@@ -83,12 +94,15 @@ export function canWalletPay(walletType, type) {
  * which of their wallets can pay. One sentence is true for every caller: the
  * review (the chosen wallet cannot pay, with or without another that can) and
  * the Send field (none of the person's wallets can).
+ * A request without an amount is the one case with words of its own: there
+ * the person can do something about it, by asking for one with an amount.
  * @param {string} type  payment type or addressType; the words are the same
  *   for every rail
  * @param {(key: string) => string} t  vue-i18n translate
  * @returns {string}
  */
 export function walletSwitchHint(type, t) {
+  if (type === AMOUNTLESS_INVOICE) return t('This wallet can only pay a request that names an amount.')
   return t('This payment needs a different wallet.')
 }
 

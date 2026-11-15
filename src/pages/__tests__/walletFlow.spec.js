@@ -583,7 +583,7 @@ const PAY_WALLETS = [
   { id: 'ark', name: 'Arkade', type: 'arkade' },
 ];
 const PAY_FUNDS = { biz: 50000, personal: 40000, hub: 30000, lnb: 20000, ark: 10000 };
-const INVOICE_SATS = { 'inv-1000': 1000, 'inv-zero': 0, 'inv-big': 45000 };
+const INVOICE_SATS = { 'inv-1000': 1000, 'inv-5000': 5000, 'inv-zero': 0, 'inv-big': 45000 };
 
 function payingHarness({ wallets = PAY_WALLETS, active = 'biz', funds = PAY_FUNDS, cached = [], connectionStates = {}, bus = { emit() {} }, deps = {} } = {}) {
   const calls = [];     // provider-level traffic, in order: [walletId, method, ...details]
@@ -982,7 +982,8 @@ test('Pay with: checked metadata is reused for every paying wallet without a sec
 
 test('Pay with: choosing another wallet moves the verdict, the hint and the commit gate with it', async () => {
   const { vm, store } = payingHarness({ funds: { ...PAY_FUNDS, personal: 100 } });
-  await vm.onPaymentDetected({ type: 'lightning_invoice', data: 'inv-zero' });
+  // A request that names its amount: every wallet on the Lightning rail may pay it.
+  await vm.onPaymentDetected({ type: 'lightning_invoice', data: 'inv-5000' });
   vm.paymentAmount = '5000';
   vm.sendSheetAmountSats = 5000;
   assert.equal(vm.sendingWalletId, 'biz');
@@ -1016,6 +1017,17 @@ test('Pay with: choosing another wallet moves the verdict, the hint and the comm
   vm.isSendingPayment = true;
   vm.onSendingWalletChange('lnb');
   assert.equal(vm.sendingWalletId, 'hub');
+});
+
+test('Pay with: a request that names no amount is offered only to a wallet that can be told the amount', async () => {
+  const { vm } = payingHarness();
+  await vm.onPaymentDetected({ type: 'lightning_invoice', data: 'inv-zero' });
+  const reasons = Object.fromEntries(vm.payingWalletEntries.map(w => [w.id, w.reason]));
+  assert.equal(reasons.hub, 'unsupported-destination', 'an NWC wallet');
+  assert.equal(reasons.lnb, 'unsupported-destination', 'an LNbits wallet');
+  assert.equal(vm.walletTypeOf(vm.sendingWalletId), 'spark', 'the wallet picked to pay is one that can');
+  vm.onSendingWalletChange('hub');
+  assert.equal(vm.walletTypeOf(vm.sendingWalletId), 'spark', 'and it cannot be changed to one that cannot');
 });
 
 test('Pay with: an unusable selection blocks the commit, in the sheet and in the pipeline', async () => {

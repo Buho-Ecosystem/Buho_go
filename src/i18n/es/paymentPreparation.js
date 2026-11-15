@@ -23,5 +23,6 @@ export default {
   "Use {name} when you pay contacts?": "¿Usar {name} para pagar a tus contactos?",
   "It becomes your default wallet for payments to contacts. You can change this in Settings.": "Será tu cartera predeterminada para pagos a contactos. Puedes cambiarlo en Ajustes.",
   "{wallet} can't make this payment. {other} pays this time.": "{wallet} no puede realizar este pago. Esta vez paga {other}.",
-  "This request can no longer be paid.": "Esta solicitud ya no se puede pagar."
+  "This request can no longer be paid.": "Esta solicitud ya no se puede pagar.",
+  "This wallet can only pay a request that names an amount.": "Esta cartera solo puede pagar solicitudes que indican un importe.",
 };
