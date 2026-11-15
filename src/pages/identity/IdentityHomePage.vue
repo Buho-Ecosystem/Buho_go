@@ -170,6 +170,7 @@ import AddressBookModal from '../../components/AddressBook/AddressBookModal.vue'
 import { useIdentityHealth } from '../../composables/useIdentityHealth';
 import { useSocialBucketStore } from '../../stores/socialBucket';
 import { usePayContact } from '../../composables/usePayContact';
+import { preloadContactPaymentPipeline } from '../../components/contactPaymentPipeline.js';
 import { buildNostrIdentityUri } from '../../utils/nostrLookup.js';
 import { useUsernameSuggestion } from '../../composables/useUsernameSuggestion';
 import { nip05AddressFor } from '../../services/nip05';
@@ -308,6 +309,7 @@ export default {
   },
 
   async created() {
+    preloadContactPaymentPipeline();
     await this.identity.hydrate();
     await this.profile.hydrate();
 

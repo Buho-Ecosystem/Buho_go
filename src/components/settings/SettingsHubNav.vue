@@ -99,7 +99,9 @@ export default {
   pointer-events: none; /* only the nav pill receives events */
 }
 
-/* The tint carries legibility even in WebViews without backdrop blur. */
+/* The tint alone carries legibility, in every WebView. At this opacity a
+   backdrop blur would not be seen and would only cost a compositing layer,
+   so there is none. */
 .hub-nav {
   pointer-events: auto;
   display: flex;
@@ -108,8 +110,6 @@ export default {
   width: fit-content;
   padding: 5px;
   border-radius: 28px;
-  backdrop-filter: blur(32px) saturate(1.9);
-  -webkit-backdrop-filter: blur(32px) saturate(1.9);
   transition: background 0.2s ease;
 }
 

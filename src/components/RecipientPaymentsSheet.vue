@@ -101,7 +101,7 @@ const { proxy } = getCurrentInstance()
 const router = useRouter()
 const walletStore = useWalletStore()
 const metadataStore = useTransactionMetadataStore()
-const payContact = usePayContact({ $q: useQuasar(), $t: (key, params) => proxy.$t(key, params), $router: router })
+const payContact = usePayContact({ $q: useQuasar(), $t: (key, params) => proxy.$t(key, params) })
 
 const titleId = `recipient-payments-${proxy.$.uid}`
 const payments = ref([])

@@ -10,6 +10,8 @@ const { code } = transformSync(setup, { format: 'cjs' })
 function harness({ suspended = false, stage = 'ready' } = {}) {
   const watches = []
   const cancelled = []
+  const notices = []
+  const pipeline = { loader: () => Promise.resolve({ default: {} }), options: null }
   const props = { suspended }
   const route = { fullPath: '/contact/alice' }
   const identity = { nostrPubkeyHex: 'identity-a' }
@@ -26,12 +28,18 @@ function harness({ suspended = false, stage = 'ready' } = {}) {
     },
   }
   const dependencies = {
-    vue: { watch(read, callback, options) {
-      const initial = read()
-      watches.push({ read, callback, last: initial })
-      if (options?.immediate) callback(initial)
-    } },
+    vue: {
+      watch(read, callback, options) {
+        const initial = read()
+        watches.push({ read, callback, last: initial })
+        if (options?.immediate) callback(initial)
+      },
+      defineAsyncComponent(options) { pipeline.options = options; return {} },
+      getCurrentInstance: () => ({ proxy: { $t: key => key } }),
+    },
     'vue-router': { useRoute: () => route },
+    quasar: { useQuasar: () => ({ notify: notice => notices.push(notice) }) },
+    './contactPaymentPipeline.js': { loadContactPaymentPipeline: pipeline.loader },
     '../stores/paymentFlow.js': { usePaymentFlowStore: () => flow },
     '../stores/identity.js': { useIdentityStore: () => identity },
     '../stores/wallet.js': { useWalletStore: () => wallets },
@@ -53,7 +61,7 @@ function harness({ suspended = false, stage = 'ready' } = {}) {
     }
     assert.ok(runs < 20, 'watch callbacks settle without a loop')
   }
-  return { flow, route, identity, props, wallets, cancelled, flush }
+  return { flow, route, identity, props, wallets, cancelled, flush, notices, pipeline }
 }
 
 test('ready preparation is cancelled when route, identity or lock context changes', () => {
@@ -123,4 +131,21 @@ test('a new intent is immediately cancelled while lock or kiosk suspension is ac
   h.flush()
   assert.equal(h.flow.intent, null)
   assert.deepEqual(h.cancelled, [1, 2])
+})
+
+test('the wallet page is fetched on its own, never with the layout that hosts contact payments', () => {
+  assert.doesNotMatch(source, /import\s+\w+\s+from\s+['"][^'"]*pages\/Wallet\.vue['"]/)
+  const h = harness()
+  assert.equal(h.pipeline.options.loader, h.pipeline.loader, 'one shared fetch, also used to warm it up')
+})
+
+test('a pipeline that cannot be fetched gives the tap back with a reason instead of holding an unseen payment', () => {
+  const h = harness({ stage: 'preparing' })
+  const failed = []
+  const cause = new Error('Failed to fetch dynamically imported module')
+  h.pipeline.options.onError(cause, () => assert.fail('no silent retry loop'), error => failed.push(error))
+  assert.equal(h.flow.intent, null)
+  assert.deepEqual(h.cancelled, [1])
+  assert.deepEqual(h.notices.map(notice => notice.message), ['Check your connection and try again.'])
+  assert.deepEqual(failed, [cause])
 })

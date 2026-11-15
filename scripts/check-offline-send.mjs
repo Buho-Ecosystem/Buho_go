@@ -96,14 +96,17 @@ const sheet = page.locator('.sheet-card:not(.sheet-card--redeem)');
 const notice = sheet.locator('.wallet-hint[role="status"]');
 const dialog = page.locator('.error-dialog');
 
-/** The chat's pay hand-over: the wallet page opens the sheet, then clears its URL. */
+/** The chat's pay hand-over: a contact payment opens its sheet over the page it started on. */
 async function openSheet() {
   const { bolt11 } = ledger.mint({ amountSats: 6 });
-  await page.evaluate((invoice) => {
-    location.hash = `#/wallet?action=pay_contact&addressType=invoice&contactName=Axel&address=${invoice}`;
+  await page.evaluate(async (invoice) => {
+    const { usePayContact } = await import('/src/composables/usePayContact.js');
+    const globals = document.querySelector('#q-app').__vue_app__.config.globalProperties;
+    usePayContact({ $q: globals.$q, $t: globals.$t }).payInvoice({ bolt11: invoice, name: 'Axel' });
   }, bolt11);
   await sheet.waitFor();
-  await page.waitForFunction(() => !location.hash.includes('action='));
+  // The invoice is read on this device: wait until the sheet is past "Getting ready to pay".
+  await page.waitForFunction(() => !document.querySelector('.sheet-card .preparation-status'));
   // Slid in and settled, so gestures land on it.
   await page.waitForFunction(() => document.querySelector('.sheet-top')?.getBoundingClientRect().bottom < innerHeight);
   await page.waitForTimeout(400);

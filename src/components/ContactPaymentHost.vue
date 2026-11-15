@@ -10,14 +10,18 @@
 </template>
 
 <script setup>
-import { watch } from 'vue'
+import { defineAsyncComponent, getCurrentInstance, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import Wallet from '../pages/Wallet.vue'
+import { useQuasar } from 'quasar'
+import { loadContactPaymentPipeline } from './contactPaymentPipeline.js'
 import { usePaymentFlowStore } from '../stores/paymentFlow.js'
 import { useIdentityStore } from '../stores/identity.js'
 import { useWalletStore } from '../stores/wallet.js'
 
 const props = defineProps({ suspended: { type: Boolean, default: false } })
+const $q = useQuasar()
+// vue-i18n runs in legacy mode, so useI18n() throws; use the instance's $t.
+const { proxy } = getCurrentInstance()
 const flow = usePaymentFlowStore()
 const route = useRoute()
 const identity = useIdentityStore()
@@ -30,6 +34,19 @@ function invalidateContext() {
   invalidatedIntentId = id
   flow.cancel(id)
 }
+
+// The pipeline is the wallet page, fetched apart from the layout this host
+// lives in (contactPaymentPipeline.js). Where it cannot be fetched (the web
+// app, offline, before Home was ever opened) the tap is given back with a
+// reason, never held as a payment nobody can see.
+const Wallet = defineAsyncComponent({
+  loader: loadContactPaymentPipeline,
+  onError(error, _retry, fail) {
+    invalidateContext()
+    $q.notify({ type: 'negative', message: proxy.$t('Check your connection and try again.'), timeout: 3500 })
+    fail(error)
+  },
+})
 
 // Preparing another person's payment after leaving its context is never an
 // acceptable late result. A committed send remains bound to its paying wallet

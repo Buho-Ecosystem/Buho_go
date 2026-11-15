@@ -102,10 +102,15 @@ const chooseWallet = async name => {
   await sheet().locator('.payment-wallet-picker').getByRole('radio', { name: new RegExp(name) }).click();
   await sheet().locator('.payment-wallet-apply').click();
 };
-const finishPaymentForDefaultPopup = async wallet => {
+const promptAnswered = () => page.evaluate(async () => {
+  const { usePaymentPreferencesStore } = await import('/src/stores/paymentPreferences.js');
+  return usePaymentPreferencesStore().promptDismissed;
+});
+// The default wallet is offered to someone who picked the paying wallet in the sheet.
+const finishPaymentForDefaultPopup = async (wallet = 'Travel') => {
   const { bolt11 } = ledger.mint({ amountSats: 500 });
   await startPayment('payInvoice', { bolt11, name: 'Bob' }); await ready();
-  if (wallet) await chooseWallet(wallet);
+  await chooseWallet(wallet);
   assert.equal(await page.locator('.default-wallet-dialog:visible').count(), 0);
   await sheet().locator('button.primary-cta').click();
   const receiptLabel = page.locator('.payment-confirmation:visible .amount-label');
@@ -259,7 +264,26 @@ try {
     await cancel();
     assert.equal(await page.locator('.default-wallet-dialog:visible').count(), 0, 'cancellation never asks for a default');
 
+    // A payment from the wallet the app picked shows no interest in a default: nothing is asked.
+    const untouched = ledger.mint({ amountSats: 500 });
+    await startPayment('payInvoice', { bolt11: untouched.bolt11, name: 'Bob' }); await ready();
+    await sheet().locator('button.primary-cta').click();
+    const receipt = page.locator('.payment-confirmation:visible .amount-label');
+    await receipt.waitFor(); await receipt.click();
+    await page.locator('.payment-confirmation').waitFor({ state: 'hidden' });
+    await page.waitForTimeout(400);
+    assert.equal(await page.locator('.default-wallet-dialog:visible').count(), 0, 'the automatic pick is never followed by a question');
+    assert.equal(await promptAnswered(), false);
+
+    // Escape (or a tap beside the popup) is no answer: it closes and may be offered again.
     await finishPaymentForDefaultPopup();
+    await page.keyboard.press('Escape');
+    await page.locator('.default-wallet-dialog').waitFor({ state: 'hidden' });
+    assert.equal(await preference(), null);
+    assert.equal(await promptAnswered(), false, 'only the Not now button declines');
+
+    await finishPaymentForDefaultPopup();
+    assert.match(await page.locator('.default-wallet-dialog h2').innerText(), /Use Travel when you pay contacts\?/);
     const hierarchy = await page.locator('.default-wallet-dialog').evaluate(dialog => {
       const style = selector => getComputedStyle(dialog.querySelector(selector));
       return {
@@ -275,6 +299,7 @@ try {
     await page.locator('.default-wallet-dialog').getByRole('button', { name: 'Not now', exact: true }).click();
     await page.locator('.default-wallet-dialog').waitFor({ state: 'hidden' });
     assert.equal(await preference(), null);
+    assert.equal(await promptAnswered(), true);
     await payBob(); await ready();
     assert.equal(await sheet().locator('.wallet-preference-prompt').count(), 0);
     await cancel();
@@ -306,13 +331,13 @@ try {
     await snapshot('04-one-off-wallet'); await cancel();
   });
 
-  await step('A removed preferred wallet never silently selects another wallet', async () => {
+  await step('A default wallet that is no longer on this phone is Automatic again', async () => {
     await setPreference('deleted-wallet'); await payBob(); await ready();
-    await sheet().locator('.choose-wallet-cta').waitFor();
-    assert.match(await sheet().locator('.pay-with-field').innerText(), /Wallet unavailable/);
-    assert.equal(await preference(), 'deleted-wallet');
-    await chooseWallet('Reserve');
-    assert.equal(await preference(), 'deleted-wallet', 'one-off wallet choice never changes the default'); assert.equal(await activeWallet(), 'everyday'); await cancel();
+    assert.match(await sheet().locator('.pay-with-field').innerText(), /Everyday/);
+    assert.equal(await sheet().locator('.choose-wallet-cta').count(), 0, 'nothing to repair before paying');
+    assert.equal(await preference(), null);
+    assert.equal(await promptAnswered(), false, 'the offer may be made again');
+    assert.equal(await activeWallet(), 'everyday'); await cancel();
     await setPreference('travel');
   });
 
