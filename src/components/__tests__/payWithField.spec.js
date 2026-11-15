@@ -367,8 +367,8 @@ test('a wallet that cannot pay disables the commit control and its hint shows in
 
 test('the fee row writes known amounts as settings does and never exposes a spending cap', () => {
   const row = (feeEstimate, useBip177Format = true) => ConfirmSheet.computed.feeRowValueText.call({ payment: { feeEstimate }, useBip177Format, $t: t })
-  assert.equal(row({ sats: 1234 }), `₿ ${n(1234)}`)
-  assert.equal(row({ sats: 1234 }, false), `${n(1234)} sats`)
+  assert.equal(row({ sats: 1234 }), `₿\u00a0${n(1234)}`)
+  assert.equal(row({ sats: 1234 }, false), `${n(1234)}\u00a0sats`)
   assert.equal(row({ sats: 25, isLimit: true }), '')
   assert.equal(row({ sats: 25, isLimit: true }, false), '')
   assert.equal(row({ sats: 0 }), 'Free')
@@ -670,7 +670,7 @@ test('only known fees produce a total; unknown fees stay explicit without invent
   }
   const known = await render(ConfirmSheet, sheetProps({ payment: { ...sheetProps().payment, feeEstimate: { sats: 12 } } }), { directives: sheetDirectives })
   assert.match(known, /payment-total-row/)
-  assert.match(known, new RegExp(`₿ ${n(1012)}`))
+  assert.match(known, new RegExp(`₿(\u00a0|&nbsp;)${n(1012)}`))
   const unknown = await render(ConfirmSheet, sheetProps({ payment: { ...sheetProps().payment, feeNotice: 'Fee calculated when sending.' } }), { directives: sheetDirectives })
   assert.match(unknown, /payment-fee-notice[^>]*role="status"/)
   assert.match(unknown, /Fee calculated when sending/)
@@ -798,11 +798,11 @@ test('business details Back preserves the entire payment draft and returns to pa
   assert.deepEqual([vm.displayAmount, vm.currentCurrency, vm.comment, vm.walletDraftId], ['751', 'btc', 'Coffee', 'personal'])
 })
 
-test('fixed hero groups by app locale without formatting the exact sat state', async () => {
-  for (const [locale, grouped] of [['en-US', '2,400'], ['de', '2.400'], ['es', '12.400']]) {
-    const sats = locale === 'es' ? 12400 : 2400
+test('fixed hero groups like the rest of the app without formatting the exact sat state', async () => {
+  // One number format on every screen: the device's, whatever the app language.
+  for (const [locale, sats] of [['en-US', 2400], ['de', 2400], ['es', 12400]]) {
     const html = await render(ConfirmSheet, sheetProps({ payment: { ...sheetProps().payment, amount: { mode: 'fixed', fixedSats: sats } } }), { directives: sheetDirectives, locale })
-    assert.ok(html.includes(`value="${grouped}"`), locale)
+    assert.ok(html.includes(`value="${n(sats)}"`), locale)
     assert.match(html, /<span>₿<\/span>/)
     const vm = { amountMode: 'fixed', fixedSats: sats, displayAmount: String(sats) }
     assert.equal(ConfirmSheet.computed.amountInSats.call(vm), sats)
@@ -812,37 +812,38 @@ test('fixed hero groups by app locale without formatting the exact sat state', a
 
 test('BTC hero, fee, total and deliberate slide use one denomination while send stays simple', () => {
   const vm = { currentCurrency: 'btc', fixedSats: 2400, amountInSats: 2400, payment: { feeEstimate: { sats: 7 } }, useBip177Format: true, $t: t }
-  assert.equal(ConfirmSheet.computed.fixedAmountDisplay.call(vm), '0.00002400')
-  assert.equal(ConfirmSheet.computed.feeRowValueText.call(vm), '0.00000007 BTC')
-  assert.equal(ConfirmSheet.computed.totalRowValueText.call(vm), '0.00002407 BTC')
-  assert.equal(ConfirmSheet.computed.formattedConfirmAmount.call(vm), '0.00002400 BTC')
+  const btc = fraction => `0${(1.1).toLocaleString().charAt(1)}${fraction}`
+  assert.equal(ConfirmSheet.computed.fixedAmountDisplay.call(vm), btc('00002400'))
+  assert.equal(ConfirmSheet.computed.feeRowValueText.call(vm), `${btc('00000007')}\u00a0BTC`)
+  assert.equal(ConfirmSheet.computed.totalRowValueText.call(vm), `${btc('00002407')}\u00a0BTC`)
+  assert.equal(ConfirmSheet.computed.formattedConfirmAmount.call(vm), `${btc('00002400')}\u00a0BTC`)
   assert.equal(ConfirmSheet.computed.primaryCtaLabel.call({ verb: 'send', isAmountAcceptable: true, $t: t }), 'Send')
 })
 
-test('BTC presentation preserves every satoshi across the safe integer range and app locales', () => {
-  for (const [locale, maximum, small] of [
-    ['en-US', '90,071,992.54740991', '0.00000029'],
-    ['de', '90.071.992,54740991', '0,00000029'],
-    ['es', '90.071.992,54740991', '0,00000029'],
-  ]) {
-    const vm = { currentCurrency: 'btc', fixedSats: Number.MAX_SAFE_INTEGER, amountInSats: Number.MAX_SAFE_INTEGER - 29, payment: { feeEstimate: { sats: 29 } }, $i18n: { locale }, $t: t }
-    assert.equal(ConfirmSheet.computed.fixedAmountDisplay.call(vm), maximum, locale)
-    assert.equal(ConfirmSheet.computed.totalRowValueText.call(vm), `${maximum} BTC`, locale)
-    assert.equal(ConfirmSheet.computed.feeRowValueText.call(vm), `${small} BTC`, locale)
-    vm.amountInSats = 29
-    assert.equal(ConfirmSheet.computed.formattedConfirmAmount.call(vm), `${small} BTC`, locale)
-  }
+test('BTC presentation preserves every satoshi across the safe integer range', () => {
+  const decimal = (1.1).toLocaleString().charAt(1)
+  const maximum = `${n(90071992)}${decimal}54740991`
+  const small = `0${decimal}00000029`
+  const vm = { currentCurrency: 'btc', fixedSats: Number.MAX_SAFE_INTEGER, amountInSats: Number.MAX_SAFE_INTEGER - 29, payment: { feeEstimate: { sats: 29 } }, $i18n: { locale: 'de' }, $t: t }
+  assert.equal(ConfirmSheet.computed.fixedAmountDisplay.call(vm), maximum)
+  assert.equal(ConfirmSheet.computed.totalRowValueText.call(vm), `${maximum}\u00a0BTC`)
+  assert.equal(ConfirmSheet.computed.feeRowValueText.call(vm), `${small}\u00a0BTC`)
+  vm.amountInSats = 29
+  assert.equal(ConfirmSheet.computed.formattedConfirmAmount.call(vm), `${small}\u00a0BTC`)
 })
 
 test('legacy sats and BIP177 stay consistent and small converted fees never pretend to be zero', () => {
   for (const useBip177Format of [false, true]) {
     const vm = { currentCurrency: 'sats', amountMode: 'fixed', fixedSats: 2400, amountInSats: 2400, payment: { feeEstimate: { sats: 7 } }, useBip177Format, $t: t }
     assert.equal(ConfirmSheet.computed.unitPillLabel.call(vm), useBip177Format ? '₿' : 'sats')
-    assert.equal(ConfirmSheet.computed.feeRowValueText.call(vm), useBip177Format ? '₿ 7' : '7 sats')
-    assert.equal(ConfirmSheet.computed.totalRowValueText.call(vm), useBip177Format ? '₿ 2,407' : '2,407 sats')
+    assert.equal(ConfirmSheet.computed.feeRowValueText.call(vm), useBip177Format ? '₿\u00a07' : '7\u00a0sats')
+    assert.equal(ConfirmSheet.computed.totalRowValueText.call(vm), useBip177Format ? `₿\u00a0${n(2407)}` : `${n(2407)}\u00a0sats`)
   }
   const fiat = { currentCurrency: 'usd', fiatCurrencyCode: 'USD', fiatRates: { USD: 85000 }, payment: { feeEstimate: { sats: 1 } } }
-  assert.equal(ConfirmSheet.computed.feeRowValueText.call(fiat), '≈ < 0.01 USD')
+  assert.equal(ConfirmSheet.computed.feeRowValueText.call(fiat), `≈\u00a0<\u00a0${(0.01).toLocaleString()}\u00a0USD`)
+  // The anchor of a fixed amount shown in fiat is a conversion too, and says so.
+  const anchor = { currentCurrency: 'usd', fiatCurrencyCode: 'USD', fiatRates: { USD: 100000 }, fixedSats: 2400 }
+  assert.equal(ConfirmSheet.computed.fixedAmountDisplay.call(anchor), `≈\u00a0${(2.4).toLocaleString(undefined, { minimumFractionDigits: 2 })}`)
 })
 
 test('decimal BTC input converts exactly: 0.00000029 is 29 sats, not 28', () => {

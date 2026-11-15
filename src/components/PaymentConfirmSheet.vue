@@ -508,7 +508,7 @@
 import { useWalletStore } from '../stores/wallet'
 import { mapState } from 'pinia'
 import { fiatRatesService } from '../utils/fiatRates.js'
-import { formatAmount } from '../utils/amountFormatting.js'
+import { formatAmount, formatFiatAmount, formatPaymentAmount, paymentAmountParts, fiatDecimals } from '../utils/amountFormatting.js'
 import { normalizePaymentAmountInput } from '../utils/paymentAmountInput.js'
 import { FIAT_SYMBOLS } from '../utils/fiatCurrencies.js'
 import SlideToSend from './SlideToSend.vue'
@@ -528,40 +528,28 @@ import { onAndroidBack } from '../utils/androidBack.js'
 // the same filling ProgressCta once committed.
 const SLIDE_THRESHOLD_SATS = 10000
 
-// Only the presentation uses locale grouping/denominations. displayAmount
-// remains a plain decimal draft and amountInSats remains the executor value.
+// Only the presentation groups and denominates. displayAmount remains a plain
+// decimal draft and amountInSats remains the executor value.
 function fiatPrecision(vm) {
-  try { return new Intl.NumberFormat(undefined, { style: 'currency', currency: vm.fiatCurrencyCode || vm.preferredFiatCurrency || 'USD' }).resolvedOptions().maximumFractionDigits }
-  catch { return 2 }
+  return fiatDecimals(vm.fiatCurrencyCode || vm.preferredFiatCurrency || 'USD')
 }
-function reviewParts(vm, sats) {
-  const locale = typeof vm.$i18n?.locale === 'string' ? vm.$i18n.locale : undefined
-  const number = (value, digits = 0) => new Intl.NumberFormat(locale, { minimumFractionDigits: digits, maximumFractionDigits: digits }).format(value)
-  const small = (value, digits) => value > 0 && value < 10 ** -digits ? `< ${number(10 ** -digits, digits)}` : number(value, digits)
-  if (vm.currentCurrency === 'btc') {
-    // Keep all eight satoshi digits exact, including the largest supported
-    // integer. Dividing a Number first can round its final satoshi away.
-    if (!Number.isSafeInteger(sats)) return { number: number(NaN, 8), unit: 'BTC' }
-    const exact = BigInt(sats)
-    const decimal = new Intl.NumberFormat(locale).formatToParts(1.1).find(part => part.type === 'decimal')?.value || '.'
-    const fraction = new Intl.NumberFormat(locale, { useGrouping: false, minimumIntegerDigits: 8, maximumFractionDigits: 0 }).format(exact % 100000000n)
-    return { number: `${number(exact / 100000000n)}${decimal}${fraction}`, unit: 'BTC' }
-  }
+/** What the sheet's amounts are shown in right now (see paymentAmountParts). */
+function denominationOf(vm) {
+  if (vm.currentCurrency === 'btc') return { kind: 'btc' }
   if (vm.isLocalDenomination && vm.payoutCurrency?.multiplier > 0) {
-    return { number: small(sats * 1000 / vm.payoutCurrency.multiplier, vm.payoutCurrency.decimals || 0), unit: vm.payoutCurrency.code, approximate: true }
+    return { kind: 'local', code: vm.payoutCurrency.code, multiplier: vm.payoutCurrency.multiplier, decimals: vm.payoutCurrency.decimals || 0 }
   }
-  if (vm.currentCurrency && vm.currentCurrency !== 'sats' && vm.currentCurrency !== 'btc') {
+  if (vm.currentCurrency && vm.currentCurrency !== 'sats') {
     const code = vm.fiatCurrencyCode || vm.preferredFiatCurrency || 'USD'
     const rate = vm.fiatRates?.[code]
-    if (rate > 0) return { number: small(sats * rate / 100000000, fiatPrecision(vm)), unit: code, approximate: true }
+    if (rate > 0) return { kind: 'fiat', code, rate, decimals: fiatPrecision(vm) }
   }
-  return { number: number(sats), unit: vm.useBip177Format ? '₿' : 'sats' }
+  return { kind: 'sats', bip177: !!vm.useBip177Format }
 }
-function reviewAmount(vm, sats) {
-  const result = reviewParts(vm, sats)
-  const value = result.unit === '₿' ? `₿ ${result.number}` : `${result.number} ${result.unit}`
-  return result.approximate ? `≈ ${value}` : value
-}
+const reviewParts = (vm, sats) => paymentAmountParts(sats, denominationOf(vm))
+const reviewAmount = (vm, sats) => formatPaymentAmount(sats, denominationOf(vm))
+/** The separators an amount may be typed with: the app language's and the device's. */
+const amountLocales = vm => [vm.$i18n?.locale, undefined]
 
 export default {
   name: 'PaymentConfirmSheet',
@@ -1115,25 +1103,28 @@ export default {
       // estimate for the amount (the recipient still receives the exact local
       // amount; the fee is added on top in the real invoice).
       if (this.isLocalDenomination) {
-        return `≈ ${reviewAmount({ currentCurrency: 'sats', useBip177Format: this.useBip177Format, $i18n: this.$i18n }, sats)}`
+        return `≈\u00a0${formatPaymentAmount(sats, { kind: 'sats', bip177: !!this.useBip177Format })}`
       }
       if (!this.fiatRates) return ''
       try {
         const currency = this.fiatCurrencyCode
         if (this.denominationMode === 'fiat') {
           if (!this.fiatRates?.[currency]) return ''
-          return `≈ ${reviewAmount({ currentCurrency: 'sats', useBip177Format: this.useBip177Format, $i18n: this.$i18n }, sats)}`
+          return `≈\u00a0${formatPaymentAmount(sats, { kind: 'sats', bip177: !!this.useBip177Format })}`
         }
         const fiatValue = fiatRatesService.convertSatsToFiatSync(sats, currency)
         if (fiatValue === null) return ''
-        const symbol = FIAT_SYMBOLS[currency] || currency + ' '
-        return `≈ ${symbol}${fiatValue.toFixed(2)}`
+        return `≈\u00a0${formatFiatAmount(fiatValue, currency, { symbol: FIAT_SYMBOLS[currency] })}`
       } catch {
         return ''
       }
     },
 
-    fixedAmountDisplay() { return reviewParts(this, this.fixedSats).number },
+    // A converted figure says so on the anchor too, not only in the rows.
+    fixedAmountDisplay() {
+      const parts = reviewParts(this, this.fixedSats)
+      return parts.approximate ? `≈\u00a0${parts.number}` : parts.number
+    },
     formattedConfirmAmount() { return reviewAmount(this, this.amountInSats) },
 
     // ───── Verb-aware copy ─────
@@ -1523,7 +1514,7 @@ export default {
         : this.isLocalDenomination ? this.payoutCurrency.decimals || 0 : fiatPrecision(this)
       const input = event?.target
       const result = normalizePaymentAmountInput(this.displayAmount, {
-        locale: this.$i18n?.locale, precision, caret: input?.selectionStart, canonicalDecimal: decimalEdit,
+        locales: amountLocales(this), precision, caret: input?.selectionStart, canonicalDecimal: decimalEdit,
       })
       this.amountInputError = !!result.error
       this.amountInputPartial = !result.error && !result.complete

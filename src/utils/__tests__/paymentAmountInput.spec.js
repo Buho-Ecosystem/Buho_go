@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { normalizePaymentAmountInput as normalize } from '../paymentAmountInput.js'
+import { normalizePaymentAmountInput as normalize, parsePaymentAmount } from '../paymentAmountInput.js'
 
 test('locale decimals normalize without multiplying the draft', () => {
   for (const [locale, input, precision, expected] of [
@@ -22,7 +22,7 @@ test('ambiguous, malformed and excessive precision never silently changes the pa
     ['de', 0, ['2.40', '2,40', '2,5', '2.5', '2.400,00']],
     ['en-US', 0, ['2,40', '2.40', '2.5', '2,400.00']],
     ['de', 8, ['1.234', '0,000000299', '1.23.456', '1,2,3']],
-    ['en-US', 8, ['0.000000299', '1,23', '1.2.3']],
+    ['en-US', 8, ['0.000000299', '1,2345', '1.2.3']],
     ['de', 2, ['10,123', '1.234', '1.234,567']],
     ['de', 0, ['-1', '+1', '1e3', '€ 10', '2 40']],
   ]) for (const input of inputs) {
@@ -56,4 +56,36 @@ test('known canonical decimal edits retain meaning without relaxing precision or
   for (const [input, precision] of [['1.234', 2], ['1.234567891', 8], ['1.23.4', 8], ['1,2,3', 8]]) {
     assert.ok(normalize(input, { locale: 'de', precision, canonicalDecimal: true }).error, input)
   }
+})
+
+test('the keypad decimal key works whatever the app language is', () => {
+  // App in English, phone in German: the keypad types a comma.
+  const mixed = { locales: ['en-US', 'de'] }
+  for (const [input, precision, expected] of [
+    ['1,5', 2, '1.5'], ['1.5', 2, '1.5'], ['12,50', 2, '12.50'], ['0,00002400', 8, '0.00002400'],
+    ['1.234,56', 2, '1234.56'], ['1,234.56', 2, '1234.56'], ['2.400', 0, '2400'], ['2,400', 0, '2400'],
+  ]) {
+    const result = normalize(input, { ...mixed, precision })
+    assert.equal(result.error, null, input)
+    assert.equal(result.value, expected)
+  }
+  // Three digits after one mark could be thousands or a decimal: refused.
+  for (const input of ['1,234', '1.234']) assert.equal(normalize(input, { ...mixed, precision: 8 }).error, 'ambiguous', input)
+  assert.equal(normalize('1.234', { ...mixed, precision: 8, canonicalDecimal: true }).value, '1.234')
+  // Even with no language that uses a comma, one or two digits after it are a decimal.
+  assert.equal(normalize('1,5', { locale: 'en-US', precision: 2 }).value, '1.5')
+  assert.equal(normalize('1,23', { locale: 'en-US', precision: 8 }).value, '1.23')
+  assert.deepEqual(normalize('1,', { locale: 'en-US', precision: 2, caret: 2 }), { value: '1.', error: null, complete: false, caret: 2 })
+  assert.equal(normalize('1,234', { locale: 'en-US', precision: 2 }).value, '1234', 'a thousands group stays one')
+  assert.ok(normalize('1,5', { locale: 'en-US', precision: 0 }).error, 'whole units take no decimal')
+})
+
+test('a finished field parses to a number or to nothing', () => {
+  assert.equal(parsePaymentAmount('2,5', { locale: 'de', precision: 2 }), 2.5)
+  assert.equal(parsePaymentAmount('2.500', { locale: 'de', precision: 0 }), 2500)
+  assert.equal(parsePaymentAmount('2,500', { locale: 'en-US', precision: 0 }), 2500)
+  assert.equal(parsePaymentAmount('2,5', { locale: 'de', precision: 0 }), null)
+  assert.equal(parsePaymentAmount('2,', { locale: 'de', precision: 2 }), null)
+  assert.equal(parsePaymentAmount('', { precision: 0 }), null)
+  assert.equal(parsePaymentAmount('abc', { precision: 0 }), null)
 })
