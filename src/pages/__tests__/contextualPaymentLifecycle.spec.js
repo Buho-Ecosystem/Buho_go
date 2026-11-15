@@ -5,7 +5,7 @@ import { readFileSync } from 'node:fs'
 import { transformSync } from 'esbuild'
 import { createPinia, setActivePinia } from 'pinia'
 import { usePaymentFlowStore } from '../../stores/paymentFlow.js'
-import { usePaymentPreferencesStore } from '../../stores/paymentPreferences.js'
+import * as paymentPreferencesModule from '../../stores/paymentPreferences.js'
 import * as payingWallets from '../../utils/payingWallets.js'
 import * as walletCapabilities from '../../utils/walletCapabilities.js'
 import * as brantaReview from '../../services/brantaVerification.js'
@@ -13,8 +13,10 @@ import * as brantaReview from '../../services/brantaVerification.js'
 const source = readFileSync(new URL('../Wallet.vue', import.meta.url), 'utf8').match(/<script>([\s\S]*?)<\/script>/)[1]
 const { code } = transformSync(source, { format: 'cjs', supported: { 'dynamic-import': false } })
 const module = { exports: {} }
+const { usePaymentPreferencesStore } = paymentPreferencesModule
 const dependencies = { '../utils/payingWallets.js': payingWallets, '../utils/walletCapabilities.js': walletCapabilities,
   '../services/brantaVerification.js': brantaReview,
+  '../stores/paymentPreferences': paymentPreferencesModule,
   '../utils/haptics.js': { haptics: { success() {} } },
   '../utils/fiatRates.js': { fiatRatesService: { convertSatsToFiat: async () => null } },
 }
@@ -67,7 +69,7 @@ function controller(input = {}, { readiness = Promise.resolve(), detected } = {}
       this.finishContextualPreparation(true)
     },
   }
-  for (const key of ['contextualPaymentSheet', 'payerWalletId', 'payingAmountSats', 'payingWalletEntries', 'sendingWalletBlock', 'paymentSheetWalletCanPay', 'isSparkL1Payment']) {
+  for (const key of ['contextualPaymentSheet', 'payerWalletId', 'payingAmountSats', 'payingWalletEntries', 'sendingWalletBlock', 'paymentSheetWalletCanPay', 'paymentSheetWalletNotice', 'isSparkL1Payment']) {
     Object.defineProperty(vm, key, { configurable: true, get: () => options.computed[key].call(vm) })
   }
   const prepare = vm.prepareContextualPayment
@@ -169,24 +171,60 @@ test('failed readiness or resolution becomes a brief retry message inside the ex
   }
 })
 
-test('missing or blocked preference stays selected; explicit payment choice wins and Home stays unchanged', () => {
-  const { vm, paymentPreferences, walletStore } = controller()
+test('a default wallet that is gone is forgotten; a blocked one stays selected; an explicit choice wins and Home stays unchanged', async () => {
+  const { vm, paymentPreferences, walletStore, start } = controller()
   paymentPreferences.setPreferred('removed')
-  assert.equal(vm.chooseSendingWalletId('lightning'), 'removed')
-  vm.sendingWalletId = 'removed'
-  vm.pendingPayment = { type: 'lightning_invoice', amount: 25000 }
-  assert.equal(vm.getSendingWallet(), null)
-  assert.equal(vm.getSendingWalletType(), null)
-  assert.equal(vm.paymentSheetWalletCanPay, false)
+  // A stale id never names the paying wallet, and is cleared once the saved wallets are known.
+  assert.equal(vm.chooseSendingWalletId('lightning'), 'home')
+  walletStore.hydrated = true
+  await start(); await vm.preparationPromise
+  assert.equal(paymentPreferences.preferredWalletId, null)
+  assert.equal(paymentPreferences.shouldPrompt, true, 'the offer may be made again')
   assert.equal(vm.chooseSendingWalletId('lightning', 'travel'), 'travel')
   paymentPreferences.setPreferred('travel')
   walletStore.connectionStates.travel = { connected: false, error: 'offline' }
+  vm.pendingPayment = { type: 'lightning_invoice', amount: 25000 }
   vm.sendingWalletId = vm.chooseSendingWalletId('lightning')
   assert.equal(vm.sendingWalletId, 'travel')
   assert.equal(vm.paymentSheetWalletCanPay, false)
+  assert.equal(vm.paymentSheetWalletNotice, '')
   assert.equal(vm.chooseSendingWalletId('lightning', 'home'), 'home')
   assert.equal(paymentPreferences.preferredWalletId, 'travel')
   assert.equal(walletStore.activeWalletId, 'home')
+})
+
+test('a default wallet that cannot reach this kind of destination steps aside, and one line says who pays', () => {
+  const { vm, paymentPreferences } = controller()
+  paymentPreferences.setPreferred('travel')
+  vm.pendingDestinationType = 'spark_address'
+  vm.pendingPayment = { type: 'spark_address', amount: 25000 }
+  vm.sendingWalletId = vm.chooseSendingWalletId('spark_address')
+  assert.equal(vm.sendingWalletId, 'home', 'the automatic pick pays')
+  assert.equal(vm.paymentSheetWalletCanPay, true)
+  assert.equal(vm.paymentSheetWalletNotice, "{wallet} can't make this payment. {other} pays this time.")
+  assert.equal(paymentPreferences.preferredWalletId, 'travel', 'the preference itself is kept')
+  // The person picks for themselves: nothing left to explain.
+  vm.sendingWalletPicked = true
+  assert.equal(vm.paymentSheetWalletNotice, '')
+  vm.sendingWalletPicked = false
+  // A destination the default wallet can pay: it pays, without a line.
+  vm.pendingDestinationType = 'lightning'
+  vm.pendingPayment = { type: 'lightning_invoice', amount: 25000 }
+  vm.sendingWalletId = vm.chooseSendingWalletId('lightning')
+  assert.equal(vm.sendingWalletId, 'travel')
+  assert.equal(vm.paymentSheetWalletNotice, '')
+})
+
+test('picking a wallet in the sheet is remembered for the default offer; a refused pick is not', () => {
+  const { vm } = controller()
+  vm.pendingPayment = { type: 'lightning_invoice', amount: 25000 }
+  vm.sendingWalletId = 'home'
+  assert.equal(vm.sendingWalletPicked, false)
+  vm.onSendingWalletChange('unknown')
+  assert.equal(vm.sendingWalletPicked, false)
+  vm.onSendingWalletChange('travel')
+  assert.equal(vm.sendingWalletId, 'travel')
+  assert.equal(vm.sendingWalletPicked, true)
 })
 
 function readyToConfirm() {
@@ -317,10 +355,11 @@ test('a changed identity cannot announce or save the old payment under its signe
 })
 
 
-async function successfulPayment(input = {}, status = 'completed') {
+async function successfulPayment(input = {}, status = 'completed', { picked = true } = {}) {
   const h = controller(input)
   await h.start(); await h.vm.preparationPromise
   h.vm.sendingWalletId = 'travel'
+  h.vm.sendingWalletPicked = picked
   await h.vm.openSendSuccess({ amount: 500, recipient: 'Anna', status })
   h.paymentFlow.setStage(h.vm.paymentIntent.id, 'complete')
   return h
@@ -329,7 +368,7 @@ async function successfulPayment(input = {}, status = 'completed') {
 test('the default question waits until the successful receipt is fully hidden and remembers the actual payer', async () => {
   const { vm, paymentFlow, walletStore } = await successfulPayment()
   assert.equal(vm.showDefaultWalletPrompt, false)
-  assert.deepEqual(vm.defaultWalletCandidate, { id: 'travel', name: 'Travel' })
+  assert.deepEqual(vm.defaultWalletCandidate, { id: 'travel', name: 'Travel', type: 'lnbits' })
   vm.sendingWalletId = null // the executor clears it behind the receipt
   walletStore.activeWalletId = 'home'
   vm.onSendSuccessClosed()
@@ -346,9 +385,9 @@ test('the default question waits until the successful receipt is fully hidden an
   assert.equal(paymentFlow.active, false)
 })
 
-test('pending, explicit-wallet and already-answered payments do not ask the default question', async () => {
-  for (const reason of ['pending', 'explicit', 'answered', 'identity', 'deleted']) {
-    const { vm, paymentPreferences, paymentFlow, walletStore } = await successfulPayment(reason === 'explicit' ? { walletId: 'travel' } : {}, reason === 'pending' ? 'pending' : 'completed')
+test('pending, explicit-wallet, automatic-pick and already-answered payments do not ask the default question', async () => {
+  for (const reason of ['pending', 'explicit', 'answered', 'identity', 'deleted', 'automatic']) {
+    const { vm, paymentPreferences, paymentFlow, walletStore } = await successfulPayment(reason === 'explicit' ? { walletId: 'travel' } : {}, reason === 'pending' ? 'pending' : 'completed', { picked: reason !== 'automatic' })
     if (reason === 'answered') paymentPreferences.dismissPrompt()
     if (reason === 'identity') vm.identityStore.nostrPubkeyHex = 'carol'
     if (reason === 'deleted') walletStore.wallets = [walletStore.wallets[0]]
@@ -356,6 +395,35 @@ test('pending, explicit-wallet and already-answered payments do not ask the defa
     assert.equal(vm.showDefaultWalletPrompt, false, reason)
     assert.equal(paymentFlow.active, false, reason)
   }
+})
+
+test('tapping beside the default popup decides nothing: it closes, and the offer may be made again', async () => {
+  const { vm, paymentFlow } = await successfulPayment()
+  vm.onSendSuccessClosed(); vm.onSendFollowupHidden()
+  assert.equal(vm.showDefaultWalletPrompt, true)
+  vm.postponeDefaultWalletPrompt()
+  assert.equal(vm.showDefaultWalletPrompt, false)
+  assert.equal(vm.paymentPreferences.promptDismissed, false)
+  assert.equal(vm.paymentPreferences.preferredWalletId, null)
+  assert.equal(vm.paymentPreferences.shouldPrompt, true)
+  vm.returnAfterPayment() // popup hide transition finished
+  assert.equal(paymentFlow.active, false)
+})
+
+test('Home has no lease: a second confirm before the executor is busy is ignored', async () => {
+  const { vm } = readyToConfirm()
+  vm.paymentOnly = false
+  const executor = deferred()
+  let sends = 0
+  vm.confirmPayment = () => { sends += 1; return executor.promise }
+  const first = vm.onSendSheetConfirm({ amountSats: 25000 })
+  await vm.onSendSheetConfirm({ amountSats: 25000 })
+  assert.equal(sends, 1)
+  executor.resolve()
+  await first
+  // Released afterwards: a payment that returned early can be confirmed again.
+  await vm.onSendSheetConfirm({ amountSats: 25000 })
+  assert.equal(sends, 2)
 })
 
 test('Save Contact finishes before the default popup, and cancellation cannot reopen it', async () => {

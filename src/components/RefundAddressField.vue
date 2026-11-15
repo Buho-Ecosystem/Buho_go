@@ -4,7 +4,7 @@
   with a payment when the service asks for one (LUD-18), and the choice of
   another.
 
-  Presentational, like PayWithField. The parent builds `refund` with
+  Presentational. The parent builds `refund` with
   utils/refundAddress.js and owns the choice; this component only draws it
   and reports what was picked. It never sends, stores or remembers anything.
 

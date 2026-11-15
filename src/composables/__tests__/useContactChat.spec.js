@@ -21,7 +21,7 @@ const { createDmStorage, createMemoryBackend } = await import('../../utils/dmSto
 const { useMessagesStore, configureMessages, resetMessagesConfig } = await import('../../stores/messages.js');
 const { DM_ERROR, DmError } = await import('../../services/dm/errors.js');
 const { parseChatPaymentContext } = await import('../../services/dm/paymentContext.js');
-const { buildThreadItems, describeDmError, useContactChat } = await import('../useContactChat.js');
+const { buildThreadItems, describeDmError, describeRequestPaymentError, useContactChat } = await import('../useContactChat.js');
 
 const hex = (ch) => ch.repeat(64);
 const ME = hex('1');
@@ -561,11 +561,41 @@ test('react: an emoji already chosen changes nothing, a stranger cannot be react
   assert.equal(stranger.runtime.calls.length, 0);
 });
 
+test('react: one gate for the thread and the action: no reactions to a stranger, a partner without an inbox or a blocked one', async () => {
+  const theirs = msg({ createdAt: seconds() - 10 });
+  ingest(theirs);
+  const bubble = (chat) => chat.items.value.find((item) => item.type === 'message').message;
+
+  const open = setup();
+  assert.equal(open.chat.canReact.value, true);
+  assert.equal(bubble(open.chat).canReact, true);
+
+  const stranger = setup({ unknown: true });
+  assert.equal(stranger.chat.canReact.value, false);
+  assert.equal(bubble(stranger.chat).canReact, false);
+
+  const noInbox = setup({ runtime: fakeRuntime({ partnerReachability: async () => 'missing' }) });
+  await noInbox.chat.open();
+  assert.equal(noInbox.chat.canReact.value, false);
+  assert.equal(bubble(noInbox.chat).canReact, false, 'no reaction buttons are drawn');
+  const refused = await noInbox.chat.react(theirs.id, '👍');
+  assert.equal(refused.ok, false);
+  assert.equal(refused.error.message, '', 'nothing to tell the user: the buttons are not there');
+  assert.equal(noInbox.runtime.calls.some((call) => call[0] === 'react'), false);
+
+  const blocked = setup();
+  store.block(ANNA);
+  assert.equal(blocked.chat.canReact.value, false);
+  assert.equal((await blocked.chat.react(theirs.id, '👍')).ok, false);
+  assert.equal(blocked.runtime.calls.some((call) => call[0] === 'react'), false);
+});
+
 test('pay a request: preview opens before lookup; resolving preserves invoice, note, history link and verified chat context', async () => {
   const theirs = request({ createdAt: seconds() - 10 });
   ingest(theirs);
   const fetched = [];
-  const runtime = fakeRuntime({ fetchRequestInvoice: async (partner, id) => { fetched.push([partner, id]); return { bolt11: 'lnbc-fresh', verifyUrl: VERIFY }; } });
+  const signals = [];
+  const runtime = fakeRuntime({ fetchRequestInvoice: async (partner, id, options) => { fetched.push([partner, id]); signals.push(options?.signal); return { bolt11: 'lnbc-fresh', verifyUrl: VERIFY }; } });
   const { chat, pay } = setup({ runtime, contact: { id: 'c1', name: 'Anna' } });
   const handoff = chat.payRequest(theirs.id);
   assert.equal(pay.calls.length, 1);
@@ -580,8 +610,10 @@ test('pay a request: preview opens before lookup; resolving preserves invoice, n
   assert.equal(preview.note, 'Pizza');
   assert.equal(preview.contactId, 'c1');
   assert.equal('walletId' in preview, false);
-  const resolved = await preview.resolve();
+  const cancel = new AbortController();
+  const resolved = await preview.resolve({ signal: cancel.signal });
   assert.deepEqual(fetched, [[ANNA, theirs.id]]);
+  assert.equal(signals[0], cancel.signal, 'a cancelled payment stops the lookup');
   assert.equal(resolved.address, 'lnbc-fresh');
   assert.equal(resolved.addressType, 'invoice');
   assert.equal(resolved.name, 'Anna');
@@ -616,9 +648,27 @@ test('pay a request: lookup failures reach the contextual sheet; the card does n
     const result = await chat.payRequest(theirs.id);
     assert.equal(result.ok, true, 'opening the sheet succeeds before lookup');
     assert.equal(pay.calls.length, 1);
-    await assert.rejects(pay.calls[0][1].resolve(), error => error.code === code);
+    const preview = pay.calls[0][1];
+    let cause;
+    await assert.rejects(preview.resolve(), error => { cause = error; return error.code === code; });
     assert.equal(chat.busyIds.value.size, 0, 'the card is free again');
+    // The sheet shows the chat's own words for this failure, not a general line.
+    const failure = preview.describeError(cause);
+    assert.equal(failure.message, describeDmError(cause, { t, name: 'Anna' }).message);
+    assert.equal(failure.retryable, code === DM_ERROR.INVOICE_FETCH_FAILED);
   }
+});
+
+test('a request that cannot be made ready: its own words, and a retry only where one can help', () => {
+  const describe = (code) => describeRequestPaymentError(new DmError(code, 'dev text'), { t, name: 'Anna' });
+  assert.deepEqual(describe(DM_ERROR.INVOICE_FETCH_FAILED), { message: "Anna's Lightning address didn't answer. Try again in a moment.", retryable: true });
+  assert.deepEqual(describe(DM_ERROR.AMOUNT_OUT_OF_RANGE), { message: "The Lightning address doesn't take this amount. Try a different one.", retryable: false });
+  // The request ended meanwhile (withdrawn, expired, paid elsewhere).
+  assert.deepEqual(describe(DM_ERROR.INVALID_ARGUMENT), { message: 'This request can no longer be paid.', retryable: false });
+  assert.equal(describe(DM_ERROR.TIMEOUT).retryable, true);
+  const unknown = describeRequestPaymentError(new Error('secret nsec1 stuff'), { t });
+  assert.equal(unknown.retryable, true);
+  assert.doesNotMatch(unknown.message, /nsec1/);
 });
 
 test('send money: contact and chat context hand over without overriding the payment preference', () => {

@@ -222,6 +222,9 @@ test('removing one Spark wallet keeps every other wallet and clears what belonge
   assert.deepEqual(h.store.wallets.map((w) => w.name), ['Wallet', 'Alby']);
   assert.equal(h.store.kioskWalletId, null, 'the kiosk no longer points at a removed wallet');
   assert.ok(h.calls.removedConfigs.includes(savings.id));
+  // The default wallet for contact payments is checked against the wallets that are left.
+  assert.deepEqual(h.calls.defaultWalletChecks, [h.store.wallets.map((w) => w.id)]);
+  assert.equal(h.calls.defaultWalletChecks[0].includes(savings.id), false);
   assert.ok(h.calls.kitsRemoved.includes(savings.id));
   assert.ok(h.calls.preserved.includes(savings.id), 'the exit kit is exported before the databases go');
   assert.ok(h.calls.deletedStorage.includes(savings.id));

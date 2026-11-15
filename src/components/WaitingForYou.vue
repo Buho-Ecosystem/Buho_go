@@ -81,7 +81,7 @@ import ContactAvatar from './AddressBook/ContactAvatar.vue'
 import { useWaiting } from '../composables/useWaiting.js'
 import { useChatRuntime } from '../composables/useChatRuntime.js'
 import { usePayContact } from '../composables/usePayContact.js'
-import { describeDmError } from '../composables/useContactChat.js'
+import { describeDmError, describeRequestPaymentError } from '../composables/useContactChat.js'
 import { useAddressBookStore } from '../stores/addressBook.js'
 import { useWalletStore } from '../stores/wallet.js'
 import { useWithdrawVouchersStore } from '../stores/withdrawVouchers.js'
@@ -100,7 +100,7 @@ const runtime = useChatRuntime()
 const addressBook = useAddressBookStore()
 const walletStore = useWalletStore()
 const vouchersStore = useWithdrawVouchersStore()
-const payContact = usePayContact({ $q: useQuasar(), $t: t, $router: router })
+const payContact = usePayContact({ $q: useQuasar(), $t: t })
 const { requests, vouchers, hasAny } = useWaiting()
 
 const titleId = `waiting-for-you-${proxy.$.uid}`
@@ -152,12 +152,14 @@ async function payRequest(message) {
       amountSats: message.request.amountSats,
       fixedAmount: true,
       note: message.request.note || '',
-      resolve: async () => {
-        const invoice = await runtime.fetchRequestInvoice(message.partner, message.id)
+      resolve: async ({ signal } = {}) => {
+        const invoice = await runtime.fetchRequestInvoice(message.partner, message.id, { signal })
         const [target, options] = requestPaymentHandover({ partner: message.partner, message, invoice,
           name: contact?.name || '', contactId: contact?.id })
         return { address: target.bolt11, addressType: 'invoice', name: target.name, ...options }
       },
+      // A request that cannot be made ready says why in the payment sheet.
+      describeError: (cause) => describeRequestPaymentError(cause, { t, name: contact?.name || '' }),
     })
   } catch (cause) {
     error.value = describeDmError(cause, { t, name: contact?.name || '' }).message

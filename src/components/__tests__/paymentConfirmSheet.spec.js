@@ -1,16 +1,14 @@
 /**
- * "Pay with" - the field and the sheet that hosts it.
+ * The payment confirm sheet: wallet choice, preparation, details and fees.
  *
- * The real templates are compiled (SSR) and rendered, the real scripts run
- * with their imports stubbed, so these tests read the actual markup and the
+ * The real template is compiled (SSR) and rendered, the real script runs
+ * with its imports stubbed, so these tests read the actual markup and the
  * actual component logic:
- *   - nothing renders for fewer than two wallets, and never for redeem / charge
- *   - collapsed field: name, "type · balance", chevron, aria-expanded
- *   - expanded list: listbox / option semantics, check on the selected row,
- *     unusable rows aria-disabled and carrying their reason
- *   - picking: only a usable, different wallet is reported; a disabled field
- *     reports nothing
- *   - the sheet forwards the pick and keeps its commit gate on walletCanPay
+ *   - the wallet choice lives in the header, and never shows for redeem / charge
+ *   - the chooser is a child view: a draft until applied, for this payment only
+ *   - a wallet that cannot pay holds the commit gate and says why
+ *   - a contact payment opens in the same sheet while its details load
+ *   - payment details, fees and totals, keyboard and viewport handling
  */
 
 import assert from 'node:assert/strict'
@@ -77,14 +75,12 @@ function load(file, deps = {}) {
   return component
 }
 
-const PayWithField = load('../PayWithField.vue', baseDeps)
 const MerchantMark = load('../BrantaMerchantMark.vue', { '../utils/branta.js': { safeBrantaUrl, brantaAvatar } })
 const VerificationDetails = load('../BrantaVerificationDetails.vue', { '@capacitor/core': { Capacitor: { isNativePlatform: () => false } }, '@iconify/vue': { Icon }, './BrantaMerchantMark.vue': MerchantMark, '../utils/branta.js': { safeBrantaUrl }, '../utils/inAppBrowser.js': { openInAppBrowser: async () => {} } })
 const ConfirmSheet = load('../PaymentConfirmSheet.vue', {
   './BrantaMerchantMark.vue': MerchantMark,
   './BrantaVerificationDetails.vue': VerificationDetails,
   ...baseDeps,
-  './PayWithField.vue': PayWithField,
   '../utils/amountFormatting.js': amountFormatting,
   '../utils/fiatCurrencies.js': { FIAT_SYMBOLS: {} },
   '../utils/fiatRates.js': { fiatRatesService: {} },
@@ -105,9 +101,6 @@ async function render(component, props, { data, directives = [], locale } = {}) 
   return ServerRenderer.renderToString(app)
 }
 
-/** The text of the first "type · balance · fiat" line, markup removed. */
-const detail = (html) => html.match(/<small[^>]*>([\s\S]*?)<\/small>/)[1].replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim()
-
 const entry = (over) => ({
   id: 'a', name: 'Business', type: 'spark', balanceSats: 1200, isActive: true, usable: true, reason: null, ...over,
 })
@@ -118,207 +111,6 @@ const WALLETS = [
   entry({ id: 'lnb', name: 'My LNbits', type: 'lnbits', isActive: false, balanceSats: null }),
   entry({ id: 'ark', name: 'Arkade', type: 'arkade', isActive: false, balanceSats: 700, usable: false, reason: 'unsupported-destination' }),
 ]
-
-// ── PayWithField: rendering ──────────────────────────────────────────
-
-test('nothing renders for a single wallet or none', async () => {
-  for (const wallets of [[], [WALLETS[0]]]) {
-    const html = await render(PayWithField, { wallets, modelValue: 'biz' })
-    assert.doesNotMatch(html, /pay-with/)
-    assert.doesNotMatch(html, /Pay with/)
-  }
-})
-
-test('collapsed: label, selected wallet, "type · balance" and a closed state', async () => {
-  const html = await render(PayWithField, { wallets: WALLETS.slice(0, 3), modelValue: 'biz' })
-  assert.match(html, /Pay with/)
-  assert.match(html, /class="pay-with-field"/)
-  assert.match(html, /aria-expanded="false"/)
-  assert.match(html, /aria-haspopup="listbox"/)
-  assert.match(html, /<strong>Business<\/strong>/)
-  assert.equal(detail(html), `Spark · ₿ ${n(1200)} · $1.20`)
-  assert.match(html, /data-icon="tabler:chevron-down"/)
-  assert.doesNotMatch(html, /role="listbox"/)
-  assert.doesNotMatch(html, /pay-with-reason/)
-})
-
-test('the legacy sats format and an unknown balance read correctly', async () => {
-  walletState.useBip177Format = false
-  try {
-    const html = await render(PayWithField, { wallets: WALLETS, modelValue: 'lnb' })
-    assert.equal(detail(html), 'LNbits', 'no balance known: just the type, never an invented 0')
-    const biz = await render(PayWithField, { wallets: WALLETS, modelValue: 'biz' })
-    assert.equal(detail(biz), `Spark · ${n(1200)} sats · $1.20`)
-  } finally {
-    walletState.useBip177Format = true
-  }
-})
-
-test('every wallet shows its brand mark, Arkade on its own tile', async () => {
-  const html = await render(PayWithField, { wallets: WALLETS, modelValue: 'biz' }, { data: { open: true } })
-  const marks = [...html.matchAll(/data-mark="([a-z]+)"/g)].map((m) => m[1])
-  // the field's mark, then one per row
-  assert.deepEqual(marks, ['spark', 'spark', 'spark', 'nwc', 'lnbits', 'arkade'])
-  assert.equal((html.match(/pay-with-tile--arkade/g) || []).length, 1)
-})
-
-test('expanded: a listbox of options, the selected one checked, unusable ones disabled with their reason', async () => {
-  const html = await render(PayWithField, { wallets: WALLETS, modelValue: 'alby' }, { data: { open: true } })
-  assert.match(html, /aria-expanded="true"/)
-  assert.match(html, /role="listbox"/)
-  const options = html.match(/<button[^>]*role="option"[^>]*>/g)
-  assert.equal(options.length, 5)
-  assert.equal(options.filter((o) => o.includes('aria-selected="true"')).length, 1)
-  assert.match(options[2], /aria-selected="true"/, 'Alby Hub is the selected row')
-  assert.match(options[4], /aria-disabled="true"/, 'Arkade cannot pay a Lightning payment')
-  assert.equal(options.filter((o) => o.includes('aria-disabled')).length, 1)
-  assert.match(html, /<small class="pay-with-reason">Can&#39;t pay this<\/small>/)
-  assert.equal((html.match(/data-icon="tabler:check"/g) || []).length, 1, 'one check mark, on the selected row')
-  // 44 pt: the rows are real buttons, the sheet sizes them in CSS (asserted below)
-  assert.ok(options.every((o) => o.includes('type="button"')))
-})
-
-test('reasons are plain words, never the payment rail', async () => {
-  const wallets = [
-    entry({ id: 'biz' }),
-    entry({ id: 'alby', name: 'Alby Hub', type: 'nwc', isActive: false, usable: false, reason: 'unsupported-destination' }),
-    entry({ id: 'p', name: 'Personal', isActive: false, usable: false, reason: 'insufficient-balance' }),
-  ]
-  const html = await render(PayWithField, { wallets, modelValue: 'biz' }, { data: { open: true } })
-  assert.match(html, /<small class="pay-with-reason">Can&#39;t pay this<\/small>/)
-  assert.match(html, /<small class="pay-with-reason">Not enough balance<\/small>/)
-  assert.doesNotMatch(html, /Lightning|Spark wallets only/)
-})
-
-test('a selected wallet that cannot pay shows its reason in the collapsed field', async () => {
-  const html = await render(PayWithField, { wallets: WALLETS, modelValue: 'ark' })
-  assert.match(html, /class="[^"]*pay-with-field--blocked[^"]*"/)
-  assert.match(html, /<small class="pay-with-reason">Can&#39;t pay this<\/small>/)
-})
-
-test('a stale or missing selection falls back to the active wallet', async () => {
-  for (const modelValue of [null, undefined, 'removed']) {
-    const html = await render(PayWithField, { wallets: WALLETS, modelValue })
-    assert.match(html, /<strong>Business<\/strong>/, String(modelValue))
-  }
-})
-
-test('a disabled field cannot be opened by the user', async () => {
-  const html = await render(PayWithField, { wallets: WALLETS, modelValue: 'biz', disabled: true })
-  assert.match(html, /class="pay-with-field"[^>]*disabled/)
-})
-
-test('markup contract: touch targets and the reduced-motion rule live in the stylesheet', () => {
-  const source = readFileSync(new URL('../PayWithField.vue', import.meta.url), 'utf8')
-  assert.match(source, /\.pay-with-field \{[^}]*min-height: 56px/)
-  assert.match(source, /\.pay-with-option \{[^}]*min-height: 56px/)
-  assert.match(source, /@media \(prefers-reduced-motion: reduce\)/)
-  for (const token of ['--bg-input', '--bg-card', '--border-card', '--text-primary', '--text-secondary', '--text-muted', '--brand-accent-text', '--brand-accent-soft']) {
-    assert.ok(source.includes(`var(${token})`), token)
-  }
-})
-
-// ── PayWithField: behaviour ──────────────────────────────────────────
-
-function fieldVm(props = {}) {
-  const emitted = []
-  const vm = {
-    ...PayWithField.methods,
-    wallets: WALLETS, modelValue: 'biz', disabled: false, open: false,
-    useBip177Format: true,
-    $t: t, $emit: (...args) => emitted.push(args), $nextTick: (fn) => fn?.(), $refs: { field: { focus() {} } },
-    $el: { querySelector: () => ({ focus() {} }) },
-    ...props,
-  }
-  for (const name of Object.keys(PayWithField.computed)) {
-    if (name === 'useBip177Format') continue
-    Object.defineProperty(vm, name, { get: () => PayWithField.computed[name].call(vm), configurable: true })
-  }
-  return { vm, emitted }
-}
-
-test('picking a different usable wallet reports it once and closes the list', () => {
-  const { vm, emitted } = fieldVm({ open: true })
-  vm.choose(WALLETS[2])
-  assert.deepEqual(emitted, [['update:modelValue', 'alby']])
-  assert.equal(vm.open, false)
-})
-
-test('a wallet that cannot pay can be looked at but never picked', () => {
-  const { vm, emitted } = fieldVm({ open: true })
-  vm.choose(WALLETS[4])
-  assert.deepEqual(emitted, [])
-  assert.equal(vm.open, true, 'the list stays open so another row can be chosen')
-  vm.choose({ id: 'x', usable: false, reason: 'insufficient-balance' })
-  vm.choose(null)
-  assert.deepEqual(emitted, [])
-})
-
-test('re-picking the selected wallet closes the list without a change event', () => {
-  const { vm, emitted } = fieldVm({ open: true })
-  vm.choose(WALLETS[0])
-  assert.deepEqual(emitted, [])
-  assert.equal(vm.open, false)
-})
-
-test('a disabled field neither opens nor picks', () => {
-  const { vm, emitted } = fieldVm({ disabled: true })
-  vm.toggle()
-  assert.equal(vm.open, false)
-  vm.openList()
-  assert.equal(vm.open, false)
-  vm.open = true
-  vm.choose(WALLETS[2])
-  assert.deepEqual(emitted, [])
-})
-
-test('the list toggles, and never opens with fewer than two wallets', () => {
-  const { vm } = fieldVm()
-  vm.toggle()
-  assert.equal(vm.open, true)
-  vm.toggle()
-  assert.equal(vm.open, false)
-  const single = fieldVm({ wallets: [WALLETS[0]] })
-  single.vm.toggle()
-  assert.equal(single.vm.open, false)
-})
-
-test('an open list closes when the choice disappears or the payment starts', () => {
-  const { vm } = fieldVm({ open: true })
-  PayWithField.watch.visible.call(vm, false)
-  assert.equal(vm.open, false)
-  vm.open = true
-  PayWithField.watch.visible.call(vm, true)
-  assert.equal(vm.open, true, 'still a choice')
-  PayWithField.watch.disabled.call(vm, true)
-  assert.equal(vm.open, false)
-})
-
-test('Escape closes the list and arrow keys move between rows', () => {
-  const rows = [0, 1, 2].map((i) => ({ i, focused: false, focus() { this.focused = true } }))
-  const focusedIndex = () => rows.findIndex((r) => r.focused)
-  const { vm } = fieldVm({ open: true })
-  vm.$el = { querySelectorAll: () => rows }
-  const press = (key, at) => {
-    rows.forEach((r) => { r.focused = false })
-    globalThis.document = { activeElement: at === undefined ? null : rows[at] }
-    let prevented = false
-    vm.onListKeydown({ key, preventDefault() { prevented = true }, stopPropagation() {} })
-    return prevented
-  }
-  try {
-    assert.equal(press('ArrowDown', 0), true); assert.equal(focusedIndex(), 1)
-    assert.equal(press('ArrowDown', 2), true); assert.equal(focusedIndex(), 0, 'wraps')
-    assert.equal(press('ArrowUp', 0), true); assert.equal(focusedIndex(), 2, 'wraps')
-    assert.equal(press('Home', 2), true); assert.equal(focusedIndex(), 0)
-    assert.equal(press('End', 0), true); assert.equal(focusedIndex(), 2)
-    assert.equal(press('a', 1), false, 'other keys are left alone')
-    assert.equal(press('Escape', 1), true)
-    assert.equal(vm.open, false)
-  } finally {
-    delete globalThis.document
-  }
-})
 
 // ── PaymentConfirmSheet ──────────────────────────────────────────────
 
@@ -425,6 +217,45 @@ test('a failed preparation keeps the draft and exposes an inline retry with Back
   assert.match(html, /Could not get payment details. Try again./)
   assert.match(html, /preparation-retry/)
   assert.match(html, /class="top-btn send-back-btn sheet-nav-icon"[^>]*aria-label="Cancel"/)
+})
+
+test('a failure that another try cannot change offers Close, never Try again', async () => {
+  const failed = (extra) => render(ConfirmSheet, sheetProps({
+    contextual: true, preparationError: 'This request can no longer be paid.',
+    payment: { recipient: { name: 'Alice' }, amount: { mode: 'fixed', fixedSats: 500 } }, ...extra,
+  }), { directives: sheetDirectives })
+  const final = await failed({ preparationRetryable: false })
+  assert.match(final, /This request can no longer be paid\./)
+  assert.match(final, /class="primary-cta preparation-retry"[^>]*>Close</)
+  assert.doesNotMatch(final, />Try again</)
+  // Close is the sheet's own Cancel: nothing is retried or sent.
+  const events = []
+  const vm = { verb: 'send', isRedeem: false, $emit: (...event) => events.push(event) }
+  ConfirmSheet.methods.onTopAction.call(vm)
+  assert.equal(vm.show, false)
+  assert.deepEqual(events, [['cancel']])
+  const retryable = await failed({})
+  assert.match(retryable, /class="primary-cta preparation-retry"[^>]*>Try again</)
+  assert.doesNotMatch(retryable, />Close</)
+})
+
+test('a default wallet that sat the payment out is said in one plain line, and blocks nothing', async () => {
+  const notice = "Travel can't make this payment. Everyday pays this time."
+  const html = await render(ConfirmSheet, sheetProps({ walletNotice: notice }), { directives: sheetDirectives })
+  assert.match(html, /class="wallet-hint" role="status"/)
+  assert.match(html, /Travel can&#39;t make this payment\. Everyday pays this time\./)
+  assert.match(html, /data-icon="tabler:switch-horizontal"/)
+  assert.doesNotMatch(html, /class="primary-cta"[^>]*disabled/)
+  assert.doesNotMatch(html, /choose-wallet-cta/)
+  // A wallet that cannot pay keeps its own reason; the two lines never stack.
+  const blocked = await render(ConfirmSheet, sheetProps({ walletNotice: notice, walletCanPay: false, walletHint: 'Not enough in Travel' }), { directives: sheetDirectives })
+  assert.match(blocked, /Not enough in Travel/)
+  assert.doesNotMatch(blocked, /pays this time/)
+  // The reason is marked as something to act on, not with the Details button's icon.
+  assert.match(blocked, /class="wallet-hint"[^>]*><i data-icon="tabler:alert-circle"/)
+  // While the payment is still being prepared the line waits.
+  const preparing = await render(ConfirmSheet, sheetProps({ walletNotice: notice, contextual: true, preparing: true }), { directives: sheetDirectives })
+  assert.doesNotMatch(preparing, /pays this time/)
 })
 
 test('resolving or retrying preparation preserves a free amount; a fixed invoice owns its amount', () => {
@@ -832,6 +663,7 @@ test('while a payment to an address is made ready its note row is held; a reques
   assert.doesNotMatch(html, /class="note-input"/, 'nothing to type into until the address has answered')
   assert.match(html, /class="amount-helper"/, 'the limits line is held too')
 })
+
 
 test('while a payment is made ready its limits line is held; a fixed amount has none to hold', () => {
   const reserved = vm => ConfirmSheet.computed.limitsHelperReserved.call(vm)

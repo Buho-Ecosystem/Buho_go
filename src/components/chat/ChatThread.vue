@@ -79,6 +79,7 @@
           <div
             v-else-if="row.item.type === 'message'"
             class="chat-thread__row chat-thread__row--message"
+            :data-message-id="row.item.message.id"
             :class="{ 'chat-thread__row--tight': row.tight }"
           >
             <MessageBubble
@@ -91,6 +92,7 @@
               :reply="row.item.message.reply || null"
               :can-react="row.item.message.canReact !== false"
               @react="forward('react', row.item.message.id, { emoji: $event })"
+              @more-reactions="forward('more-reactions', row.item.message.id)"
               @reply="forward('reply', row.item.message.id)"
               @copy="forward('copy', row.item.message.id, { text: $event })"
               @retry="forward('retry', row.item.message.id)"
@@ -182,7 +184,7 @@ export default {
     bip177: { type: Boolean, default: true }
   },
   emits: [
-    'react', 'reply', 'copy', 'retry',
+    'react', 'reply', 'copy', 'retry', 'more-reactions',
     'pay-request', 'decline-request', 'remind-request', 'withdraw-request',
     'send-anyway-request', 'request-again',
     'open-payment'
@@ -232,6 +234,10 @@ export default {
     this.observer?.disconnect()
   },
   methods: {
+    focusMessage(id) {
+      const row = [...(this.$refs.content?.querySelectorAll('[data-message-id]') || [])].find(el => el.dataset.messageId === id)
+      row?.querySelector('.bubble')?.focus({ preventScroll: true })
+    },
     forward(name, id, extra = {}) {
       this.$emit(name, { id, ...extra })
     },

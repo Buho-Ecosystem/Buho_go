@@ -15,6 +15,7 @@
 import { useAddressBookStore } from '../stores/addressBook';
 import { CURRENCY_CODE } from '../utils/payAgain.js';
 import { usePaymentFlowStore } from '../stores/paymentFlow.js';
+import { preloadContactPaymentPipeline } from '../components/contactPaymentPipeline.js';
 
 /** A rage-tap should not hammer the relays. */
 const RESYNC_COOLDOWN_MS = 60 * 1000;
@@ -34,8 +35,9 @@ const RESYNC_COOLDOWN_MS = 60 * 1000;
  * @property {{ code: string, amount: number }} [payout]  Amount in the recipient's own currency,
  *   used instead of `amountSats` while the recipient still offers that currency (Pay again).
  * @property {boolean} [repeat]  A payment made again: the confirm sheet always ends on the slide.
- * @property {boolean} [returnHere] Legacy caller option; contextual payments always
- *   keep the current screen mounted and return to it when dismissed.
+ *
+ * The screen the payment starts from stays mounted behind the sheet, so
+ * there is nothing to return to and no option for it.
  */
 
 /** Normalize optional payment details. Empty values are left out. */
@@ -52,7 +54,7 @@ function paymentOptions({ walletId, context, amountSats, note, payout, repeat, c
 }
 
 /**
- * @param {{ $q: any, $t: Function, $router: any }} ctx  Component instance.
+ * @param {{ $q: any, $t: Function }} ctx  Component instance, or its notifier and translator.
  * @returns {{
  *   payContact: (contact: object, options?: PayOptions) => boolean,
  *   payInvoice: (invoice: { bolt11: string, name?: string }, options?: PayOptions) => boolean|undefined,
@@ -64,6 +66,8 @@ function paymentOptions({ walletId, context, amountSats, note, payout, repeat, c
 export function usePayContact(ctx) {
   const store = useAddressBookStore();
   const flow = usePaymentFlowStore();
+  // A surface that can pay a contact is on screen: have the sheet's code ready.
+  preloadContactPaymentPipeline();
 
   // Open a contextual payment before starting network work. The canonical
   // wallet dispatcher resolves and pays it without navigating through Home.
@@ -156,8 +160,7 @@ export function usePayContact(ctx) {
 
   /**
    * Pay a past recipient again (utils/payAgain `payAgainTarget`): the same
-   * pipeline as any payment, the last amount suggested, ending on the slide,
-   * and back on this screen afterwards. `walletId` is the wallet that paid,
+   * pipeline as any payment, the last amount suggested, ending on the slide. `walletId` is the wallet that paid,
    * `name` what the screen calls the recipient (shown until the pipeline
    * names it from the address book or the service).
    */
@@ -168,7 +171,6 @@ export function usePayContact(ctx) {
       amountSats: target.amountSats,
       payout: target.payout,
       repeat: true,
-      returnHere: true,
     });
   }
 

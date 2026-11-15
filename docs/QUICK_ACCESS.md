@@ -30,9 +30,9 @@ on is only left for an action that will open. It then hands the action to
 `Wallet.vue` through `walletStore.pendingOpenAction` (never saved), which
 opens the screen (`openWhenUnlocked`, then `runOpenAction`). Like a tap on
 Home, it never waits for the wallets to connect: the sheets show their own
-loading. Pay goes through the payment hand-over, which on a cold start waits
-for the wallets to connect, as a tap in Payees does; meanwhile a toast says
-"Getting ready to pay {name}".
+loading. Pay goes through the payment hand-over, as a tap in Payees does: the
+confirm sheet opens at once and says "Getting ready to pay…" until the saved
+wallets are read and the recipient is resolved.
 
 Only the last tap counts: an action still waiting (behind the lock, say) is
 dropped when a newer one comes in (`isOpenActionCurrent`).

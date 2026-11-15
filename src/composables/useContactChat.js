@@ -81,6 +81,7 @@ function clip(text, max = REPLY_PREVIEW_CHARS) {
  * @property {Array<object>} messages Thread messages of the store (ascending).
  * @property {string} partnerName Name shown for the other side.
  * @property {boolean} [unknown] The partner is not in the address book.
+ * @property {boolean} [canReact] Reactions can be sent (default: to anyone who is not unknown).
  * @property {number} now Unix seconds.
  * @property {(id: string) => Array<{ emoji: string, count: number, mine: boolean }>} reactionsFor
  * @property {(message: object) => string | null} requestStateOf State of a request message.
@@ -102,7 +103,7 @@ function clip(text, max = REPLY_PREVIEW_CHARS) {
  */
 export function buildThreadItems(input) {
   const {
-    messages, partnerName, unknown = false, now, reactionsFor, requestStateOf,
+    messages, partnerName, unknown = false, canReact = !unknown, now, reactionsFor, requestStateOf,
     payabilityOf, settlementOf = () => null, walletNameOf = () => '',
     confirmedPayments = new Set(), busyIds = new Set(), formatFiat = () => '', t,
   } = input;
@@ -140,7 +141,7 @@ export function buildThreadItems(input) {
       degraded: message.degraded === true,
       reactions: reactionsFor(message.id).map(({ emoji, count, mine }) => ({ emoji, count, mine })),
       reply: replyOf(message),
-      canReact: !unknown,
+      canReact,
       ...overrides,
     },
   });
@@ -305,6 +306,24 @@ export function describeDmError(error, { t, name = '' }) {
   return { code, kind: 'general', message };
 }
 
+/** Failures of paying a request that asking again cannot change. */
+const FINAL_REQUEST_PAYMENT_ERRORS = new Set([DM_ERROR.INVALID_ARGUMENT, DM_ERROR.AMOUNT_OUT_OF_RANGE]);
+
+/**
+ * What the payment sheet says when a request could not be made ready to pay:
+ * the chat's own words for the failure, and whether another try can help.
+ * Handed to the contextual payment as `describeError`.
+ *
+ * @param {unknown} error
+ * @param {{ t: Function, name?: string }} context
+ * @returns {{ message: string, retryable: boolean }}
+ */
+export function describeRequestPaymentError(error, { t, name = '' }) {
+  const { code, message } = describeDmError(error, { t, name });
+  if (code === DM_ERROR.INVALID_ARGUMENT) return { message: t('This request can no longer be paid.'), retryable: false };
+  return { message, retryable: !FINAL_REQUEST_PAYMENT_ERRORS.has(code) };
+}
+
 // ---------------------------------------------------------------------------
 // Reactive glue
 // ---------------------------------------------------------------------------
@@ -372,10 +391,21 @@ export function useContactChat(options) {
 
   const settlementOf = (message) => runtime.requestSettlement(message.id);
 
+  /** Messages cannot be sent to this partner: header "Payments only", no composer. */
+  const paymentsOnly = computed(() => reachability.value === 'missing');
+
+  /**
+   * A reaction is a message: it needs a partner who is a contact (a stranger
+   * would learn this inbox is read), who can receive messages and who is not
+   * blocked. The one gate for every way to react.
+   */
+  const canReact = computed(() => !isUnknown() && !paymentsOnly.value && !store.isBlocked?.(partner()));
+
   const items = computed(() => buildThreadItems({
     messages: messages.value,
     partnerName: partnerName(),
     unknown: isUnknown(),
+    canReact: canReact.value,
     now: now.value,
     reactionsFor: (id) => store.reactionsFor(partner(), id),
     requestStateOf,
@@ -390,9 +420,6 @@ export function useContactChat(options) {
 
   /** The thread has nothing to draw (the page shows its empty state). */
   const isEmpty = computed(() => items.value.length === 0);
-
-  /** Messages cannot be sent to this partner: header "Payments only", no composer. */
-  const paymentsOnly = computed(() => reachability.value === 'missing');
 
   // ----- the live clock ---------------------------------------------------
 
@@ -580,7 +607,7 @@ export function useContactChat(options) {
 
   /** React with an emoji; choosing the emoji you already used changes nothing. */
   async function react(id, emoji) {
-    if (isUnknown()) return { ok: false, error: { code: 'UNKNOWN_SENDER', kind: 'general', message: '' } };
+    if (!canReact.value) return { ok: false, error: { code: isUnknown() ? 'UNKNOWN_SENDER' : 'CANNOT_REACT', kind: 'general', message: '' } };
     const mine = store.reactionsFor(partner(), id).find((group) => group.mine);
     if (mine?.emoji === emoji) return { ok: true, value: null };
     return guarded(null, () => runtime.react(partner(), id, emoji));
@@ -619,11 +646,12 @@ export function useContactChat(options) {
       fixedAmount: true,
       note: message.request.note || '',
       contactId: entry?.id,
-      resolve: async () => {
-        const invoice = await runtime.fetchRequestInvoice(recipient, id);
+      resolve: async ({ signal } = {}) => {
+        const invoice = await runtime.fetchRequestInvoice(recipient, id, { signal });
         const [target, options] = requestPaymentHandover({ partner: recipient, message, invoice, name, contactId: entry?.id });
         return { address: target.bolt11, addressType: 'invoice', name: target.name, ...options };
       },
+      describeError: (cause) => describeRequestPaymentError(cause, { t, name }),
     });
     return handedOver === false ? { ok: false, error: null } : { ok: true };
   }
@@ -651,6 +679,7 @@ export function useContactChat(options) {
       amountSats,
       note: note || undefined,
       resolve: async () => ({ address: await runtime.requestAddress(recipient, id), addressType: 'lightning', name }),
+      describeError: (cause) => describeRequestPaymentError(cause, { t, name }),
     });
     return handedOver === false ? { ok: false, error: null } : { ok: true };
   }
@@ -668,10 +697,7 @@ export function useContactChat(options) {
   function sendMoney() {
     const entry = contact();
     if (!entry) return { ok: false, error: null };
-    const handedOver = pay.payContact(entry, {
-      context: buildChatPaymentContext(partner()),
-      returnHere: true,
-    });
+    const handedOver = pay.payContact(entry, { context: buildChatPaymentContext(partner()) });
     return handedOver === false ? { ok: false, error: null } : { ok: true };
   }
 
@@ -681,6 +707,7 @@ export function useContactChat(options) {
     isEmpty,
     reachability,
     paymentsOnly,
+    canReact,
     busyIds,
     // lifecycle
     open,

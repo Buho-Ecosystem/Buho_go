@@ -1,3 +1,4 @@
+import emoji from './emoji.js';
 import brantaReview from './brantaReview.js';
 import paymentSheetReview from './paymentSheetReview.js';
 import paymentPreparation from './paymentPreparation.js';
@@ -18,6 +19,7 @@ import payRequests from './payRequests.js';
 import refundAddress from './refundAddress.js';
 import tillCodes from './tillCodes.js';
 export default {
+  ...emoji,
   ...brantaReview,
   ...paymentSheetReview,
   ...paymentPreparation,
@@ -229,7 +231,7 @@ export default {
   "This is a Spark recovery phrase, so we are restoring your Spark wallet.": "Das ist eine Spark Seed-Phrase, deshalb stellen wir dein Spark Wallet wieder her.",
   // ─── Arkade send / receive ───
   "Arkade": "Arkade",
-  "Arkade payment": "Arkade Zahlung",
+  "Arkade payment": "Arkade-Zahlung",
   "Arkade address": "Arkade Adresse",
   "Arkade Address": "Arkade Adresse",
   "Arkade address copied": "Arkade Adresse kopiert",
@@ -738,7 +740,6 @@ export default {
   "No Lightning address yet": "Noch keine Lightning-Adresse",
   "Copy Nostr identifier": "Nostr-Kennung kopieren",
   "This profile has no Lightning address yet, so we cannot save it for payments.": "Dieses Profil hat noch keine Lightning-Adresse, daher können wir es nicht für Zahlungen speichern.",
-  "{name} hasn't published a Lightning address. Open Address Book to check again later.": "{name} hat keine Lightning-Adresse veröffentlicht. Öffne das Adressbuch, um es später erneut zu prüfen.",
   "Restore contacts from Nostr": "Kontakte aus Nostr wiederherstellen",
   "Sync already running": "Synchronisierung läuft bereits",
   "Pull contacts you saved on another device": "Hol dir die Kontakte, die du auf einem anderen Gerät gespeichert hast",
@@ -1562,7 +1563,6 @@ export default {
   "Wallet not ready": "Wallet nicht bereit",
   "Please make sure your wallet is unlocked.": "Bitte stelle sicher, dass dein Wallet entsperrt ist.",
   "Something went wrong": "Etwas ist schiefgelaufen",
-  "Please try again in a moment.": "Bitte versuche es gleich noch einmal.",
   "Still confirming": "Wird noch bestätigt",
   "Please wait for more confirmations before claiming.": "Bitte warte auf weitere Bestätigungen, bevor du abhebst.",
   "Deposit not available": "Einzahlung nicht verfügbar",
@@ -1918,7 +1918,6 @@ export default {
   "Camera not supported in this browser.": "Dein Browser unterstützt die Kamera nicht.",
   "Camera permission denied. Please allow camera access and try again.": "Kamerazugriff wurde verweigert. Bitte erlaube ihn und versuche es erneut.",
   "Cannot pay Spark address": "Diese Spark-Adresse kann nicht bezahlt werden",
-  "Cannot pay this contact": "Dieser Kontakt kann nicht bezahlt werden",
   "Confirm payment": "Zahlung bestätigen",
   "Contact": "Kontakt",
   "Copy Address": "Adresse kopieren",
@@ -2582,7 +2581,6 @@ export default {
   // ── Zahlungssprache vereinheitlicht (nur "Bitcoin-Zahlung") ──
   "Show details": "Details anzeigen",
   "Free · instant": "Gratis · sofort",
-  "Includes a small network fee": "Enthält eine kleine Netzwerkgebühr",
   "Change identity": "Identität wechseln",
   "Switch identities or create another one": "Identitäten wechseln oder eine weitere erstellen",
   "One recovery phrase backs every identity here. Each identity has its own profile and contacts.": "Eine Wiederherstellungsphrase sichert alle Identitäten hier. Jede Identität hat ihr eigenes Profil und ihre eigenen Kontakte.",
@@ -2807,7 +2805,6 @@ export default {
   "Check you wrote them down": "Prüfen, ob du sie notiert hast",
   "Choose a username": "Benutzernamen wählen",
   "Free · instant": "Kostenlos · sofort",
-  "Includes a small network fee": "Enthält eine kleine Netzwerkgebühr",
   "It doesn't look like a payment request": "Das sieht nicht nach einer Zahlungsanfrage aus",
   "On a website that offers sign-in with your card, tap it and paste the copied link here.": "Tippe auf einer Website, die Anmeldung mit deiner Karte anbietet, darauf und füge den kopierten Link hier ein.",
   "Paste a link instead": "Stattdessen Link einfügen",
@@ -3482,7 +3479,6 @@ export default {
   "Not available while kiosk mode is on": "Nicht verfügbar, solange der Kiosk-Modus an ist",
   "Set up a wallet in BuhoGO first": "Richte zuerst eine Wallet in BuhoGO ein",
   "This contact was removed": "Dieser Kontakt wurde entfernt",
-  "Getting ready to pay {name}": "Zahlung an {name} wird vorbereitet",
   "Only the owner can leave the register.": "Nur der Inhaber kann die Kasse verlassen.",
   "Resume": "Fortsetzen",
   "You need this PIN to leave the register.": "Mit dieser PIN verlässt du die Kasse.",

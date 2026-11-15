@@ -1,9 +1,12 @@
 <!--
   MessageMenu
   The action sheet behind a long press (or the context-menu key) on a bubble:
-  a row of reactions, then Reply / Copy text / Send again, then Cancel.
+  a row of reactions with a plus for every other emoji, then Reply / Copy
+  text / Send again, then Cancel.
 
   Presentational. It reports the pick and closes itself; the bubble forwards it.
+  The plus (`more-reactions`) is reported only once this sheet has left the
+  screen, so the emoji picker never opens on top of it.
   Reactions are only offered when `canReact` (never to a stranger: a reaction
   is a message and would tell them this inbox is read).
 -->
@@ -11,6 +14,7 @@
   <q-dialog
     :model-value="modelValue"
     position="bottom"
+    @hide="onHide"
     @update:model-value="$emit('update:modelValue', $event)"
   >
     <div class="message-menu" role="menu" :aria-label="$t('Message actions')">
@@ -25,6 +29,9 @@
           :aria-label="$t('React with {emoji}', { emoji })"
           @click="pick('react', emoji)"
         >{{ emoji }}</button>
+        <button type="button" class="message-menu__more" :aria-label="$t('More emojis')" @click="pick('more-reactions')">
+          <Icon icon="tabler:plus" width="21" height="21" />
+        </button>
       </div>
 
       <div class="message-menu__group">
@@ -66,9 +73,20 @@ export default {
     myReaction: { type: String, default: '' },
     emojis: { type: Array, default: () => [...REACTION_EMOJIS] }
   },
-  emits: ['update:modelValue', 'react', 'reply', 'copy', 'retry'],
+  emits: ['update:modelValue', 'react', 'reply', 'copy', 'retry', 'more-reactions'],
+  data() { return { moreRequested: false } },
   methods: {
+    onHide() {
+      if (!this.moreRequested) return
+      this.moreRequested = false
+      this.$emit('more-reactions')
+    },
     pick(action, payload) {
+      if (action === 'more-reactions') {
+        this.moreRequested = true
+        this.$emit('update:modelValue', false)
+        return
+      }
       this.$emit('update:modelValue', false)
       if (action === 'react') this.$emit('react', payload)
       else this.$emit(action)
@@ -97,6 +115,18 @@ export default {
   border: 1px solid var(--border-card);
   box-shadow: var(--shadow-md);
 }
+.message-menu__more {
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.message-menu__more:focus-visible { outline: 2px solid var(--chat-focus); outline-offset: -2px; }
 .message-menu__emoji {
   width: 44px;
   height: 44px;

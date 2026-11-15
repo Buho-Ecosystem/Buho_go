@@ -205,7 +205,7 @@
           @click="showWalletsDialog = true"
         />
         <SettingsRow
-          icon="tabler:wallet"
+          icon="tabler:credit-card-pay"
           :label="$t('Default wallet')"
           :caption="$t('For payments to contacts')"
           :inline-value="paymentWalletLabel"
@@ -1407,8 +1407,9 @@ export default {
   computed: {
     paymentWalletLabel() {
       const id = this.paymentPreferences.preferredWalletId;
-      if (!id) return this.$t('Automatic');
-      return this.wallets.find(wallet => wallet.id === id)?.name || this.$t('Wallet unavailable');
+      // A wallet that is no longer on this phone cannot be the default: the
+      // preference itself returns to Automatic (paymentPreferences.forgetMissing).
+      return (id && this.wallets.find(wallet => wallet.id === id)?.name) || this.$t('Automatic');
     },
     /** Wallets set aside on another recovery phrase (see the wallet store). */
     setAsideWallets() {

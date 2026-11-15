@@ -1,3 +1,4 @@
+import emoji from './emoji.js';
 import brantaReview from './brantaReview.js';
 import paymentSheetReview from './paymentSheetReview.js';
 import paymentPreparation from './paymentPreparation.js';
@@ -18,6 +19,7 @@ import payRequests from './payRequests.js';
 import refundAddress from './refundAddress.js';
 import tillCodes from './tillCodes.js';
 export default {
+  ...emoji,
   ...brantaReview,
   ...paymentSheetReview,
   ...paymentPreparation,
@@ -709,7 +711,6 @@ export default {
   "No Lightning address yet": "No Lightning address yet",
   "Copy Nostr identifier": "Copy Nostr identifier",
   "This profile has no Lightning address yet, so we cannot save it for payments.": "This profile has no Lightning address yet, so we cannot save it for payments.",
-  "{name} hasn't published a Lightning address. Open Address Book to check again later.": "{name} hasn't published a Lightning address. Open Address Book to check again later.",
   "Restore contacts from Nostr": "Restore contacts from Nostr",
   "Sync already running": "Sync already running",
   "Pull contacts you saved on another device": "Pull contacts you saved on another device",
@@ -1521,7 +1522,6 @@ export default {
   "Wallet not ready": "Wallet not ready",
   "Please make sure your wallet is unlocked.": "Please make sure your wallet is unlocked.",
   "Something went wrong": "Something went wrong",
-  "Please try again in a moment.": "Please try again in a moment.",
   "Still confirming": "Still confirming",
   "Please wait for more confirmations before claiming.": "Please wait for more confirmations before claiming.",
   "Deposit not available": "Deposit not available",
@@ -1907,7 +1907,6 @@ export default {
   "Camera not supported in this browser.": "Your browser doesn't support the camera.",
   "Camera permission denied. Please allow camera access and try again.": "Camera access was denied. Please allow it and try again.",
   "Cannot pay Spark address": "Can't pay this Spark address",
-  "Cannot pay this contact": "Can't pay this contact",
   "Confirm payment": "Confirm payment",
   "Contact": "Contact",
   "Copy Address": "Copy address",
@@ -2797,7 +2796,6 @@ export default {
   "Check you wrote them down": "Check you wrote them down",
   "Choose a username": "Choose a username",
   "Free · instant": "Free · instant",
-  "Includes a small network fee": "Includes a small network fee",
   "It doesn't look like a payment request": "It doesn't look like a payment request",
   "On a website that offers sign-in with your card, tap it and paste the copied link here.": "On a website that offers sign-in with your card, tap it and paste the copied link here.",
   "Paste a link instead": "Paste a link instead",
@@ -3472,7 +3470,6 @@ export default {
   "Not available while kiosk mode is on": "Not available while kiosk mode is on",
   "Set up a wallet in BuhoGO first": "Set up a wallet in BuhoGO first",
   "This contact was removed": "This contact was removed",
-  "Getting ready to pay {name}": "Getting ready to pay {name}",
   "Only the owner can leave the register.": "Only the owner can leave the register.",
   "Resume": "Resume",
   "You need this PIN to leave the register.": "You need this PIN to leave the register.",

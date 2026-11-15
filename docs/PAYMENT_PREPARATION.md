@@ -42,26 +42,26 @@ Matching text Cancel/Back controls in form-sheet headers use familiar icons: an 
 
 ## Lifecycle and ownership
 
-`paymentFlow` holds one volatile intent; no destination, invoice or draft is persisted. `ContactPaymentHost` mounts the canonical Wallet payment controller in payment-only mode under MainLayout, leaving the source page mounted. That mode omits Home and skips Home’s initialization, intake watchers and background polling. It waits for saved wallet configuration, while provider connections and balance sync continue independently.
+`paymentFlow` holds one volatile intent; no destination, invoice or draft is persisted. `ContactPaymentHost` mounts the canonical Wallet payment controller in payment-only mode under MainLayout, leaving the source page mounted. That mode omits Home and skips Home’s initialization, intake watchers and background polling. It waits for saved wallet configuration, while provider connections and balance sync continue independently. The controller is the wallet page, so the host fetches it on its own (`contactPaymentPipeline.js`) and never with the layout, which also serves the public profile and setup screens; every surface that can pay a contact warms it up when it mounts. If it cannot be fetched (the web app, offline), the tap is given back with a short notice.
 
 | Phase | Behavior |
 |---|---|
 | Preparing | Recipient/known amount, skeleton details, indeterminate progress, Cancel. Additional explanatory text after eight seconds; no artificial delay. |
-| Error | Brief inline error and Retry; the entered amount remains. |
+| Error | The reason in its own words (the destination's, or the chat request's) and Try again; the entered amount remains. A reason another try cannot change (a link that is no payment, a request that is over) offers Close instead. |
 | Ready | Existing confirmation, fee, refund and slide rules. Wallet choice is a child view of the same sheet. |
 | Sending | The paying wallet is pinned; Cancel, duplicate confirmations and replacement intents are refused. |
 | Complete | Existing receipt and optional Save Contact flow retain ownership until dismissed. On-chain submission retains the existing provider notification monitor. |
 | Choosing default | Optional popup after the receipt has fully closed. It can be dismissed or replaced without affecting the completed payment. |
 
-Each preparation attempt captures a lease. Results are checked after every asynchronous resolution and before mutation. Cancel, navigation, identity changes, app lock and kiosk/address-sharing transitions invalidate uncommitted work. A retry owns a new attempt. Late responses cannot reopen or overwrite another payment. Once a send begins, context changes cannot move its debit to another wallet.
+Each preparation attempt captures a lease. Results are checked after every asynchronous resolution and before mutation. Cancel, navigation, identity changes, app lock and kiosk/address-sharing transitions invalidate uncommitted work. A retry owns a new attempt. Late responses cannot reopen or overwrite another payment. The intent's abort signal reaches the request lookup, so a cancelled payment asks the recipient's address for nothing more. Once a send begins, context changes cannot move its debit to another wallet.
 
 ## Default wallet
 
 The device-local `paymentPreferences` store is separate from Home’s active wallet. Selection precedence is an explicit caller wallet (for example Pay again), then the preferred payment wallet, then the existing Automatic selection.
 
-After a completed payment, the receipt closes before a separate popup asks “Use {wallet} for future payments?” with Use {wallet} and Not now. It appears only once and never interrupts review or sending. Pending, failed, cancelled and explicitly assigned-wallet payments do not trigger it. If Save Contact is opened, that task finishes first. The popup uses the wallet that actually paid and closes on navigation, identity changes or locking. The in-sheet chooser applies only to the current payment. Settings → Wallet → Default wallet offers Automatic and configured wallets, with a close icon and Save.
+After a completed payment, the receipt closes before a separate popup asks “Use {wallet} when you pay contacts?” with Use {wallet} and Not now, and says that it becomes the default wallet for payments to contacts. It is offered only to someone who picked the paying wallet in the sheet: a payment that went out from the automatic pick asks nothing. It never interrupts review or sending. Pending, failed, cancelled and explicitly assigned-wallet payments do not trigger it. If Save Contact is opened, that task finishes first. Not now is remembered; Escape or a tap beside the popup decides nothing, so the offer may come again after a later payment. The popup shows the mark of the wallet that actually paid and closes on navigation, identity changes or locking. The in-sheet chooser applies only to the current payment. Settings → Wallet → Default wallet offers Automatic and configured wallets, with a close icon and Save.
 
-A missing, disconnected, incompatible or insufficient preferred wallet stays explicit. The sheet explains the problem and offers Choose another wallet; it never silently substitutes another payer. Removing a wallet retains its preference until the person changes it. A failed durable save preserves the old setting and shows a short retry message in the same popup or Settings sheet. The preference stores no balance, address or credential.
+A default wallet that is disconnected or short on funds stays selected: the sheet explains the problem and offers Choose another wallet. A default wallet that cannot reach this kind of destination at all steps aside for the automatic pick, and one line in the sheet says which wallet pays this time; the preference itself is kept. A default wallet that is removed from this phone or disconnected for good returns the preference to Automatic, and the offer may be made again. Wallets that could not be read from storage never clear the preference. A failed durable save preserves the old setting and shows a short retry message in the same popup or Settings sheet. The preference stores no balance, address or credential.
 
 ## Validation
 
