@@ -40,6 +40,43 @@ indicators, push while the app is closed.
    - One filled button per screen: a pending request's Pay. Request and Send
      are the quiet pair in light mode; an expired request's "Send anyway" is
      quiet too.
+2a. Emoji and reactions:
+   - Reacting: long press a message (touch) or right click it for five quick
+     choices and a plus that opens the emoji picker. With a mouse, a message
+     without reactions also shows a React button on hover or keyboard focus.
+     Under a message, tapping someone else's reaction adds the same one;
+     tapping your own, or the plus beside the pills, opens the picker. Every
+     target is 44 pt and none overlap.
+   - One gate decides whether reactions exist at all (`canReact` in
+     `composables/useContactChat.js`): the partner is a contact, can receive
+     messages and is not blocked. Without it there are no reaction controls,
+     so nothing opens that would then do nothing.
+   - Typing emoji: a touch screen uses its own keyboard, so the message field
+     has no emoji button there. A mouse or trackpad gets one inside the field;
+     the emoji goes in at the caret or replaces the selection.
+   - The picker (`EmojiPanel` + `EmojiPicker`, state in
+     `composables/useEmojiPicker.js`): from 1024 px it docks beside the chat
+     and stays open for the next pick, Escape closes it and the caret stays in
+     the text. Below that it is a bottom sheet; it covers the chat, so one
+     pick closes it. Focus returns to where it came from: the message reacted
+     to, or the draft.
+   - Search comes first: one ranked list across all categories, in English,
+     German and Spanish words, matched while they are still being typed
+     (`utils/emojiSearch.js`, `utils/emojiSearchTerms.js`). The catalog is a
+     curated Unicode set of about 490 emoji (`utils/emojiCatalog.js`), drawn
+     by the system font, with no network request and no dependency. The last
+     24 picks stay on the device (`buho.emojiRecents`).
+   - The picker's own chrome is words and outline icons; only the cells are
+     emoji. A cell's label is the emoji itself, which screen readers name in
+     the system language.
+   - Screens: [desktop light](images/chat-emoji/desktop-thread-light.png),
+     [desktop dark](images/chat-emoji/desktop-thread-dark.png),
+     [field with button](images/chat-emoji/composer-inline-desktop.png),
+     [React on hover](images/chat-emoji/desktop-reaction-hover.png),
+     [long press](images/chat-emoji/touch-reaction-choices.png),
+     [phone light](images/chat-emoji/mobile-light.png),
+     [phone dark](images/chat-emoji/mobile-dark.png),
+     [320 px](images/chat-emoji/mobile-320-light.png).
 3. Contacts with a Nostr profile: tapping the row opens the chat. Contacts saved
    with only a name and an address keep the address book as it was before the
    chat (row opens their page, Pay pays); a stale chat link to one goes on to
@@ -564,6 +601,11 @@ extension has no such request, and a signer may ignore it.
 - A Playwright check script (`scripts/check-contact-chat.mjs`) drives the UI with
   simulated relays and LNURL servers, scripted wallets, dark and light, de / en / es and large
   text.
+- `npm run check:chat-emoji` (`scripts/check-chat-emoji.mjs`) does the same for
+  emoji and reactions, once as a desktop with a mouse and once as a phone with
+  touch. It reads the events the simulated relay accepted with plain Nostr
+  primitives (NIP-17, NIP-25, NIP-59), so a reaction is proven to be what
+  another app would read, and it fails on any error event the page raises.
 - Requires Node ≥ 22.22 (`@quasar/app-vite`).
 
 ## 13. Known limitations
@@ -583,6 +625,12 @@ extension has no such request, and a signer may ignore it.
   the chat signer.
 - A thread the user started with a stranger stays under "Not in your
   contacts" (other clients count a chat you wrote to as known).
+- Emoji picker: names shown on hover are English in every language (search
+  understands German and Spanish words, the list of them is short). There is
+  no skin-tone choice; the system keyboard has it. On a phone, the sheet's
+  search field with the on-screen keyboard open, the safe areas and a screen
+  reader still need a check on Android and iOS devices; the browser check
+  covers layout, focus and behaviour only.
 - Signer apps (section 5a): the permissions asked at `connect` (section 11)
   and an `auth_url` approval still need a check on a device with nsec.app and
   Amber.
