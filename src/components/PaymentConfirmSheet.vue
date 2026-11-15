@@ -122,7 +122,8 @@
               :aria-label="amountMode === 'fixed' ? `${$t('Amount')}: ${formattedConfirmAmount}` : $t('Amount')"
               class="amount-input"
               :class="{ 'amount-input--invalid': amountInvalidReason }"
-              :aria-invalid="amountInputError ? 'true' : undefined"
+              :aria-invalid="amountInvalidReason ? 'true' : undefined"
+              :aria-describedby="amountInvalidReason ? amountErrorId : undefined"
               :placeholder="amountPlaceholder"
               :readonly="amountMode === 'fixed' || isSending || isComplete"
               :tabindex="amountMode === 'fixed' ? -1 : undefined"
@@ -163,7 +164,7 @@
           </section>
 
           <!-- Inline validation -->
-          <div v-if="amountInvalidReason" class="amount-error">
+          <div v-if="amountInvalidReason" :id="amountErrorId" class="amount-error" role="alert">
             <Icon icon="tabler:alert-circle" width="13" height="13" />
             <span>{{ amountInvalidReason }}</span>
           </div>
@@ -231,7 +232,7 @@
             </div>
             <div v-else class="recipient-meta">
               <div class="recipient-name-row">
-                <div class="recipient-name">{{ recipientName }}</div>
+                <div class="recipient-name" :lang="$i18n?.locale">{{ recipientName }}</div>
                 <!-- Countdown chip — present for time-bounded merchant QRs.
                      Flips to an urgent red state once the remaining time
                      drops below the supplied threshold (defaults to 20s),
@@ -280,6 +281,7 @@
               >
                 <Icon :icon="addressCopied ? 'tabler:check' : 'tabler:copy'" width="14" height="14" />
               </button>
+              <span class="spoken-only" role="status">{{ addressCopied ? $t('Copied') : '' }}</span>
             </div>
           </transition>
 
@@ -303,7 +305,7 @@
           </div>
 
           <!-- Wallet capability hint (e.g. Bitcoin/Spark needs Spark wallet). -->
-          <div v-if="!preparationActive && !walletCanPay && walletHint" class="wallet-hint">
+          <div v-if="!preparationActive && !walletCanPay && walletHint" class="wallet-hint" role="alert">
             <Icon icon="tabler:alert-circle" width="14" height="14" />
             <span>{{ walletHint }}</span>
           </div>
@@ -323,7 +325,7 @@
           <!-- Stale-rates warning. Surfaced for merchant payments where
                the displayed sats / fiat amount was computed against a
                cached rate that's now older than the freshness window. -->
-          <div v-if="payment?.ratesStale" class="wallet-hint">
+          <div v-if="payment?.ratesStale" class="wallet-hint" role="status">
             <Icon icon="tabler:alert-triangle" width="14" height="14" />
             <span>{{ $t('Exchange rates may be outdated') }}</span>
           </div>
@@ -358,6 +360,7 @@
           <div
             v-if="factGroupVisible"
             class="fact-group"
+            role="group"
             :class="{ 'payment-summary': verb === 'send', 'payment-preparation-details': preparationActive }"
             :aria-busy="preparing ? 'true' : null"
             :aria-label="preparing ? $t('Getting ready to pay') : null"
@@ -419,7 +422,7 @@
             <div v-if="paymentDetails.typeLabel"><dt>{{ $t('Payment type') }}</dt><dd>{{ paymentDetails.typeLabel }}</dd></div>
             <div v-if="paymentDetails.networkLabel"><dt>{{ $t('Network') }}</dt><dd>{{ paymentDetails.networkLabel }}</dd></div>
             <div v-if="detailsAddress" class="payment-details-destination">
-              <dt>{{ paymentDetails.addressLabel || $t(payment?.recipient?.addressType === 'invoice' ? 'Payment request' : 'Address') }}<button type="button" class="payment-details-copy" :aria-label="$t('Copy')" @click="copyAddress"><Icon :icon="addressCopied ? 'tabler:check' : 'tabler:copy'" width="18" height="18" /></button></dt>
+              <dt>{{ paymentDetails.addressLabel || $t(payment?.recipient?.addressType === 'invoice' ? 'Payment request' : 'Address') }}<button type="button" class="payment-details-copy" :aria-label="$t('Copy')" @click="copyAddress"><Icon :icon="addressCopied ? 'tabler:check' : 'tabler:copy'" width="18" height="18" /></button><span class="spoken-only" role="status">{{ addressCopied ? $t('Copied') : '' }}</span></dt>
               <dd class="payment-details-address">{{ detailsAddress }}</dd>
             </div>
             <div v-if="paymentDetails.description"><dt>{{ $t('Description') }}</dt><dd>{{ paymentDetails.description }}</dd></div>
@@ -502,6 +505,7 @@
                 key="progress"
                 :label="sendingLabel"
                 :done="isComplete"
+                :done-label="$t(verb === 'send' ? 'Sent' : 'Received')"
                 :tall="requiresSlide"
               />
               <button v-else-if="verb === 'send' && !walletCanPay && anotherWalletCanPay" key="choose-wallet" type="button" class="primary-cta choose-wallet-cta" @click="openWalletPicker">{{ $t('Choose another wallet') }}</button>
@@ -713,6 +717,7 @@ export default {
   computed: {
     titleId() { return `payment-confirm-title-${this.$.uid}` },
     noteId() { return `payment-note-${this.$.uid}` },
+    amountErrorId() { return `payment-amount-error-${this.$.uid}` },
     /** The keyboard is up: less air, so the amount, the fee and the total stay in view above it. */
     keyboardCompact() {
       return this.verb === 'send' && this.visualViewportHeight !== null
@@ -1456,8 +1461,9 @@ export default {
         if (this._copyTimer) clearTimeout(this._copyTimer)
         this._copyTimer = setTimeout(() => { this.addressCopied = false }, 1600)
       } catch {
-        // Clipboard can be unavailable (permissions); the string stays
-        // selectable in the panel, so failing quietly loses nothing.
+        // Clipboard can be unavailable (permissions). The string stays
+        // selectable in the panel; say so, since nothing else shows it.
+        this.$q.notify({ type: 'negative', message: this.$t("Couldn't copy") })
       }
     },
 
@@ -1931,8 +1937,12 @@ export default {
 .sheet-card--send .top-title { font-size: .9375rem; overflow-wrap: anywhere; hyphens: auto; }
 .sheet-card--send .top-action { flex: 0 0 24px; width: 24px; }
 .sheet-card--send .primary-cta { height: auto; min-height: 48px; padding: 12px; font-size: 1rem; overflow-wrap: anywhere; }
-.sheet-card--send .recipient-name { font-size: 1rem; white-space: normal; overflow-wrap: anywhere; }
-.sheet-card--send .recipient-addr { font-size: .8125rem; font-family: inherit; }
+/* A long name breaks at a syllable, with a hyphen (needs its lang); the
+   address wraps whole instead of losing its end at large text. */
+.sheet-card--send .recipient-name { font-size: 1rem; white-space: normal; overflow-wrap: break-word; hyphens: auto; }
+.sheet-card--send .recipient-addr { font-size: .8125rem; font-family: inherit; white-space: normal; overflow-wrap: anywhere; }
+/* Said to a screen reader, never drawn. */
+.spoken-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
 .sheet-card--send .amount-helper,
 .sheet-card--send .wallet-hint,
 .sheet-card--send .fee-footnote { font-size: .8125rem; }
@@ -1970,6 +1980,8 @@ export default {
 .payment-wallet-name { display: flex; align-items: baseline; flex-wrap: wrap; gap: 5px 8px; }
 .payment-wallet-name strong { font-size: .9375rem; font-weight: 600; line-height: 1.4; overflow-wrap: anywhere; }
 .payment-wallet-copy small { display: block; margin-top: 4px; font-size: .75rem; line-height: 1.5; color: var(--text-secondary); overflow-wrap: anywhere; }
+/* The sign and its number stay on one line. */
+.payment-wallet-copy small .hidden-amount { white-space: nowrap; }
 .payment-wallet-preferred { font-size: .6875rem; color: var(--brand-accent-text); }
 .payment-wallet-radio { flex: 0 0 21px; color: var(--brand-accent-text); }
 .payment-wallet-option[aria-disabled="true"] .payment-wallet-radio { color: var(--text-muted); }

@@ -131,6 +131,8 @@ export default {
 .payment-wallet-copy { flex: 1; min-width: 0; }
 .payment-wallet-copy strong { display: block; font: 700 .875rem/1.5 'Manrope', sans-serif; overflow-wrap: anywhere; }
 .payment-wallet-copy small { display: block; color: var(--text-secondary); font: 400 .75rem/1.65 'Manrope', sans-serif; margin-top: 4px; overflow-wrap: anywhere; }
+/* The sign and its number stay on one line. */
+.payment-wallet-copy small .hidden-amount { white-space: nowrap; }
 .payment-wallet-name { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
 .payment-wallet-badge { font: 700 .625rem/1.4 'Manrope', sans-serif; background: var(--brand-accent-soft); color: var(--brand-accent-text); padding: 2px 5px; border-radius: 5px; }
 .payment-wallet-check { display: grid; place-items: center; width: 21px; height: 21px; border: 1px solid var(--border-card); border-radius: 50%; flex-shrink: 0; }
