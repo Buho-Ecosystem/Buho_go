@@ -752,6 +752,7 @@ import { getTxDescription, getTxMessage, isPlaceholderDescription } from '../uti
 import { zapperProfile, zapperProfileEvent } from '../services/zapperProfiles';
 import { NOSTRICH_HEAD_ICON } from '../utils/nostrIcon.js';
 import { nwcPaymentHash } from '../utils/nwcWallet.js';
+import { listNwcTransactions } from '../services/nwcReceive.js';
 import { EARN_BRAND, earnRewardKind } from '../services/earnBrand';
 import RequestMoneyFlow from '../components/chat/RequestMoneyFlow.vue';
 import RecipientPaymentsSheet from '../components/RecipientPaymentsSheet.vue';
@@ -1552,8 +1553,8 @@ export default {
 
       const nwc = await this.walletStore.nwcConnection(targetWallet.id);
       for (let page = 0; page < NWC_LOOKUP_PAGES; page += 1) {
-        const response = await nwc.listTransactions({ limit: NWC_PAGE_SIZE, offset: page * NWC_PAGE_SIZE });
-        const transactions = response?.transactions || [];
+        // The same read as History, so the receipt shows History's figure.
+        const transactions = await listNwcTransactions(nwc, { limit: NWC_PAGE_SIZE, offset: page * NWC_PAGE_SIZE });
         // By the hash its invoice names (utils/nwcWallet), as History and
         // every notification name it; the wallet's own fields still match
         // an id saved before.

@@ -138,9 +138,9 @@ async function openNwc({ notifications = true, history = true } = {}) {
     window.__nwcHash = paymentHash;
     const connection = {
       connected: true,
-      listTransactions: async () => ({ transactions: window.__nwcRows }),
       client: {
         connected: true,
+        listTransactions: async () => ({ transactions: window.__nwcRows.map(tx => ({ ...tx, amount: tx.amount * 1000 })) }),
         makeInvoice: async () => {
           window.__nwcRequests.make++;
           return { invoice, payment_hash: paymentHash, expires_at: Math.floor(Date.now() / 1000) + 3600 };

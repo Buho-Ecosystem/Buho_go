@@ -773,6 +773,7 @@ import { getTxDescription, getTxMessage as resolveTxMessage, isPlaceholderDescri
 import { readCachedTransactions, mergeCachedTransactions } from '../utils/txCache.js';
 import { payAgainTarget } from '../utils/payAgain.js';
 import { nwcPaymentHash } from '../utils/nwcWallet.js';
+import { listNwcTransactions } from '../services/nwcReceive.js';
 import { usePayContact } from '../composables/usePayContact.js';
 import { haptics } from '../utils/haptics.js';
 
@@ -2019,29 +2020,25 @@ export default {
       const nwc = await this.walletStore.nwcConnection(activeWallet.id);
 
       // Fetch batch with current offset
-      const transactionsResponse = await nwc.listTransactions({
+      const listed = await listNwcTransactions(nwc, {
         limit: this.batchSize,
         offset: this.currentOffset
       });
 
-      if (!transactionsResponse || !transactionsResponse.transactions || transactionsResponse.transactions.length === 0) {
+      if (listed.length === 0) {
         this.hasMoreTransactions = false;
         return;
       }
 
       // Normalize and append to transactions array.
       //
-      // Note on units: NIP-47 reports `amount` and `fees_paid` in
-      // millisatoshis, BUT the @getalby/sdk NostrWebLNProvider that
-      // backs LightningPaymentService converts msats→sats
-      // internally (see `mapNip47TransactionToTransaction` in the
-      // SDK source). Values arrive in sats — no further unit
-      // conversion needed here.
+      // Amounts arrive whole, by the one rule for an NWC record
+      // (services/nwcReceive listNwcTransactions): no conversion here.
       //
       // A payment's id is the hash its invoice names (utils/nwcWallet), as
       // on Home and in every notification, so each opens the same payment
       // even from a wallet that reports another hash.
-      const normalizedTransactions = transactionsResponse.transactions.map(tx => {
+      const normalizedTransactions = listed.map(tx => {
         const paymentHash = nwcPaymentHash(tx);
         return this.normalizeForList({
           ...tx,
@@ -2058,7 +2055,7 @@ export default {
       this.currentOffset += this.batchSize;
 
       // Check if we got fewer transactions than requested (end of list)
-      if (transactionsResponse.transactions.length < this.batchSize) {
+      if (listed.length < this.batchSize) {
         this.hasMoreTransactions = false;
       }
     },

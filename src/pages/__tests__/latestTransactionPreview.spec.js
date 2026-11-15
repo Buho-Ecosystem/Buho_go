@@ -74,9 +74,9 @@ test('Home acknowledges a confirmed receive synchronously and re-reads without t
 
 test('NWC Home reads the live store connection rather than the providers map', async t => {
   let calls = 0;
-  const h = harness(t, { type: 'nwc', owner: { async listTransactions() {
-    calls++; return { transactions: [{ ...row('nwc-payment'), payment_hash: 'ab'.repeat(32), settled_at: Date.now() / 1000 }] };
-  } } });
+  const h = harness(t, { type: 'nwc', owner: { client: { async listTransactions() {
+    calls++; return { transactions: [{ ...row('nwc-payment', 21000), payment_hash: 'ab'.repeat(32), settled_at: Date.now() / 1000 }] };
+  } } } });
   await flush();
   assert.equal(calls, 1);
   assert.equal(h.vm.lastTransaction.type, 'incoming');

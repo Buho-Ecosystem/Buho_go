@@ -8,7 +8,7 @@
  */
 import { Invoice } from '@getalby/lightning-tools';
 import { isLightningAddress } from './addressUtils.js';
-import { invoiceSats } from './lightningInvoice.js';
+import { invoiceSats, wholeSats } from './lightningInvoice.js';
 
 /** Older wallets were saved with WebLN method names; read both vocabularies. */
 const WEBLN_TO_NIP47 = Object.freeze({
@@ -254,10 +254,33 @@ export function nwcPaymentHash(tx) {
 }
 
 /**
- * One NIP-47 transaction, amounts already in sats (the SDK's WebLN layer
- * converts them), as the app's transaction row. The raw record is spread
- * first so nothing it carries (a description_hash, a field a later SDK
- * adds) is lost; the canonical names go on top.
+ * A NIP-47 record as the wallet sent it, amounts in thousandths, with its
+ * `amount` and `fees_paid` as the whole figures the app shows and records.
+ * The one place a listed or looked-up NWC amount becomes whole.
+ *
+ * What left the wallet is never shown below what it was: a payment out
+ * shows the amount its own invoice names where it names one (the figure
+ * the review showed, utils/lightningInvoice.js), else its thousandths
+ * rounded up, and its fee rounded up. What arrived is never shown above
+ * what it was: a payment in is rounded down.
+ */
+export function nwcRecordInSats(tx) {
+  const outgoing = tx?.type === 'outgoing';
+  const whole = (msat) => {
+    const amount = Math.abs(Number(msat) || 0);
+    return outgoing ? wholeSats(amount) : Math.floor(amount / 1000);
+  };
+  const requested = outgoing
+    ? readInvoice(tx.invoice || tx.bolt11 || tx.payment_request || tx.paymentRequest)?.amountSats || 0
+    : 0;
+  return { ...tx, amount: requested || whole(tx?.amount), fees_paid: whole(tx?.fees_paid) };
+}
+
+/**
+ * One NIP-47 transaction, amounts already whole (nwcRecordInSats), as the
+ * app's transaction row. The raw record is spread first so nothing it
+ * carries (a description_hash, a field a later SDK adds) is lost; the
+ * canonical names go on top.
  */
 export function nwcTransactionRow(tx) {
   // The invoice's hash, else the record's own id even when it is not a

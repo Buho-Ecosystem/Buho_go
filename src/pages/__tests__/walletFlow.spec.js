@@ -20,6 +20,7 @@ import * as nwcErrors from '../../utils/nwcErrors.js';
 import * as paymentOutcome from '../../utils/paymentOutcome.js';
 import * as nwcAtRest from '../../utils/nwcAtRest.js';
 import * as nwcWallet from '../../utils/nwcWallet.js';
+import * as nwcReceive from '../../services/nwcReceive.js';
 import { profileInvoiceFixture } from '../../../scripts/fixtures/profileInvoice.mjs';
 import * as userErrors from '../../utils/userErrors.js';
 import * as refundAddress from '../../utils/refundAddress.js';
@@ -326,10 +327,10 @@ test('Pay again is unavailable until a payment completes, including failed payme
 
 
 test('an NWC receipt opened from History loads from the wallet store\'s wallet, also a few pages down', async () => {
-  const details = evaluate('../TransactionDetails.vue', { pinia: { mapState: () => ({}) }, '../utils/payAgain.js': payAgain, '../utils/nwcWallet.js': nwcWallet }).default;
-  const listed = Array.from({ length: 130 }, (_, i) => ({ payment_hash: `h${i}`, type: 'outgoing', amount: 100 + i, fees_paid: 1, settled_at: 1791300000 - i }));
+  const details = evaluate('../TransactionDetails.vue', { pinia: { mapState: () => ({}) }, '../utils/payAgain.js': payAgain, '../utils/nwcWallet.js': nwcWallet, '../services/nwcReceive.js': nwcReceive }).default;
+  const listed = Array.from({ length: 130 }, (_, i) => ({ payment_hash: `h${i}`, type: 'outgoing', amount: (100 + i) * 1000, fees_paid: 1000, settled_at: 1791300000 - i }));
   const asked = [];
-  const nwc = { listTransactions: async ({ limit, offset }) => { asked.push(offset); return { transactions: listed.slice(offset, offset + limit) }; } };
+  const nwc = { client: { listTransactions: async ({ limit, offset }) => { asked.push(offset); return { transactions: listed.slice(offset, offset + limit) }; } } };
   const vm = {
     ...details.methods,
     transaction: null,
@@ -352,7 +353,7 @@ test('an NWC receipt opened from History loads from the wallet store\'s wallet, 
   // the id every notification and History use.
   const invoice = profileInvoiceFixture(21, 1_800_000_000_000);
   const named = nwcWallet.nwcPaymentHash({ invoice });
-  listed.unshift({ invoice, payment_hash: 'ef'.repeat(32), type: 'incoming', amount: 21, settled_at: 1791300001 });
+  listed.unshift({ invoice, payment_hash: 'ef'.repeat(32), type: 'incoming', amount: 21000, settled_at: 1791300001 });
   await vm.fetchNWCTransaction(named, wallet);
   assert.equal(vm.transaction.id, named);
   listed.shift();

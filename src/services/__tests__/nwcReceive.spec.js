@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { lookupNwcInvoice, makeNwcInvoice, watchNwcPayments, listNwcPayments, findNwcPayment, notifiesPayments } from '../nwcReceive.js';
+import { bech32 } from 'bech32';
+import { lookupNwcInvoice, makeNwcInvoice, watchNwcPayments, listNwcPayments, listNwcTransactions, findNwcPayment, notifiesPayments } from '../nwcReceive.js';
 import { NWC_ERROR } from '../../utils/nwcErrors.js';
 import { checkNWCPaymentStatus } from '../../utils/paymentMonitor.js';
 import { profileInvoiceFixture } from '../../../scripts/fixtures/profileInvoice.mjs';
@@ -261,20 +262,39 @@ test('a connection is watched only when it was granted payment notifications', (
 
 test('the list read gives settled rows, and a failure is never an empty list', async () => {
   const asked = [];
-  const nwc = { listTransactions: async (request) => { asked.push(request); return { transactions: [{ type: 'incoming', payment_hash: HASH, amount: 21, state: 'settled', settled_at: 1790000600, created_at: 1790000000 }] }; } };
+  const nwc = { client: { listTransactions: async (request) => { asked.push(request); return { transactions: [{ type: 'incoming', payment_hash: HASH, amount: 21000, state: 'settled', settled_at: 1790000600, created_at: 1790000000 }] }; } } };
   const [row] = await listNwcPayments(nwc, { offset: 20, limit: 20 });
   assert.deepEqual(asked, [{ limit: 20, offset: 20, unpaid: false }]);
   assert.deepEqual([row.id, row.type, row.status, row.amount, row.settled_at, row.created_at], [HASH, 'receive', 'completed', 21, 1790000600, 1790000000]);
-  const failing = { listTransactions: async () => { throw sdk('reply timeout: x', 'INTERNAL'); } };
+  const failing = { client: { listTransactions: async () => { throw sdk('reply timeout: x', 'INTERNAL'); } } };
   await assert.rejects(listNwcPayments(failing), /reply timeout/);
 });
 
 test('a listed payment is found by its invoice\'s hash, whatever hash the record claims', async () => {
   const invoice = profileInvoiceFixture(21, 1_800_000_000_000);
   const { paymentHash } = await makeNwcInvoice(connection({ make: () => ({ invoice }) }).nwc, { amountSats: 21 });
-  const nwc = { listTransactions: async () => ({ transactions: [{ type: 'incoming', invoice, payment_hash: 'ef'.repeat(32), amount: 21, state: 'settled', settled_at: 1_800_000_050 }] }) };
+  const nwc = { client: { listTransactions: async () => ({ transactions: [{ type: 'incoming', invoice, payment_hash: 'ef'.repeat(32), amount: 21000, state: 'settled', settled_at: 1_800_000_050 }] }) } };
   const [row] = await listNwcPayments(nwc);
   assert.equal(row.id, paymentHash);
+});
+
+test('a payment out is listed at the figure the review showed, never one below it', async () => {
+  // A request for 2,407,123 thousandths: the review showed 2,408.
+  const invoice = bech32.encode('lnbcrt24071230p', bech32.decode(profileInvoiceFixture(21, 1_800_000_000_000), 4096).words, 4096);
+  const records = [
+    { type: 'outgoing', invoice, amount: 2_407_123, fees_paid: 1_200, state: 'settled', settled_at: 5 },
+    // A wallet that keeps whole units only: the request still decides.
+    { type: 'outgoing', invoice, amount: 2_407_000, state: 'settled', settled_at: 5 },
+    // No request to read: its own thousandths, rounded up.
+    { type: 'outgoing', payment_hash: HASH, amount: 2_407_123, state: 'settled', settled_at: 5 },
+    // What arrived is never shown above what it was.
+    { type: 'incoming', payment_hash: HASH, amount: 2_407_999, fees_paid: 999, state: 'settled', settled_at: 5 },
+  ];
+  const { nwc } = connection({ list: () => ({ transactions: records }), lookup: () => records[0] });
+  assert.deepEqual((await listNwcTransactions(nwc)).map(tx => [tx.amount, tx.fees_paid]), [[2408, 2], [2408, 0], [2408, 0], [2407, 0]]);
+  assert.deepEqual((await listNwcPayments(nwc)).map(row => row.amount), [2408, 2408, 2408, 2407]);
+  // One payment by its hash reads the same figure.
+  assert.equal((await findNwcPayment(nwc, HASH, { methods: ['lookup_invoice'] })).amount, 2408);
 });
 
 test('one payment by its hash: amounts in sats; a record without state, or no lookup grant, decides nothing', async () => {
