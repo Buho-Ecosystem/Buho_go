@@ -34,6 +34,15 @@ export const PAYING_REASON = Object.freeze({
 })
 
 /**
+ * The most one payment may be for where the recipient names no maximum of
+ * its own: one bitcoin. An arbitrary figure, set in this app. No wallet, no
+ * recipient and no protocol stands behind it, and it can go once nothing
+ * turns out to depend on it. While it stays it is a rule the review states
+ * ("Maximum is …"), never a silent refusal.
+ */
+export const APP_MAX_PAYMENT_SATS = 100_000_000
+
+/**
  * Fee reserve for surfaces that must not offer a wallet which "has exactly
  * enough": 1 % of the amount, never less than 10 sats. One definition, shared
  * with the username marketplace sheet (Nip05MarketplaceSheet).

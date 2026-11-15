@@ -40,6 +40,7 @@ import { lnurlGetJson } from './lnurlHttp.js'
 import { ONION_HOST_RE } from './addressUtils.js'
 import { counterpartyError } from './errorOrigin.js'
 import { parseLightningInvoice } from './lightningInvoice.js'
+import { APP_MAX_PAYMENT_SATS } from './payingWallets.js'
 import { PAYER_DATA_PROBLEM, payerDataFor } from './lud18.js'
 import { parseSuccessAction } from './successAction.js'
 import { validateVerifyUrl } from './lnurlVerify.js'
@@ -74,9 +75,10 @@ export const PAY_REQUEST_ERROR = Object.freeze({
   PAYER_DATA_INVALID: 'LNURL_PAYER_DATA_INVALID',
 })
 
-// Limits a service leaves out (or sends as 0), as every path has always assumed.
+// Limits a service leaves out (or sends as 0), as every path has always
+// assumed. The maximum is then the app's own (see APP_MAX_PAYMENT_SATS).
 const DEFAULT_MIN_MSAT = 1000
-const DEFAULT_MAX_MSAT = 100000000000
+const DEFAULT_MAX_MSAT = APP_MAX_PAYMENT_SATS * 1000
 
 /**
  * How far above the confirmed estimate an invoice in the recipient's currency
