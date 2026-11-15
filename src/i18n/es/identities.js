@@ -68,4 +68,6 @@ export default {
   "Disconnect {name}?": "¿Desconectar {name}?",
   "You can connect again any time.": "Puedes volver a conectarte cuando quieras.",
   "All {n} identities on this phone are erased": "Se borran las {n} identidades de este teléfono",
+  // Wherever the identity in use has to wait for a payment that is being sent.
+  "A Bitcoin payment is being sent. You can change your identity as soon as it has finished.": "Se está enviando un pago en Bitcoin. Podrás cambiar tu identidad en cuanto termine.",
 }

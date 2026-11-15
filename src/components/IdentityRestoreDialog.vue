@@ -74,8 +74,12 @@
             :class="$q.dark.isActive ? 'dialog_add_btn_dark' : 'dialog_add_btn_light'"
             :label="$t('Replace and restore identity')"
             :loading="isApplying"
+            :disable="paymentFlow.paymentBeingSent"
             @click="apply"
           />
+          <!-- Replacing the identity in use waits for a payment that is
+               being sent; this says so for as long as it does. -->
+          <IdentityWaitsForPayment />
           <q-btn
             flat
             no-caps
@@ -209,8 +213,10 @@
 
 <script>
 import BackupKeyring from './BackupKeyring.vue';
+import IdentityWaitsForPayment from './identity/IdentityWaitsForPayment.vue';
 import { Icon } from '@iconify/vue';
 import { useIdentityStore } from '../stores/identity';
+import { usePaymentFlowStore } from '../stores/paymentFlow.js';
 import {
   isValidIdentityMnemonic,
   computeIdentityFingerprint,
@@ -222,7 +228,7 @@ const SEED_WORD_COUNT = 12;
 export default {
   name: 'IdentityRestoreDialog',
 
-  components: { Icon, BackupKeyring },
+  components: { Icon, BackupKeyring, IdentityWaitsForPayment },
 
   props: {
     modelValue: {
@@ -236,7 +242,7 @@ export default {
   setup() {
     const identity = useIdentityStore();
     const seed = useBip39Mnemonic({ wordCount: SEED_WORD_COUNT });
-    return { identity, ...seed };
+    return { identity, paymentFlow: usePaymentFlowStore(), ...seed };
   },
 
   data() {
@@ -317,6 +323,9 @@ export default {
 
     async apply() {
       if (this.isApplying) return;
+      // An identity in use is not replaced while a payment is being sent;
+      // the line by the button says so. With none in use there is nothing to wait for.
+      if (this.identity.bootstrapped && this.paymentFlow.paymentBeingSent) return;
       this.errorText = '';
       const phrase = this.normalisedMnemonic;
 
@@ -338,7 +347,11 @@ export default {
         this.close();
       } catch (err) {
         console.error('[IdentityRestore] importMnemonic failed', err);
-        this.errorText = this.$t('Identity could not be restored. Check your words and try again.');
+        // The store refused because a payment started meanwhile: nothing was
+        // replaced, the words stay, and the reason given is that one.
+        this.errorText = err?.code === 'IDENTITY_WAITS_FOR_PAYMENT'
+          ? this.$t('A Bitcoin payment is being sent. You can change your identity as soon as it has finished.')
+          : this.$t('Identity could not be restored. Check your words and try again.');
         this.step = 'enter';
       } finally {
         this.isApplying = false;

@@ -7,6 +7,10 @@
     confirm  - "Is this you?": the profile found for the key, before anything
                is stored.
   Every wait can be cancelled. Website sign-ins keep using the 12 words.
+
+  Using the identity makes it the one in use, so that last step waits while
+  a payment is being sent, with the reason under the button. Nothing is
+  stored before then.
 -->
 <template>
   <q-dialog
@@ -104,7 +108,8 @@
           <span>{{ $t('Also copy my current contacts') }}</span>
           <q-toggle v-model="copyContacts" color="positive" :aria-label="$t('Also copy my current contacts')" />
         </label>
-        <button type="button" class="import-primary" @click="useIdentity">{{ $t('Use this identity') }}</button>
+        <button type="button" class="import-primary" :disabled="flow.paymentBeingSent" @click="useIdentity">{{ $t('Use this identity') }}</button>
+        <IdentityWaitsForPayment />
       </div>
     </q-card>
   </q-dialog>
@@ -115,8 +120,10 @@ import { computed, getCurrentInstance, ref, watch } from 'vue';
 import { useQuasar } from 'quasar';
 import { Icon } from '@iconify/vue';
 import { Capacitor } from '@capacitor/core';
+import IdentityWaitsForPayment from './IdentityWaitsForPayment.vue';
 import { useIdentityStore } from '../../stores/identity';
 import { useAddressBookStore } from '../../stores/addressBook';
+import { usePaymentFlowStore } from '../../stores/paymentFlow.js';
 import { useWalletStore } from '../../stores/wallet';
 import { useIdentityChange } from '../../composables/useIdentityChange';
 import { shortPublicCode, addressFor } from '../../composables/useIdentities';
@@ -142,6 +149,7 @@ const $q = useQuasar();
 const identity = useIdentityStore();
 const addressBook = useAddressBookStore();
 const wallet = useWalletStore();
+const flow = usePaymentFlowStore();
 const { switchTo } = useIdentityChange(t);
 
 const step = ref('choose');
@@ -296,7 +304,8 @@ async function useExtension() {
 
 async function useIdentity() {
   const result = found.value;
-  if (!result) return;
+  // Adding and using are one step here: neither happens while the second has to wait.
+  if (!result || flow.paymentBeingSent) return;
   const keepContacts = copyContacts.value;
   const target = { name: foundProfile.value.name || t('Imported identity'), picture: foundProfile.value.picture };
   let added;

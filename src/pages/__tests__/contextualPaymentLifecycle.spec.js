@@ -426,6 +426,32 @@ test('Home has no lease: a second confirm before the executor is busy is ignored
   assert.equal(sends, 2)
 })
 
+test('the identity in use cannot change while a payment is being sent, and can the moment that send has ended', async () => {
+  const { useIdentityStore } = await import('../../stores/identity.js')
+  const identity = useIdentityStore()
+  const mine = 'a'.repeat(64), other = 'b'.repeat(64)
+  identity.$patch({ bootstrapped: true, nostrPubkeyHex: mine,
+    externalIdentities: [{ id: 'x1', kind: 'nip07', pubkeyHex: other, npub: 'npub1other', nip05Handles: [] }] })
+  const { vm, paymentFlow } = readyToConfirm()
+  const wallet = deferred()
+  // What the chat is told when the send ends, and under which identity.
+  const told = []
+  vm.confirmPayment = async () => { await wallet.promise; told.push(identity.nostrPubkeyHex) }
+  const sending = vm.onSendSheetConfirm({ amountSats: 25000 })
+  assert.equal(paymentFlow.paymentBeingSent, true)
+  assert.throws(() => identity.switchToExternalIdentity('x1'), { code: 'IDENTITY_WAITS_FOR_PAYMENT' })
+  await assert.rejects(identity.reset(), { code: 'IDENTITY_WAITS_FOR_PAYMENT' })
+  // The page that sent it is torn down: the send is still running, so the identity still waits.
+  options.beforeUnmount.call(vm)
+  assert.equal(paymentFlow.paymentBeingSent, true)
+  wallet.resolve()
+  await sending
+  assert.deepEqual(told, [mine], 'the payment ended under the identity that started it')
+  assert.equal(paymentFlow.paymentBeingSent, false)
+  identity.switchToExternalIdentity('x1')
+  assert.equal(identity.nostrPubkeyHex, other)
+})
+
 test('Save Contact finishes before the default popup, and cancellation cannot reopen it', async () => {
   const { vm, paymentFlow } = await successfulPayment()
   vm.onSendSaveContactClicked()

@@ -80,12 +80,15 @@
       <button
         type="button"
         class="btn-danger"
-        :disabled="!canErase || busy"
+        :disabled="!canErase || busy || paymentFlow.paymentBeingSent"
         @click="onErase"
       >
         <q-spinner v-if="busy" size="18px" />
         <span>{{ $t('Erase and start fresh') }}</span>
       </button>
+      <!-- Erasing changes the identity in use, so it waits for a payment
+           that is being sent; this says so for as long as it does. -->
+      <IdentityWaitsForPayment />
       <button type="button" class="btn-quiet" :disabled="busy" @click="$router.back()">
         {{ $t('Keep my card') }}
       </button>
@@ -103,21 +106,24 @@ import SettingsHubNav from '../../components/settings/SettingsHubNav.vue';
 import { identityBack } from '../../composables/useIdentityBack';
 import IdentityGroup from '../../components/identity/IdentityGroup.vue';
 import IdentityRow from '../../components/identity/IdentityRow.vue';
+import IdentityWaitsForPayment from '../../components/identity/IdentityWaitsForPayment.vue';
 import { useIdentityHealth } from '../../composables/useIdentityHealth';
 import { useAddressBookStore } from '../../stores/addressBook';
+import { usePaymentFlowStore } from '../../stores/paymentFlow.js';
 import { useSocialBucketStore } from '../../stores/socialBucket';
 import { useWalletStore } from '../../stores/wallet';
 
 export default {
   name: 'IdentityErasePage',
 
-  components: { SettingsHubNav, Icon, IdentityNav, IdentityGroup, IdentityRow },
+  components: { SettingsHubNav, Icon, IdentityNav, IdentityGroup, IdentityRow, IdentityWaitsForPayment },
 
   setup() {
     return {
       ...useIdentityHealth(),
       addressBook: useAddressBookStore(),
       bucket: useSocialBucketStore(),
+      paymentFlow: usePaymentFlowStore(),
       walletStore: useWalletStore(),
     };
   },
@@ -188,8 +194,9 @@ export default {
 
   methods: {
     async onErase() {
-      if (!this.canErase || this.busy) return;
+      if (!this.canErase || this.busy || this.paymentFlow.paymentBeingSent) return;
       this.busy = true;
+      const cardBefore = this.identity.fingerprint;
       try {
         // The screen counts the contacts it is about to erase, so it has to
         // actually erase them. Regenerating the key alone left the local book
@@ -209,6 +216,14 @@ export default {
             timeout: 3500,
           });
           return;
+        }
+        // Still the same card: the erase did not happen, so nothing that
+        // belongs to it may go either. The address book reports a refused
+        // or failed change as a result, not as an error.
+        if (this.identity.fingerprint === cardBefore) {
+          // A payment started meanwhile: the line under the button says so.
+          if (this.paymentFlow.paymentBeingSent) return;
+          throw new Error('The identity was not erased');
         }
         // Card metadata is identity-scoped: the new key has published
         // nothing, so the old name and photo are meaningless under it.
