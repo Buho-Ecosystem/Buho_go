@@ -695,7 +695,7 @@ import {isLightningInvoice as isLightningInvoiceShared, isLightningAddress as is
 // home clipboard strip, so resolving from Home can't disagree with the sheet.
 import {classifyDestination, normalizeDestination} from '../utils/clipboardSuggestion.js';
 import {classifyIdentifier} from '../utils/nostrLookup.js';
-import {canWalletPay, walletSwitchHint} from '../utils/walletCapabilities.js';
+import {canWalletPay} from '../utils/walletCapabilities.js';
 import {
   PAYING_REASON,
   listPayingWallets,
@@ -720,7 +720,6 @@ import {npubFromLightningAddress, shortenNpub, profileDisplayName, sanitizeImage
 import {fetchProfile, parseProfileContent, DEFAULT_FETCH_TIMEOUT_MS} from '../utils/nostrFetch.js';
 import {resolveNostrLightningTarget} from '../services/nostrPaymentTarget';
 import {Invoice} from '@getalby/lightning-tools';
-import {isInternalRoute} from '../services/paymentNotifications.js';
 import {parseLightningInvoice} from '../utils/lightningInvoice.js';
 import {fiatRatesService} from '../utils/fiatRates.js';
 import {fiatSymbol} from '../utils/fiatCurrencies.js';
@@ -894,9 +893,6 @@ export default {
       defaultWalletCandidate: null,
       awaitingDefaultWalletPrompt: false,
       showDefaultWalletPrompt: false,
-      // Where a handed-over payment returns to when it is done or cancelled
-      // (the contact chat); null: stay on the wallet page.
-      payReturnTo: null,
       // True only on a device where NFC is available + enabled — drives the
       // small "NFC ready" badge next to the logo.
       nfcReady: false,
@@ -2341,7 +2337,7 @@ export default {
     // NFC capability for the "NFC ready" badge. Fire-and-forget — never blocks
     // the wallet load, and stays false on web/PWA (no NFC there).
     isNfcAvailable().then((ok) => { this.nfcReady = ok; }).catch(() => {});
-    // Payments handed over from another screen (route query, deep link, NFC)
+    // Payments handed over from outside this page (deep link, NFC)
     // wait for the wallets to be loaded and connected, never for this page's
     // fresh sync, rates and history: a Spark sync that stalls (up to 20 s per
     // try) must not leave the confirm sheet unopened.
@@ -2349,8 +2345,6 @@ export default {
     this._walletsSettled = false;
     Promise.resolve(this._walletsReady).catch(() => {}).then(() => { this._walletsSettled = true; });
     this.initializeWallet();
-    // Check for a payment handed over from the Address Book page
-    this.handlePaymentFromQuery();
     // Check if existing Spark wallets need one-time PIN migration
     this.$watch(() => this.walletStore.needsPinMigration, (needs) => {
       if (needs) this.showMigrationDialog = true;
@@ -2438,11 +2432,6 @@ export default {
       if (sending && this.getSendingWalletType() === 'nwc') {
         this._nwcWaitTimer = setTimeout(() => { this.nwcSendWaiting = this.isSendingPayment; }, 5000);
       }
-    },
-    // A payment handed over while Home is already open (its "Waiting for you" sheet).
-    '$route.query.action'(action) {
-      if (this.paymentOnly) return;
-      if (action) this.handlePaymentFromQuery();
     },
     activeCanonicalBalance: {
       handler: 'updateSecondaryValue',
@@ -3107,74 +3096,6 @@ export default {
     },
 
     /**
-     * One entry point for "pay this saved contact" from every surface
-     * outside the Send sheet (wallet-home quick modal, Address Book page
-     * via route query). Applies the shared capability gate, then hands
-     * the address to the canonical dispatcher — the same pipeline the
-     * scanner and Send sheet feed — so a contact payment gets everything
-     * a scanned address gets: real LNURL metadata (amount bounds,
-     * commentAllowed, LUD-21 payout currency), Branta verification,
-     * wallet/Nostr branding, and fee estimates.
-     *
-     * `sendingWalletId` preselects the wallet that pays ("Pay with"); without
-     * it the default pick applies (the active wallet when it can pay this
-     * rail). The capability gate is asked of that wallet, so a contact the
-     * active wallet cannot pay is still payable from another wallet that can.
-     * The active wallet is never switched.
-     *
-     * `addressType: 'invoice'` pays a BOLT-11 invoice handed over as `address`
-     * (a payment request from the contact chat). `context` is an opaque string
-     * of the caller; it is returned unchanged in the `payment:sent` event once
-     * the payment succeeded (see `emitPaymentSent`). `prefill` ({ amountSats,
-     * note, payout }) fills the confirm sheet for a payment made for a request
-     * that has no invoice any more, or made again; the sender still reviews and
-     * confirms it. `repeat` (Pay again) always ends on the slide. Returns false
-     * when nothing opened.
-     */
-    payContactDestination({ address, addressType, name, sendingWalletId = null, context = null, contactId = null, prefill = null, repeat = false }) {
-      if (!address) return false;
-      if (offerAddressRequest(address, { t: this.$t.bind(this), paymentOnly: true })) return false;
-      const payerId = this.chooseSendingWalletId(addressType, sendingWalletId);
-      if (!canWalletPay(this.walletTypeOf(payerId), addressType)) {
-        this.$q.notify({
-          type: 'warning',
-          message: this.$t('Cannot pay this contact'),
-          caption: walletSwitchHint(addressType, this.$t.bind(this)),
-          timeout: 3500,
-        });
-        return false;
-      }
-      const typeMap = {
-        spark: 'spark_address',
-        arkade: 'arkade_address',
-        bitcoin: 'bitcoin_address',
-        lightning: 'lightning_address',
-        lnurl: 'lnurl',
-        invoice: 'lightning_invoice',
-      };
-      void this.onPaymentDetected({
-        type: typeMap[addressType] || 'lightning_address',
-        data: address,
-        contactName: name || null,
-        paymentOnly: true,
-        // Only the caller's own (known) choice travels on: without one, the
-        // default pick runs again once the amount is known and may choose a
-        // wallet that can cover it. `payerId` above only gates the rail.
-        sendingWalletId: payerId === sendingWalletId ? sendingWalletId : null,
-        ...(context ? { paymentContext: context } : {}),
-        ...(prefill ? { prefill } : {}),
-        // Only an invoice needs it, and only a contact that exists is kept.
-        ...(addressType === 'invoice' && contactId && this.addressBookStore.getEntryById(contactId)
-          ? { paymentContactId: contactId } : {}),
-        // A contact's invoice is a person's own (chat requests, Waiting for
-        // you): never on Branta, so it is not looked up.
-        ...(addressType === 'invoice' ? { firstParty: true } : {}),
-        ...(repeat ? { repeat: true } : {}),
-      });
-      return true;
-    },
-
-    /**
      * Handle batch send completion
      */
     handleBatchCompleted(_results) {
@@ -3438,73 +3359,6 @@ export default {
           timeout: 6000
         });
       }
-    },
-
-    /**
-     * Handle a payment handed over via route query (Address Book page →
-     * wallet). `pay_contact` carries any contact rail, and optionally the
-     * wallet that should pay as `walletId` ("Pay with" preselection; an
-     * unknown id is ignored); the legacy `bitcoin_withdrawal` action is
-     * still accepted so nothing that linked against it breaks.
-     */
-    handlePaymentFromQuery() {
-      const query = this.$route.query;
-      const isPayContact = query.action === 'pay_contact' && query.address;
-      const isLegacyBitcoin = query.action === 'bitcoin_withdrawal' && query.address;
-      if (!isPayContact && !isLegacyBitcoin) return;
-      // A repeated param arrives as an array; only a single id means anything.
-      const walletId = isPayContact && typeof query.walletId === 'string' ? query.walletId : null;
-      // Opaque caller context, handed back in `payment:sent`. A repeated
-      // param is ignored, like walletId.
-      const context = isPayContact && typeof query.context === 'string' && query.context ? query.context : null;
-      // Amount and note to fill into the confirm sheet (Send anyway on an
-      // expired chat request). Only a clean positive integer counts.
-      const prefillSats = isPayContact && typeof query.prefillAmount === 'string' && /^[1-9][0-9]{0,14}$/.test(query.prefillAmount)
-        ? Number(query.prefillAmount) : null;
-      const prefillNote = isPayContact && typeof query.prefillNote === 'string' ? query.prefillNote : '';
-      // Pay again: the amount in the recipient's own currency ("KES:1645"),
-      // used when the recipient still offers that currency.
-      const payoutMatch = isPayContact && typeof query.prefillPayout === 'string'
-        ? /^([A-Z]{3}):([0-9]{1,12}(?:\.[0-9]{1,8})?)$/.exec(query.prefillPayout) : null;
-      const prefillPayout = payoutMatch && Number(payoutMatch[2]) > 0
-        ? { code: payoutMatch[1], amount: Number(payoutMatch[2]) } : null;
-      const prefill = prefillSats || prefillNote || prefillPayout
-        ? { amountSats: prefillSats, note: prefillNote, ...(prefillPayout ? { payout: prefillPayout } : {}) } : null;
-      // A payment made again ends on the slide, whatever its amount.
-      const repeat = isPayContact && query.repeat === '1';
-      // The screen that handed the payment over, to return to (an in-app path only).
-      this.payReturnTo = isPayContact && isInternalRoute(query.returnTo) ? query.returnTo : null;
-      // Address-book id of the contact an invoice is paid to (a chat request).
-      const contactId = isPayContact && query.addressType === 'invoice'
-        && typeof query.contactId === 'string' && query.contactId ? query.contactId : null;
-
-      // Dispatch once the wallets are ready (success or failure: a failed
-      // init still gets the proper payment-error surface), then route
-      // through the shared contact entry point (capability gate + canonical
-      // dispatcher).
-      Promise.resolve(this._walletsReady)
-        .catch(() => {})
-        .then(() => {
-          const started = this.payContactDestination({
-            address: query.address,
-            addressType: isLegacyBitcoin ? 'bitcoin' : (query.addressType || 'lightning'),
-            name: query.contactName || null,
-            sendingWalletId: walletId,
-            ...(context ? { context } : {}),
-            ...(contactId ? { contactId } : {}),
-            ...(prefill ? { prefill } : {}),
-            ...(repeat ? { repeat } : {}),
-          });
-          // Nothing opened (this wallet cannot pay it, or it was an address
-          // request): back to the screen that handed it over, if one asked.
-          if (started === false && this.payReturnTo) {
-            this.returnAfterPayment();
-            return;
-          }
-
-          // Clear query params
-          this.$router.replace({ query: {} });
-        });
     },
 
     async switchToWallet(walletId) {
@@ -5819,19 +5673,13 @@ export default {
       }
     },
 
-    /** Back to the screen that handed the payment over, if one did (HIG: a modal task returns where it began). */
+    /**
+     * A contact payment is over (done or cancelled): release it, so the screen
+     * it was started from is in front again (HIG: a modal task returns where
+     * it began). Home started its own payment and simply stays.
+     */
     returnAfterPayment() {
-      if (this.paymentOnly) {
-        this.paymentFlow.finish(this.paymentIntent.id);
-        return;
-      }
-      const to = this.payReturnTo;
-      this.payReturnTo = null;
-      if (!to) return;
-      // The hand-over pushed the wallet page on top of that screen: step back
-      // to it, so it is not in the history twice (Back would seem to do nothing).
-      if (this.$router.options.history.state?.back === to) this.$router.back();
-      else this.$router.replace(to);
+      if (this.paymentOnly) this.paymentFlow.finish(this.paymentIntent.id);
     },
 
     /**

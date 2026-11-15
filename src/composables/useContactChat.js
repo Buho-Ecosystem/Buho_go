@@ -668,10 +668,7 @@ export function useContactChat(options) {
   function sendMoney() {
     const entry = contact();
     if (!entry) return { ok: false, error: null };
-    const handedOver = pay.payContact(entry, {
-      context: buildChatPaymentContext(partner()),
-      returnHere: true,
-    });
+    const handedOver = pay.payContact(entry, { context: buildChatPaymentContext(partner()) });
     return handedOver === false ? { ok: false, error: null } : { ok: true };
   }
 

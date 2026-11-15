@@ -433,9 +433,9 @@ Paying a request / sending:
   requester's current kind 0 profile and takes its `lud16` (else the one signed
   in the request), pulls an invoice via LNURL-pay for exactly the amount and
   checks it silently (`bolt11.decode`, section 8a).
-- Hand over to the existing pipeline (`payContactDestination` →
-  `onPaymentDetected` → `PaymentConfirmSheet` → slide to send) with the chosen
-  `sendingWalletId`.
+- Hand over to the existing pipeline (`usePayContact().preparePayment` →
+  the contextual payment → `onPaymentDetected` → `PaymentConfirmSheet` →
+  slide to send). The sheet opens over the chat and picks the paying wallet.
 
 | | Spark (Breez) | NWC | LNbits | Arkade |
 |---|---|---|---|---|

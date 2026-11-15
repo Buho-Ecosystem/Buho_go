@@ -3,9 +3,9 @@
  * through the app's ordinary send pipeline and comes back, unchanged, in the
  * `payment:sent` event once it succeeded.
  *
- * The send pipeline (usePayContact -> /wallet?action=pay_contact ->
- * Wallet.vue) knows nothing about the chat. The chat knows nothing about the
- * wallet page. This string is the whole agreement between them:
+ * The send pipeline (usePayContact -> the contextual payment -> the confirm
+ * sheet) knows nothing about the chat. The chat knows nothing about the
+ * pipeline. This string is the whole agreement between them:
  *
  *   chat:<partner pubkey>            a plain "Send" to a contact
  *   chat:<partner pubkey>:<id>       paying the request with rumor id <id>
@@ -53,30 +53,26 @@ export function parseChatPaymentContext(context) {
 }
 
 /**
- * The arguments for `usePayContact().payInvoice` that pay a partner's request
- * through the ordinary send pipeline. `invoice` was fetched from the
+ * The invoice and the options that pay a partner's request through the
+ * ordinary send pipeline (`usePayContact().preparePayment`). `invoice` was fetched from the
  * requester's current Lightning address for exactly the requested amount;
  * the context makes the always-on announcer tell the partner once it went
  * out. Shared by the chat and Home's "Waiting for you" sheet.
  *
  * @param {{ partner: string, message: { id: string, request: { note?: string|null } },
- *   invoice: { bolt11: string, verifyUrl?: string|null }, name?: string, contactId?: string,
- *   payer?: { id: string, usable: boolean } | null }} input
+ *   invoice: { bolt11: string, verifyUrl?: string|null }, name?: string, contactId?: string }} input
  * @returns {[{ bolt11: string, name: string }, object]}
  */
-export function requestPaymentHandover({ partner, message, invoice, name = '', contactId, payer = null }) {
+export function requestPaymentHandover({ partner, message, invoice, name = '', contactId }) {
   return [
     { bolt11: invoice.bolt11, name },
     {
-      // An unusable pick is not forced on the wallet page: its own sheet explains and offers the others.
-      walletId: payer?.usable ? payer.id : undefined,
       // The verify URL (LUD-21) rides along so the announcement can carry it.
       context: buildChatPaymentContext(partner, message.id, invoice.verifyUrl),
       // The invoice has no address, so the contact is named for the history link.
       contactId,
       // What the money is for, shown on the confirm sheet (an LNURL invoice carries no memo).
       note: message.request.note || undefined,
-      returnHere: true,
     },
   ];
 }
