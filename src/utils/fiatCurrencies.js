@@ -65,8 +65,9 @@ export function fiatSymbol(code) {
 }
 
 // How long a Bitcoin price may be used to turn a fiat amount into Bitcoin
-// after it was fetched. Older saved rates are dropped at start, and the
-// register refuses a fiat sale without a price this recent (#456).
+// after it was fetched. Older saved rates are dropped at start; the register
+// refuses a fiat sale without a price this recent (#456), and so do the send
+// review and batch send for an amount typed in fiat.
 export const RATE_MAX_AGE_MS = 60 * 60 * 1000
 
 // The price of one bitcoin in `code`, or 0 when no price for it was fetched
@@ -78,6 +79,22 @@ export function freshRate(rates, times, code, now = Date.now()) {
   const at = Number(times?.[c])
   if (!(rate > 0) || !(at > 0) || now - at > RATE_MAX_AGE_MS) return 0
   return rate
+}
+
+// A fiat amount as whole satoshis at `rate` (currency per bitcoin), rounded
+// down, in exact integer arithmetic: floating point lands one satoshi under
+// (0.21 at a rate of 100000 is 210, not 209). `amount` is the plain decimal
+// text of an amount field ("50", "0.21"). 0 when either cannot be read.
+export function fiatToSats(amount, rate) {
+  const match = /^(\d+)(?:\.(\d*))?$/.exec(String(amount ?? '').trim())
+  const price = Number(rate)
+  if (!match || !(price > 0) || !(price < 1e21)) return 0
+  const fraction = match[2] || ''
+  const units = BigInt(match[1] + fraction)
+  const pricePerBtc = BigInt(price.toFixed(8).replace('.', ''))
+  if (pricePerBtc <= 0n) return 0
+  const sats = units * 10n ** 16n / (pricePerBtc * 10n ** BigInt(fraction.length))
+  return sats <= BigInt(Number.MAX_SAFE_INTEGER) ? Number(sats) : 0
 }
 
 // Flag emoji for a currency code, with a neutral fallback for anything
