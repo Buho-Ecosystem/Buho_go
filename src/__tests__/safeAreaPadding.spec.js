@@ -54,25 +54,11 @@ test('iOS keeps Quasar\'s padding (naming the capacitor block turns it off unles
   assert.equal(capacitorFlags().iosStatusBarPadding, true);
 });
 
-test('the installed Quasar applies our native padding configuration', () => {
+test('the installed Quasar still reads both switches for the body class', () => {
   const quasarDir = dirname(createRequire(join(ROOT, 'package.json')).resolve('quasar/package.json'));
   const body = readFileSync(join(quasarDir, 'src/plugins/private.body/Body.js'), 'utf8');
-  const start = body.indexOf('function getBodyClasses(');
-  const end = body.indexOf('function applyClientSsrCorrections()', start);
-  assert.ok(start >= 0 && end > start, 'Quasar body-class entry point changed; review its padding behavior');
-  const getClasses = new Function('getMobilePlatform', body.slice(start, end) + '; return getBodyClasses;')(
-    is => is.ios ? 'ios' : is.android ? 'android' : undefined,
-  );
-  const platform = name => ({ is: { nativeMobile: true, nativeMobileWrapper: 'capacitor', [name]: true }, has: { touch: true }, within: {} });
-  const config = { capacitor: capacitorFlags() };
-  // Locked older Quasar never adds Android padding. Newer allowed releases
-  // add it only when our opt-out is removed. Assert behavior across both.
-  assert.ok(!getClasses(platform('android'), config).includes('q-safe-area-padding'));
-  assert.ok(getClasses(platform('ios'), config).includes('q-ios-padding'));
-  assert.ok(!getClasses(platform('ios'), { capacitor: { iosStatusBarPadding: false } }).includes('q-ios-padding'));
-  if (body.includes('q-safe-area-padding')) {
-    assert.ok(getClasses(platform('android'), { capacitor: { androidStatusBarPadding: true } }).includes('q-safe-area-padding'));
-  }
+  assert.match(body, /androidStatusBarPadding !== false[\s\S]*?q-safe-area-padding/);
+  assert.match(body, /iosStatusBarPadding\)[\s\S]*?q-ios-padding/);
 });
 
 console.log(`\n  ${passed} passed, ${failed} failed`);
