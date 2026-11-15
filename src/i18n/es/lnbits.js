@@ -1,8 +1,8 @@
 // LNbits setup steps and the Lightning address sheet. Keep the same keys in all three locales.
 export default {
-  "Wallet found": "Billetera encontrada",
+  "Wallet found": "Cartera encontrada",
   "Get paid by name, like email.": "Recibe pagos con un nombre, como un correo.",
-  "Pick one for this wallet.": "Elige una para esta billetera.",
+  "Pick one for this wallet.": "Elige una para esta cartera.",
   "New address": "Nueva dirección",
   "Thank-you message": "Mensaje de agradecimiento",
   "Shown right after someone pays you": "Se muestra justo después de que alguien te pague",
@@ -19,5 +19,5 @@ export default {
   "Could you turn on Pay Links on {domain}? I would like a Lightning address.": "¿Puedes activar Pay Links en {domain}? Me gustaría tener una dirección Lightning.",
   "Needs Pay Links": "Necesita Pay Links",
   "Couldn't reach the server": "No se pudo conectar con el servidor",
-  "LNbits no longer opens this wallet with its key. Disconnect it here, then add it again with a current key.": "LNbits ya no abre esta billetera con su clave. Desconéctala aquí y luego añádela de nuevo con una clave actual.",
+  "LNbits no longer opens this wallet with its key. Disconnect it here, then add it again with a current key.": "LNbits ya no abre esta cartera con su clave. Desconéctala aquí y luego añádela de nuevo con una clave actual.",
 };

@@ -4,7 +4,7 @@ export default {
   "Tap an identity to use it. The same 12 words back up every identity.": "Toca una identidad para usarla. Las mismas 12 palabras respaldan todas las identidades.",
   "Add identity": "Añadir identidad",
   "Erase all identities": "Borrar todas las identidades",
-  "Removes every identity on this phone and starts a fresh card. Your wallets and your Bitcoin are not affected.": "Elimina todas las identidades de este teléfono y crea una tarjeta nueva. Tus billeteras y tus Bitcoin no se ven afectados.",
+  "Removes every identity on this phone and starts a fresh card. Your wallets and your Bitcoin are not affected.": "Elimina todas las identidades de este teléfono y crea una tarjeta nueva. Tus carteras y tus Bitcoin no se ven afectados.",
   "Details for {name}": "Detalles de {name}",
   "Switching to {name}": "Cambiando a {name}",
   "Updating your card and contacts across BuhoGO.": "Actualizando tu tarjeta y tus contactos en BuhoGO.",
