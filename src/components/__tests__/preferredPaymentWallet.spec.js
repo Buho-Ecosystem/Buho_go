@@ -7,7 +7,7 @@ import * as Vue from 'vue'
 import * as SSR from 'vue/server-renderer'
 import * as VueI18n from 'vue-i18n'
 import { createPinia, setActivePinia } from 'pinia'
-import { usePaymentPreferencesStore } from '../../stores/paymentPreferences.js'
+import { settledWalletIds, usePaymentPreferencesStore } from '../../stores/paymentPreferences.js'
 import * as amountFormatting from '../../utils/amountFormatting.js'
 import * as walletNames from '../../utils/walletNames.js'
 
@@ -30,7 +30,8 @@ function evaluate(source, dependencies) {
 const component = evaluate(descriptor.script.content, {
   '@iconify/vue': { Icon: { props: ['icon'], render() { return Vue.h('i', { 'data-icon': this.icon }) } } },
   '../../stores/wallet.js': { useWalletStore: () => walletStore },
-  '../../stores/paymentPreferences.js': { usePaymentPreferencesStore: () => preferences },
+  '../../stores/paymentPreferences.js': { usePaymentPreferencesStore: () => preferences, settledWalletIds },
+  '../../directives/balanceUpdating.js': { default: {} },
   '../../utils/amountFormatting.js': amountFormatting,
   '../../utils/walletNames.js': walletNames,
   '../WalletBrandMark.vue': { props: ['type'], render() { return Vue.h('i', { 'data-wallet-brand': this.type }) } },
@@ -90,7 +91,12 @@ test('settings picker renders Automatic plus real wallets, native radios, brands
   assert.match(html, /data-wallet-brand="lnbits"/)
   assert.match(html, /Everyday/)
   assert.match(html, /Travel/)
-  assert.match(html, /Balance not loaded yet/)
+  // A balance still loading is a stand-in that pulses, with its words only for a screen reader.
+  assert.match(html, /class="balance-placeholder"[^>]*aria-label="Balance not loaded yet"/)
+  assert.doesNotMatch(html.replace(/<[^>]*>/g, ''), /Balance not loaded yet/)
+  // Automatic has its own mark, not the generic wallet used by Manage Wallets.
+  assert.match(html, /data-icon="tabler:settings-automation"/)
+  assert.doesNotMatch(html, /data-icon="tabler:wallet"/)
   assert.match(html, />Save</)
   walletStore.balanceHidden = true
   const privateHtml = await render()
@@ -133,15 +139,39 @@ test('removing the chosen wallet while the picker is open prevents saving a stal
   assert.deepEqual(events, [])
 })
 
-test('a missing preferred wallet is explained and waits for an explicit replacement', async () => {
+test('a default wallet that is no longer on this phone opens as Automatic, and may be offered again', async () => {
   preferences.setPreferred('removed')
   const html = await render()
-  assert.match(html, /This wallet is no longer available/)
-  assert.match(html, /class="form-sheet-primary"[^>]*disabled/)
-  assert.equal(preferences.preferredWalletId, 'removed')
+  assert.match(html, /data-wallet-id="automatic"[^>]*checked/)
+  assert.doesNotMatch(html, /no longer available/)
+  assert.doesNotMatch(html, /class="form-sheet-primary"[^>]*disabled/)
+  assert.equal(preferences.preferredWalletId, null)
+  assert.equal(preferences.shouldPrompt, true)
+})
+
+test('wallets that could not be read never clear the default wallet', async () => {
+  preferences.setPreferred('travel')
+  walletStore.wallets = []
+  walletStore.savedStateLoaded = false
   const { instance } = vm()
-  instance.choose(null)
-  assert.equal(instance.canSave, true)
+  await Promise.resolve()
+  assert.equal(preferences.preferredWalletId, 'travel')
+  assert.equal(instance.draft, 'travel')
+  assert.equal(instance.canSave, false, 'a wallet that is not listed cannot be saved again')
+})
+
+test('a default wallet removed while storage was still loading is cleared once wallets are known', async () => {
+  preferences.setPreferred('removed')
+  walletStore.hydrated = false
+  let ready
+  walletStore.whenHydrated = () => new Promise(resolve => { ready = resolve })
+  const { instance } = vm()
+  assert.equal(instance.draft, 'removed')
+  walletStore.hydrated = true
+  ready()
+  await Promise.resolve(); await Promise.resolve()
+  assert.equal(preferences.preferredWalletId, null)
+  assert.equal(instance.draft, null)
 })
 
 test('failed persistence stays in the picker and reports an actionable error', () => {
@@ -158,32 +188,40 @@ test('failed persistence stays in the picker and reports an actionable error', (
 
 const promptSource = readFileSync(new URL('../DefaultPaymentWalletDialog.vue', import.meta.url), 'utf8')
 const promptDescriptor = sfc.parse(promptSource).descriptor
-const prompt = evaluate(promptDescriptor.script.content, { '@iconify/vue': { Icon: { render() { return Vue.h('i') } } }, 'vue-i18n': VueI18n }).default
+const prompt = evaluate(promptDescriptor.script.content, {
+  'vue-i18n': VueI18n,
+  './WalletBrandMark.vue': { props: ['type'], render() { return Vue.h('i', { 'data-wallet-brand': this.type }) } },
+}).default
 const promptTemplate = sfc.compileTemplate({ source: promptDescriptor.template.content, filename: 'DefaultPaymentWalletDialog.vue', id: 'prompt-test', ssr: true, ssrCssVars: [] })
 assert.deepEqual(promptTemplate.errors, [])
 prompt.ssrRender = evaluate(promptTemplate.code, { vue: Vue, 'vue/server-renderer': SSR }).ssrRender
 
 test('default-wallet popup uses short actionable copy and keeps a failed save in the same popup', async () => {
-  const app = Vue.createSSRApp(prompt, { modelValue: true, walletName: 'Travel', error: "Couldn't save this choice. Try again." })
+  const app = Vue.createSSRApp(prompt, { modelValue: true, walletName: 'Travel', walletType: 'lnbits', error: "Couldn't save this choice. Try again." })
   app.use(VueI18n.createI18n({ legacy: true, locale: 'en', messages: { en: {
-    'Use {name} for future payments?': 'Use {name} for future payments?',
-    'You can change this in Settings.': 'You can change this in Settings.',
+    'Use {name} when you pay contacts?': 'Use {name} when you pay contacts?',
+    'It becomes your default wallet for payments to contacts. You can change this in Settings.': 'It becomes your default wallet for payments to contacts. You can change this in Settings.',
     'Use {name}': 'Use {name}', 'Not now': 'Not now',
   } } }))
   const shell = { render() { return Vue.h('div', {}, this.$slots.default?.()) } }
   app.component('q-dialog', shell); app.component('q-card', shell)
   const html = await SSR.renderToString(app)
   assert.match(html, /<strong[^>]*>Travel<\/strong>/)
-  assert.match(html.replace(/<[^>]*>/g, ''), /Use Travel for future payments\?/)
-  assert.match(html, /You can change this in Settings/)
+  // The question says what the choice does, in the words Settings uses for it.
+  assert.match(html.replace(/<[^>]*>/g, ''), /Use Travel when you pay contacts\?/)
+  assert.match(html, /your default wallet for payments to contacts\. You can change this in Settings/)
+  assert.doesNotMatch(html, /future payments/)
+  // The mark is this wallet's own, not a generic wallet.
+  assert.match(html, /data-wallet-brand="lnbits"/)
   assert.match(html, />Use Travel</)
   assert.match(html, />Not now</)
   assert.match(html, /role="alert"/)
   assert.doesNotMatch(html, /preferred|preference|automatically sends/)
 })
 
-test('Escape or backdrop dismissal uses the same Not now action', () => {
+test('Escape or a tap beside the popup is no answer: only the Not now button declines', () => {
   const emitted = []
   prompt.computed.open.set.call({ $emit: (...event) => emitted.push(event) }, false)
-  assert.deepEqual(emitted, [['dismiss']])
+  assert.deepEqual(emitted, [['later']])
+  assert.match(promptDescriptor.template.content, /class="default-wallet-later" @click="\$emit\('dismiss'\)"/)
 })

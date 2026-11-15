@@ -172,6 +172,25 @@ test('pullInvoice: asks the address for exactly the amount, with no comment', as
   assert.equal(lnurl.requested[0].options, undefined);
 });
 
+test('pullInvoice: a payer who gave up asks the address for nothing more', async () => {
+  const before = setup({ lnurl: fakeLnurl({ invoice: makeInvoice({ sats: 5_000, hash: 9 }) }) });
+  const gone = new AbortController();
+  gone.abort();
+  await assert.rejects(before.service.pullInvoice({ lud16: ADDRESS, amountSats: 5_000, signal: gone.signal }), { name: 'AbortError' });
+  assert.deepEqual(before.lnurl.fetched, []);
+  assert.deepEqual(before.lnurl.requested, []);
+
+  // Given up while the address was answering: no invoice is created.
+  const during = new AbortController();
+  const lnurl = fakeLnurl({ invoice: makeInvoice({ sats: 5_000, hash: 9 }) });
+  const fetchPayRequest = lnurl.fetchPayRequest;
+  lnurl.fetchPayRequest = async (...args) => { const answer = await fetchPayRequest(...args); during.abort(); return answer; };
+  const { service } = setup({ lnurl });
+  await assert.rejects(service.pullInvoice({ lud16: ADDRESS, amountSats: 5_000, signal: during.signal }), { name: 'AbortError' });
+  assert.equal(lnurl.fetched.length, 1);
+  assert.deepEqual(lnurl.requested, []);
+});
+
 test('pullInvoice: hands on the LUD-21 verify URL only when it is https on the callback host', async () => {
   const cases = [
     ['https://btc.mybuho.de/lnurlp/verify/abc', 'https://btc.mybuho.de/lnurlp/verify/abc'],

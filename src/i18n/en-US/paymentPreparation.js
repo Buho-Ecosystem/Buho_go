@@ -9,7 +9,6 @@ export default {
   "For payments to contacts": "For payments to contacts",
   "Use the wallet on Home when it can pay.": "Use the wallet on Home when it can pay.",
   "Choose a wallet for payments to contacts. You can pick another before you pay.": "Choose a wallet for payments to contacts. You can pick another before you pay.",
-  "This wallet is no longer available. Choose another wallet or Automatic.": "This wallet is no longer available. Choose another wallet or Automatic.",
   "You still check each payment before sending.": "You still check each payment before sending.",
   "Couldn't save this choice. Try again.": "Couldn't save this choice. Try again.",
   "Getting ready to pay": "Getting ready to pay",
@@ -20,6 +19,8 @@ export default {
   "This is taking longer than usual. You can try again later.": "This is taking longer than usual. You can try again later.",
   "This wallet isn't available. Choose another wallet.": "This wallet isn't available. Choose another wallet.",
   "Please try again in a moment.": "Please try again in a moment.",
-  "Use {name} for future payments?": "Use {name} for future payments?",
-  "You can change this in Settings.": "You can change this in Settings."
+  "Use {name} when you pay contacts?": "Use {name} when you pay contacts?",
+  "It becomes your default wallet for payments to contacts. You can change this in Settings.": "It becomes your default wallet for payments to contacts. You can change this in Settings.",
+  "{wallet} can't make this payment. {other} pays this time.": "{wallet} can't make this payment. {other} pays this time.",
+  "This request can no longer be paid.": "This request can no longer be paid."
 };

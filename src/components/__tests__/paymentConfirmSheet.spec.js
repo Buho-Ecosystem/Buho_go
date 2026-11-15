@@ -192,6 +192,45 @@ test('a failed preparation keeps the draft and exposes an inline retry with Back
   assert.match(html, /class="top-btn send-back-btn sheet-nav-icon"[^>]*aria-label="Cancel"/)
 })
 
+test('a failure that another try cannot change offers Close, never Try again', async () => {
+  const failed = (extra) => render(ConfirmSheet, sheetProps({
+    contextual: true, preparationError: 'This request can no longer be paid.',
+    payment: { recipient: { name: 'Alice' }, amount: { mode: 'fixed', fixedSats: 500 } }, ...extra,
+  }), { directives: sheetDirectives })
+  const final = await failed({ preparationRetryable: false })
+  assert.match(final, /This request can no longer be paid\./)
+  assert.match(final, /class="primary-cta preparation-retry"[^>]*>Close</)
+  assert.doesNotMatch(final, />Try again</)
+  // Close is the sheet's own Cancel: nothing is retried or sent.
+  const events = []
+  const vm = { verb: 'send', isRedeem: false, $emit: (...event) => events.push(event) }
+  ConfirmSheet.methods.onTopAction.call(vm)
+  assert.equal(vm.show, false)
+  assert.deepEqual(events, [['cancel']])
+  const retryable = await failed({})
+  assert.match(retryable, /class="primary-cta preparation-retry"[^>]*>Try again</)
+  assert.doesNotMatch(retryable, />Close</)
+})
+
+test('a default wallet that sat the payment out is said in one plain line, and blocks nothing', async () => {
+  const notice = "Travel can't make this payment. Everyday pays this time."
+  const html = await render(ConfirmSheet, sheetProps({ walletNotice: notice }), { directives: sheetDirectives })
+  assert.match(html, /class="wallet-hint" role="status"/)
+  assert.match(html, /Travel can&#39;t make this payment\. Everyday pays this time\./)
+  assert.match(html, /data-icon="tabler:switch-horizontal"/)
+  assert.doesNotMatch(html, /class="primary-cta"[^>]*disabled/)
+  assert.doesNotMatch(html, /choose-wallet-cta/)
+  // A wallet that cannot pay keeps its own reason; the two lines never stack.
+  const blocked = await render(ConfirmSheet, sheetProps({ walletNotice: notice, walletCanPay: false, walletHint: 'Not enough in Travel' }), { directives: sheetDirectives })
+  assert.match(blocked, /Not enough in Travel/)
+  assert.doesNotMatch(blocked, /pays this time/)
+  // The reason is marked as something to act on, not with the Details button's icon.
+  assert.match(blocked, /class="wallet-hint"[^>]*><i data-icon="tabler:alert-circle"/)
+  // While the payment is still being prepared the line waits.
+  const preparing = await render(ConfirmSheet, sheetProps({ walletNotice: notice, contextual: true, preparing: true }), { directives: sheetDirectives })
+  assert.doesNotMatch(preparing, /pays this time/)
+})
+
 test('resolving or retrying preparation preserves a free amount; a fixed invoice owns its amount', () => {
   const vm = { show: true, amountMode: 'free', displayAmount: '751', currentCurrency: 'fiat', fixedSats: 1000, initializeResolvedDetails: ConfirmSheet.methods.initializeResolvedDetails }
   ConfirmSheet.watch.preparing.call(vm, false, true)

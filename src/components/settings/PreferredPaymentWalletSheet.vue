@@ -10,15 +10,12 @@
 
       <div class="payment-wallet-body">
         <p class="payment-wallet-intro">{{ $t('Choose a wallet for payments to contacts. You can pick another before you pay.') }}</p>
-        <p v-if="missingPreference" class="payment-wallet-warning" role="status">
-          {{ $t('This wallet is no longer available. Choose another wallet or Automatic.') }}
-        </p>
 
         <fieldset class="payment-wallet-options">
           <legend class="sr-only">{{ $t('Default wallet') }}</legend>
           <label class="payment-wallet-option">
             <input type="radio" :name="radioName" data-wallet-id="automatic" :checked="draft === null" @change="choose(null)">
-            <span class="payment-wallet-mark"><Icon icon="tabler:wallet" width="21" height="21" /></span>
+            <span class="payment-wallet-mark"><Icon icon="tabler:settings-automation" width="21" height="21" /></span>
             <span class="payment-wallet-copy"><strong>{{ $t('Automatic') }}</strong><small>{{ $t('Use the wallet on Home when it can pay.') }}</small></span>
             <span class="payment-wallet-check" aria-hidden="true"><Icon icon="tabler:check" width="15" height="15" /></span>
           </label>
@@ -27,7 +24,8 @@
             <span class="payment-wallet-mark"><WalletBrandMark :type="wallet.type || 'nwc'" :size="21" color="currentColor" /></span>
             <span class="payment-wallet-copy">
               <span class="payment-wallet-name"><strong>{{ wallet.name || $t('Wallet') }}</strong><span v-if="wallet.id === preferences.preferredWalletId" class="payment-wallet-badge">{{ $t('Default') }}</span></span>
-              <small>{{ typeLabel(wallet) }}<template v-if="displayBalance(wallet) !== null"> · <HiddenAmount>{{ displayBalance(wallet) }}</HiddenAmount></template><template v-else> · {{ $t('Balance not loaded yet') }}</template></small>
+              <!-- A balance still loading is a pulsing stand-in, never words beside it. -->
+              <small v-balance-updating="displayBalance(wallet) === null">{{ typeLabel(wallet) }} · <HiddenAmount v-if="displayBalance(wallet) !== null">{{ displayBalance(wallet) }}</HiddenAmount><span v-else class="balance-placeholder" role="img" :aria-label="$t('Balance not loaded yet')" /></small>
             </span>
             <span class="payment-wallet-check" aria-hidden="true"><Icon icon="tabler:check" width="15" height="15" /></span>
           </label>
@@ -46,7 +44,8 @@
 <script>
 import { Icon } from '@iconify/vue'
 import { useWalletStore } from '../../stores/wallet.js'
-import { usePaymentPreferencesStore } from '../../stores/paymentPreferences.js'
+import { usePaymentPreferencesStore, settledWalletIds } from '../../stores/paymentPreferences.js'
+import balanceUpdating from '../../directives/balanceUpdating.js'
 import { formatAmount } from '../../utils/amountFormatting.js'
 import { walletTypeLabel } from '../../utils/walletNames.js'
 import WalletBrandMark from '../WalletBrandMark.vue'
@@ -55,6 +54,7 @@ import HiddenAmount from '../HiddenAmount.vue'
 export default {
   name: 'PreferredPaymentWalletSheet',
   components: { Icon, WalletBrandMark, HiddenAmount },
+  directives: { balanceUpdating },
   props: { modelValue: { type: Boolean, default: false } },
   emits: ['update:modelValue', 'saved'],
   setup() {
@@ -70,11 +70,6 @@ export default {
       get() { return this.modelValue },
       set(value) { this.$emit('update:modelValue', value) },
     },
-    missingPreference() {
-      return !!this.preferences.preferredWalletId && this.walletStore.hydrated
-        && this.walletStore.savedStateLoaded !== false
-        && !this.walletStore.wallets.some(wallet => wallet.id === this.preferences.preferredWalletId)
-    },
     canSave() {
       return this.draft === null || this.walletStore.wallets.some(wallet => wallet.id === this.draft)
     },
@@ -88,11 +83,18 @@ export default {
   methods: {
     resetDraft() {
       this.preferences.initialize()
+      this.forgetRemovedWallet()
       this.draft = this.preferences.preferredWalletId
       this.error = ''
       // Wallet names are available as soon as storage is hydrated; connecting
       // a provider must never hold the settings picker open or delay its UI.
-      this.walletStore.whenHydrated?.()
+      this.walletStore.whenHydrated?.()?.then?.(() => {
+        if (this.forgetRemovedWallet()) this.draft = null
+      })
+    },
+    /** A default wallet that is no longer on this phone is Automatic again. */
+    forgetRemovedWallet() {
+      return this.preferences.forgetMissing(settledWalletIds(this.walletStore))
     },
     choose(id) { this.draft = id; this.error = '' },
     typeLabel: walletTypeLabel,
@@ -119,9 +121,8 @@ export default {
 .form-sheet-title { font-size: 1.0625rem; overflow-wrap: anywhere; }
 .form-sheet-primary { font-size: 1rem; }
 .payment-wallet-body { min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 12px 20px 22px; }
-.payment-wallet-intro, .payment-wallet-note, .payment-wallet-warning { font: 400 .8125rem/1.8 'Manrope', sans-serif; color: var(--text-secondary); margin: 4px 0 20px; overflow-wrap: anywhere; }
+.payment-wallet-intro, .payment-wallet-note { font: 400 .8125rem/1.8 'Manrope', sans-serif; color: var(--text-secondary); margin: 4px 0 20px; overflow-wrap: anywhere; }
 .payment-wallet-note { font-size: .75rem; margin: 16px 2px 0; }
-.payment-wallet-warning { color: var(--color-warn); }
 .payment-wallet-options { padding: 0; margin: 0; border: 1px solid var(--border-card); border-radius: 17px; overflow: hidden; min-width: 0; }
 .payment-wallet-option { position: relative; display: flex; align-items: center; gap: 12px; padding: 16px 14px; min-height: 80px; cursor: pointer; }
 .payment-wallet-option + .payment-wallet-option { border-top: 1px solid var(--border-card); }

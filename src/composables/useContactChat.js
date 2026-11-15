@@ -305,6 +305,24 @@ export function describeDmError(error, { t, name = '' }) {
   return { code, kind: 'general', message };
 }
 
+/** Failures of paying a request that asking again cannot change. */
+const FINAL_REQUEST_PAYMENT_ERRORS = new Set([DM_ERROR.INVALID_ARGUMENT, DM_ERROR.AMOUNT_OUT_OF_RANGE]);
+
+/**
+ * What the payment sheet says when a request could not be made ready to pay:
+ * the chat's own words for the failure, and whether another try can help.
+ * Handed to the contextual payment as `describeError`.
+ *
+ * @param {unknown} error
+ * @param {{ t: Function, name?: string }} context
+ * @returns {{ message: string, retryable: boolean }}
+ */
+export function describeRequestPaymentError(error, { t, name = '' }) {
+  const { code, message } = describeDmError(error, { t, name });
+  if (code === DM_ERROR.INVALID_ARGUMENT) return { message: t('This request can no longer be paid.'), retryable: false };
+  return { message, retryable: !FINAL_REQUEST_PAYMENT_ERRORS.has(code) };
+}
+
 // ---------------------------------------------------------------------------
 // Reactive glue
 // ---------------------------------------------------------------------------
@@ -619,11 +637,12 @@ export function useContactChat(options) {
       fixedAmount: true,
       note: message.request.note || '',
       contactId: entry?.id,
-      resolve: async () => {
-        const invoice = await runtime.fetchRequestInvoice(recipient, id);
+      resolve: async ({ signal } = {}) => {
+        const invoice = await runtime.fetchRequestInvoice(recipient, id, { signal });
         const [target, options] = requestPaymentHandover({ partner: recipient, message, invoice, name, contactId: entry?.id });
         return { address: target.bolt11, addressType: 'invoice', name: target.name, ...options };
       },
+      describeError: (cause) => describeRequestPaymentError(cause, { t, name }),
     });
     return handedOver === false ? { ok: false, error: null } : { ok: true };
   }
@@ -651,6 +670,7 @@ export function useContactChat(options) {
       amountSats,
       note: note || undefined,
       resolve: async () => ({ address: await runtime.requestAddress(recipient, id), addressType: 'lightning', name }),
+      describeError: (cause) => describeRequestPaymentError(cause, { t, name }),
     });
     return handedOver === false ? { ok: false, error: null } : { ok: true };
   }

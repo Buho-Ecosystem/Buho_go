@@ -691,17 +691,16 @@ export function createChatRuntime(deps = {}) {
    *
    * @param {string} partner
    * @param {string} requestId Rumor id of the partner's request.
+   * @param {{ signal?: AbortSignal }} [options] The payer gave up: nothing more is asked of the address.
    * @returns {Promise<{ bolt11: string, verifyUrl: string | null }>} The BOLT-11 invoice and its LUD-21 verify URL.
    * @throws {DmError} INVALID_ARGUMENT (no such open request), AMOUNT_OUT_OF_RANGE, INVOICE_FETCH_FAILED
    */
-  async function fetchRequestInvoice(partner, requestId) {
+  async function fetchRequestInvoice(partner, requestId, { signal } = {}) {
     const sender = normalizePubkey(partner);
     assertUsable();
     const message = requireRequest(sender, requestId, { outgoing: false });
-    return requests.pullInvoice({
-      lud16: await requestAddress(sender, message.id),
-      amountSats: message.request.amountSats,
-    });
+    const lud16 = await requestAddress(sender, message.id);
+    return requests.pullInvoice({ lud16, amountSats: message.request.amountSats, signal });
   }
 
   /**

@@ -281,8 +281,13 @@
 
           <!-- Wallet capability hint (e.g. Bitcoin/Spark needs Spark wallet). -->
           <div v-if="!preparationActive && !walletCanPay && walletHint" class="wallet-hint">
-            <Icon icon="tabler:info-circle" width="14" height="14" />
+            <Icon icon="tabler:alert-circle" width="14" height="14" />
             <span>{{ walletHint }}</span>
+          </div>
+          <!-- The default wallet sat this one out: who pays instead. -->
+          <div v-else-if="!preparationActive && walletNotice" class="wallet-hint" role="status">
+            <Icon icon="tabler:switch-horizontal" width="14" height="14" />
+            <span>{{ walletNotice }}</span>
           </div>
 
           <!-- LUD-18: the service will not take the payment without details
@@ -441,7 +446,8 @@
               <small v-if="preparationSlow">{{ $t('This is taking longer than usual. You can try again later.') }}</small>
             </span>
           </div>
-          <button v-if="preparationFailed" type="button" class="primary-cta preparation-retry" @click="$emit('retry-preparation')">{{ $t('Try again') }}</button>
+          <button v-if="preparationFailed && preparationRetryable" type="button" class="primary-cta preparation-retry" @click="$emit('retry-preparation')">{{ $t('Try again') }}</button>
+          <button v-else-if="preparationFailed" type="button" class="primary-cta preparation-retry" @click="onTopAction">{{ $t('Close') }}</button>
           <button v-else type="button" class="primary-cta" disabled>{{ $t('Send') }}</button>
         </div>
 
@@ -532,6 +538,8 @@ export default {
     contextual: { type: Boolean, default: false },
     preparing: { type: Boolean, default: false },
     preparationError: { type: String, default: '' },
+    /** False when asking again cannot change the answer: the sheet offers Close, not Try again. */
+    preparationRetryable: { type: Boolean, default: true },
     preparationSlow: { type: Boolean, default: false },
     preferredWalletId: { type: String, default: null },
     /**
@@ -541,6 +549,8 @@ export default {
      */
     walletCanPay: { type: Boolean, default: true },
     walletHint: { type: String, default: '' },
+    /** A plain line about the paying wallet that blocks nothing (the default wallet sat this one out). */
+    walletNotice: { type: String, default: '' },
     /**
      * "Pay with": the user's wallets for this payment, as built by
      * utils/payingWallets.listPayingWallets (active wallet first). Empty by

@@ -60,7 +60,7 @@ export const decrypt = async (envelope) => {
 export function createHarness({ evidence = {}, connect = null, storage = {}, exits = {}, deps: extraDeps = {}, validate = false } = {}) {
   const local = memoryStorage(storage);
   globalThis.localStorage = local;
-  const calls = { probes: [], deletedStorage: [], reconciled: [], removedConfigs: [], rulesLoaded: [], kitsRemoved: [], preserved: [], backupNotes: 0 };
+  const calls = { probes: [], deletedStorage: [], reconciled: [], removedConfigs: [], rulesLoaded: [], kitsRemoved: [], preserved: [], defaultWalletChecks: [], backupNotes: 0 };
   const balances = {};
   // A stand-in for the Lightning address server: one address per identity key.
   const server = { byPubkey: new Map(), random: 0, ensures: 0, failClaim: false };
@@ -154,6 +154,7 @@ export function createHarness({ evidence = {}, connect = null, storage = {}, exi
       forgetSparkWallet: () => {},
     },
     './autoWithdraw': { useAutoWithdrawStore: () => ({ checkAndExecute() {}, async initialize(options) { calls.rulesLoaded.push(options); }, forgetWallet: async (id) => { calls.removedConfigs.push(id); } }) },
+    './paymentPreferences.js': { usePaymentPreferencesStore: () => ({ forgetMissing: (ids) => { calls.defaultWalletChecks.push(ids); } }) },
     './exitKit': { useExitKitStore: () => ({ remove: (id) => calls.kitsRemoved.push(id) }) },
     './emergencyExit': { useEmergencyExitStore: () => exitStore },
     '../services/exitKit.js': {

@@ -444,10 +444,12 @@
       :contextual="paymentOnly"
       :preparing="paymentOnly && preparationState === 'preparing'"
       :preparation-error="preparationError"
+      :preparation-retryable="preparationRetryable"
       :preparation-slow="preparationSlow"
-      :preferred-wallet-id="paymentPreferences.preferredWalletId"
+      :preferred-wallet-id="paymentOnly ? paymentPreferences.preferredWalletId : null"
       :wallet-can-pay="paymentSheetWalletCanPay"
       :wallet-hint="paymentSheetWalletHint"
+      :wallet-notice="paymentSheetWalletNotice"
       :paying-wallets="payingWalletEntries"
       :sending-wallet-id="sendingWalletId"
       :is-sending="isSendingPayment"
@@ -565,9 +567,11 @@
       v-if="paymentOnly"
       :model-value="showDefaultWalletPrompt"
       :wallet-name="defaultWalletCandidate?.name || ''"
+      :wallet-type="defaultWalletCandidate?.type || ''"
       :error="walletPreferenceError"
       @accept="savePaymentWalletPreference(defaultWalletCandidate.id)"
       @dismiss="dismissDefaultWalletPrompt"
+      @later="postponeDefaultWalletPrompt"
       @hidden="returnAfterPayment"
     />
 
@@ -742,7 +746,7 @@ import {claimLaunch} from '../utils/launch.js';
 import {useWalletStore} from '../stores/wallet';
 import DefaultPaymentWalletDialog from '../components/DefaultPaymentWalletDialog.vue';
 import {usePaymentFlowStore} from '../stores/paymentFlow';
-import {usePaymentPreferencesStore} from '../stores/paymentPreferences';
+import {usePaymentPreferencesStore, settledWalletIds} from '../stores/paymentPreferences';
 import {useUpdateStore} from '../stores/update';
 import {useAddressBookStore} from '../stores/addressBook';
 import {useTransactionMetadataStore} from '../stores/transactionMetadata';
@@ -797,6 +801,9 @@ import { whenAppUnlocked } from '../utils/appLock.js';
 import { isOpenActionCurrent } from '../services/openActionIntake.js';
 import { findShortcutContact } from '../utils/quickAccessPlan.js';
 import { usePayContact } from '../composables/usePayContact.js';
+
+/** How long a typed amount rests before the paying wallet is asked for its fee. */
+const TYPED_AMOUNT_QUOTE_DELAY_MS = 350;
 
 function emptySaveContactData() {
   return {
@@ -886,6 +893,8 @@ export default {
   },
   data() {
     return {
+      // False when another try cannot change the answer (a request that is over).
+      preparationRetryable: true,
       preparationState: this.paymentOnly ? 'preparing' : 'idle',
       preparationError: '',
       preparationSlow: false,
@@ -961,6 +970,8 @@ export default {
       // pick, else the default pick) and changed only by the field; it never
       // changes which wallet is active.
       sendingWalletId: null,
+      // The person picked the paying wallet in the sheet (contact payments).
+      sendingWalletPicked: false,
       pendingPayment: null,
       merchantCountdown: 0,
       merchantCountdownTimer: null,
@@ -2075,6 +2086,22 @@ export default {
         && quote.amount === this.payingAmountSats ? quote : null;
     },
 
+    /**
+     * One plain line when the default wallet from Settings sat this payment
+     * out because it cannot reach this kind of destination: who pays instead.
+     * Silent when the caller or the person chose the wallet.
+     */
+    paymentSheetWalletNotice() {
+      if (!this.paymentOnly || !this.pendingPayment || this.paymentIntent?.walletId || this.sendingWalletPicked) return '';
+      const preferredId = this.paymentPreferences.preferredWalletId;
+      const preferred = preferredId ? this.getWalletById(preferredId) : null;
+      const payer = this.getSendingWallet();
+      if (!preferred || !payer || payer.id === preferredId || this.preferredWalletReaches(this.pendingDestinationType)) return '';
+      return this.$t("{wallet} can't make this payment. {other} pays this time.", {
+        wallet: preferred.name || this.$t('Wallet'), other: payer.name || this.$t('Wallet'),
+      });
+    },
+
     // A rail problem keeps the shared switch-wallet words; a balance problem
     // names the wallet and suggests another only when one can pay.
     paymentSheetWalletHint() {
@@ -2611,8 +2638,10 @@ export default {
       const attempt = this._preparationAttempt = (this._preparationAttempt || 0) + 1;
       this.preparationState = 'preparing';
       this.preparationError = '';
+      this.preparationRetryable = true;
       this.preparationSlow = false;
       this.sendResolveError = '';
+      this._sendResolveFinal = false;
       this.paymentFlow.setStage(this.paymentIntent.id, 'preparing');
       clearTimeout(this._preparationSlowTimer);
       this._preparationSlowTimer = setTimeout(() => {
@@ -2621,9 +2650,20 @@ export default {
       try {
         await this._walletsReady;
         if (!this.isContextualAttemptCurrent(attempt)) return;
+        // A default wallet that is no longer on this phone is Automatic again.
+        this.paymentPreferences.forgetMissing(settledWalletIds(this.walletStore));
         const intent = this.paymentIntent;
-        const resolved = typeof intent.resolve === 'function'
-          ? await intent.resolve({ signal: intent.signal }) : intent;
+        let resolved = intent;
+        if (typeof intent.resolve === 'function') {
+          try {
+            resolved = await intent.resolve({ signal: intent.signal });
+          } catch (error) {
+            // The surface that handed the payment over knows what its own
+            // lookup failed on, and whether asking again can help.
+            if (this.isContextualAttemptCurrent(attempt)) this.finishContextualPreparation(false, this.describePreparationError(error));
+            return;
+          }
+        }
         if (!this.isContextualAttemptCurrent(attempt)) return;
         const target = { ...intent, ...resolved };
         if (!target.address) throw new Error('Missing destination');
@@ -2643,12 +2683,29 @@ export default {
       }
     },
 
-    finishContextualPreparation(resolved) {
+    /** What the handing-over surface says about its own failed lookup, if anything. */
+    describePreparationError(error) {
+      try {
+        const failure = this.paymentIntent?.describeError?.(error);
+        return failure && typeof failure.message === 'string' && failure.message ? failure : null;
+      } catch {
+        return null;
+      }
+    },
+
+    /**
+     * Preparation ended. A failure says its own reason when it has one, and
+     * offers another try only where trying again can change the answer.
+     * @param {boolean} resolved
+     * @param {{ message?: string, retryable?: boolean }|null} [failure]
+     */
+    finishContextualPreparation(resolved, failure = null) {
       if (!this.isContextualAttemptCurrent()) return;
       clearTimeout(this._preparationSlowTimer);
       this.preparationSlow = false;
       this.preparationState = resolved ? 'ready' : 'error';
-      this.preparationError = resolved ? '' : this.$t("Please try again in a moment.");
+      this.preparationError = resolved ? '' : failure?.message || this.$t("Please try again in a moment.");
+      this.preparationRetryable = resolved || failure?.retryable !== false;
       this.paymentFlow.setStage(this.paymentIntent.id, this.preparationState);
     },
 
@@ -2677,6 +2734,12 @@ export default {
     dismissDefaultWalletPrompt() {
       if (!this.showDefaultWalletPrompt || !this.isContextualAttemptCurrent()) return;
       this.paymentPreferences.dismissPrompt();
+      this.showDefaultWalletPrompt = false;
+    },
+
+    /** Tapped away without answering: nothing is decided, the offer may come again. */
+    postponeDefaultWalletPrompt() {
+      if (!this.showDefaultWalletPrompt) return;
       this.showDefaultWalletPrompt = false;
     },
 
@@ -2826,6 +2889,8 @@ export default {
       if (fromField) {
         this.sendResolveError = message;
         this.sendResolveSource = attribution;
+        // Asking again cannot change what this destination is.
+        this._sendResolveFinal = dialogOpts.retryable === false;
       } else {
         const error = attribution ? counterpartyError(message, message) : new Error(message);
         this.walletStore.showPaymentError(error, {
@@ -3987,15 +4052,26 @@ export default {
      * payment silently going out from a wallet nobody asked for. Without a
      * choice: the default pick (the active wallet when it can pay, else the
      * first wallet that can, else the active wallet so the sheet can explain).
+     *
+     * A contact payment starts with the default wallet from Settings. Where
+     * that wallet cannot reach this kind of destination at all, the default
+     * pick pays and the sheet says so in one line (paymentSheetWalletNotice).
      */
     chooseSendingWalletId(destinationType, requestedId = null, amountSats = 0) {
       if (this.paymentOnly) {
         if (requestedId) return requestedId;
-        if (this.paymentPreferences.preferredWalletId) return this.paymentPreferences.preferredWalletId;
+        const preferred = this.paymentPreferences.preferredWalletId;
+        if (preferred && this.preferredWalletReaches(destinationType)) return preferred;
       }
       if (requestedId && this.getWalletById(requestedId)) return requestedId;
       const entries = this.rankPayingWallets(destinationType, amountSats);
       return pickDefaultPayingWallet(entries)?.id || this.walletStore.activeWalletId || null;
+    },
+
+    /** True when the default wallet from Settings is on this phone and can pay this kind of destination. */
+    preferredWalletReaches(destinationType) {
+      const preferred = this.paymentPreferences.preferredWalletId;
+      return !!preferred && !!this.getWalletById(preferred) && canWalletPay(this.walletTypeOf(preferred), destinationType);
     },
 
     /**
@@ -4052,6 +4128,7 @@ export default {
       const entry = this.payingWalletEntries.find((w) => w.id === walletId);
       // A wallet that cannot pay is listed with its reason but never selectable.
       if (!entry?.usable || (this.paymentOnly && entry.connectionFailed)) return;
+      if (this.paymentOnly) this.sendingWalletPicked = true;
       this.sendingWalletId = walletId;
       // An on-chain fee quote was priced for the previous wallet.
       this.l1Fee = null;
@@ -4634,7 +4711,7 @@ export default {
         // unexpected destination open authentication, receive or address UI.
         if (this.paymentOnly && !['lightning_invoice', 'lnurl', 'lightning_address', 'nostr_identifier', 'spark_address', 'arkade_address', 'bitcoin_address'].includes(paymentData.type)) {
           resolved = false;
-          this.failSendResolution(this.$t('This link cannot be used for a payment. Ask the recipient for a payment request.'), true);
+          this.failSendResolution(this.$t('This link cannot be used for a payment. Ask the recipient for a payment request.'), true, { retryable: false });
           return;
         }
 
@@ -4723,7 +4800,7 @@ export default {
           if (looksLikeLud04(paymentData.data)) {
             if (this.paymentOnly) {
               resolved = false;
-              this.failSendResolution(this.$t('This link cannot be used for a payment. Ask the recipient for a payment request.'), true);
+              this.failSendResolution(this.$t('This link cannot be used for a payment. Ask the recipient for a payment request.'), true, { retryable: false });
               return;
             }
             if (this.openIdentityAuthFromLnurl(paymentData.data)) return;
@@ -4762,7 +4839,7 @@ export default {
           if (lnurlInfo.lnurlType === 'withdrawRequest') {
             if (this.paymentOnly) {
               resolved = false;
-              this.failSendResolution(this.$t('This link cannot be used for a payment. Ask the recipient for a payment request.'), true);
+              this.failSendResolution(this.$t('This link cannot be used for a payment. Ask the recipient for a payment request.'), true, { retryable: false });
               return;
             }
             // LNURL-withdraw: set up withdraw flow
@@ -4936,7 +5013,7 @@ export default {
           } catch (decodeErr) {
             console.warn('Spark destination decode failed:', decodeErr?.message);
             resolved = false;
-            this.failSendResolution(this.$t('This payment code cannot be read.'), fromField);
+            this.failSendResolution(this.$t('This payment code cannot be read.'), fromField, { retryable: false });
             return;
           }
 
@@ -4961,7 +5038,7 @@ export default {
             const choosePinnedSender = this.paymentOnly && ['sender_unknown', 'sender_mismatch'].includes(problem);
             if (problem && !choosePinnedSender && !(problem === 'sender_unknown' && !ownAddress)) {
               resolved = false;
-              this.failSendResolution(this.sparkInvoiceProblemMessage(problem), fromField);
+              this.failSendResolution(this.sparkInvoiceProblemMessage(problem), fromField, { retryable: false });
               return;
             }
 
@@ -5060,7 +5137,7 @@ export default {
           return;
         }
         if (this.paymentOnly && !delegated) {
-          this.finishContextualPreparation(resolved, resolved ? '' : this.sendResolveError || this.$t("Please try again in a moment."));
+          this.finishContextualPreparation(resolved, resolved ? null : { message: this.sendResolveError, retryable: !this._sendResolveFinal });
         }
         // The nested NIP-05 rescue call already settled the outcome (closed the
         // sheet or set the inline error); don't clobber it from the outer call.
@@ -5638,6 +5715,10 @@ export default {
       // Acquire ownership synchronously, before an executor's first await.
       if (this.paymentOnly && this.paymentFlow.committed) return;
       if (this.paymentOnly) this.paymentFlow.setStage(this.paymentIntent.id, 'sending');
+      // Home has no lease: this latch covers a second confirm that arrives
+      // before the executor has marked itself busy.
+      if (this.isSendingPayment || this._sendConfirming) return;
+      this._sendConfirming = true;
       try {
         // Spark on-chain rides its own submit lifecycle (withdrawal request
         // + background monitor), not the instant-payment pipeline.
@@ -5666,6 +5747,7 @@ export default {
           this.$refs.sendSheetRef?.resetSlide();
         }
       } finally {
+        this._sendConfirming = false;
         // Validation/PIN may return before the executor ever marks itself busy.
         if (this.paymentOnly && this.paymentFlow.isCurrent(this.paymentIntent.id) && !this.isSendingPayment && this.paymentFlow.stage !== 'choosing-default') {
           this.paymentFlow.setStage(this.paymentIntent.id, this.showSendSuccess || this.showSaveContactDialog ? 'complete' : 'ready');
@@ -6148,9 +6230,11 @@ export default {
       const isCompleted = status !== 'pending';
       // Capture the wallet that actually paid, before the executor clears it.
       const payer = this.paymentOnly ? this.getSendingWallet() : null;
-      this.defaultWalletCandidate = this.paymentOnly && isCompleted && !this.paymentIntent?.walletId
+      // Offered only to someone who picked this wallet in the sheet: a payment
+      // that went out from the automatic pick shows no interest in a default.
+      this.defaultWalletCandidate = this.paymentOnly && isCompleted && !this.paymentIntent?.walletId && this.sendingWalletPicked
         && this.paymentPreferences.shouldPrompt && this.walletStore.wallets.length > 1 && this.isPaymentIdentityCurrent()
-        && payer ? { id: payer.id, name: payer.name || this.$t('Wallet') } : null;
+        && payer ? { id: payer.id, name: payer.name || this.$t('Wallet'), type: payer.type || 'nwc' } : null;
       // Money left: felt once the payment completed, never while it routes.
       if (isCompleted) haptics.success();
 
@@ -6793,6 +6877,12 @@ export default {
       const walletId = this.getSendingWallet()?.id || null;
       this.isEstimatingFee = true;
       try {
+        // A typed amount changes with every key: quote the one the person
+        // stops on, not each digit on the way. A fixed amount is quoted at once.
+        if (!(this.getFixedPaymentSats() > 0)) {
+          await new Promise((resolve) => setTimeout(resolve, TYPED_AMOUNT_QUOTE_DELAY_MS));
+          if (run !== this._feeEstimateRun) return;
+        }
         const provider = await this.walletStore.ensureSparkConnected(walletId);
         if (run !== this._feeEstimateRun) return;
         const estimate = nativeRequest

@@ -1317,6 +1317,27 @@ test('Pay with: the fee estimate is the paying wallet\'s', async () => {
   assert.equal(vm.isEstimatingFee, false);
 });
 
+test('a typed amount is quoted once it rests: digits on the way never reach the wallet, and the slide waits', async () => {
+  const { vm, store } = payingHarness({ active: 'personal' });
+  const quoted = [];
+  store.ensureSparkConnected = async () => ({
+    getSparkSendFeeEstimate: async (request, amount) => { quoted.push(amount); return { estimatedFeeSats: 0 }; },
+  });
+  vm.pendingPayment = { type: 'spark_address', sparkAddress: 'spark1recipient' };
+  for (const typed of [2, 25, 250]) {
+    vm.sendSheetAmountSats = typed;
+    void vm.updateFeeEstimate();
+    assert.equal(vm.isEstimatingFee, true, 'no payment can be confirmed against a fee that is still being asked for');
+    assert.equal(vm.sendSheetCommitGate, false);
+  }
+  vm.sendSheetAmountSats = 2500;
+  await vm.updateFeeEstimate();
+  assert.deepEqual(quoted, [2500]);
+  assert.equal(vm.estimatedFee, 0);
+  assert.equal(vm.isEstimatingFee, false);
+  assert.equal(vm.sendSheetCommitGate, true);
+});
+
 test('Pay with: the sendingWalletId watcher re-runs the fee estimate', () => {
   const { options } = payingHarness();
   assert.equal(options.watch.sendingWalletId, 'updateFeeEstimate');
