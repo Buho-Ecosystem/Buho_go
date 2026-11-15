@@ -3,7 +3,6 @@ export default {
   "Wallet unavailable": "Wallet unavailable",
   "Choose a wallet for this payment.": "Choose a wallet for this payment.",
   "Use {name}": "Use {name}",
-  "Pay request": "Pay request",
   "Unavailable right now": "Unavailable right now",
   "Choose another wallet": "Choose another wallet",
   "This link cannot be used for a payment. Ask the recipient for a payment request.": "This link cannot be used for a payment. Ask the recipient for a payment request.",

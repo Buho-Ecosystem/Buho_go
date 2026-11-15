@@ -1,9 +1,8 @@
 export default {
   "Automatic": "Automática",
-  "Wallet unavailable": "Wallet no disponible",
+  "Wallet unavailable": "Cartera no disponible",
   "Choose a wallet for this payment.": "Elige una cartera para este pago.",
   "Use {name}": "Usar {name}",
-  "Pay request": "Pagar solicitud",
   "Unavailable right now": "No disponible en este momento",
   "Choose another wallet": "Elegir otra cartera",
   "This link cannot be used for a payment. Ask the recipient for a payment request.": "Este enlace no se puede usar para un pago. Pide al destinatario una solicitud de pago.",
