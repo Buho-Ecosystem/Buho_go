@@ -53,7 +53,8 @@ test('a request for a fraction of the smallest unit is one whole figure, rounded
   const decoded = parseLightningInvoice(invoice);
   assert.equal(decoded.amount, 2408);
   assert.equal(readInvoice(invoice).amountSats, 2408, 'every decoder reads the same figure');
-  assert.equal(formatAmount(decoded.amount), `₿ ${(2408).toLocaleString()}`);
+  // Whichever space the formatter puts after the sign, the figure is whole.
+  assert.equal(formatAmount(decoded.amount).replace(/\s/g, ' '), `₿ ${(2408).toLocaleString()}`);
   // The exact amount stays for the check that an invoice is for the amount asked for.
   assert.equal(decoded.amountMsat, 2407123);
   // A whole amount is itself, to the last unit.
