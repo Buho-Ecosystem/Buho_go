@@ -20,6 +20,8 @@ test('reported BIP21 QR selects Lightning and decodes 4,519 sats', () => {
   const timestamp = bech32.decode(REGTEST_INVOICE, 4096).words.slice(0, 7)
     .reduce((value, word) => value * 32 + word, 0);
   assert.equal(decoded.expiry, timestamp + 900);
+  // The invoice's identity, as a wallet's records name the payment.
+  assert.equal(decoded.paymentHash, '45678751a699c18a8281254cecde1732589003744fcf418684ca6bdc2ea67c7f');
 });
 
 test('Lightning amount remains authoritative when BIP21 amount differs or is absent', () => {

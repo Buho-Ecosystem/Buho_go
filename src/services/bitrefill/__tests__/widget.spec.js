@@ -6,9 +6,14 @@
  *     screen, theme and language from the app, email only when valid
  *   - messages: only from the widget origin AND the widget frame, JSON or
  *     object data, unknown events dropped
- *   - the invoice of a payment_intent: lightning: prefix, other methods refused
+ *   - the invoice of a payment_intent: lightning: prefix, other methods and
+ *     test networks refused, the stated amount checked against the invoice
+ *   - what the widget says after payment: paid, expired, refunded, and
+ *     whether the order was delivered or needs a refund
  *   - the ledger: attempted blocks a second payment, failed allows a retry,
- *     paid blocks for good, the list stays bounded
+ *     paid blocks for good, the list stays bounded; the same invoice under
+ *     another order id is the same payment; entries from before payment
+ *     hashes were kept still block
  *   - the email: encrypted at rest, asked once
  */
 
@@ -22,8 +27,14 @@ import {
   isValidEmail,
   parseWidgetMessage,
   invoiceFromIntent,
+  intentAmountSats,
+  intentAmountMatches,
   isPaidUpdate,
   isExpiredUpdate,
+  isRefundedUpdate,
+  deliveryOutcome,
+  DELIVERY,
+  BITREFILL_ENABLED,
 } from '../widget.js'
 import {
   createInvoiceLedger,
@@ -125,6 +136,43 @@ test('the invoice of a payment intent', () => {
   assert.equal(invoiceFromIntent({ ...base, event: WIDGET_EVENT.INVOICE_CREATED, paymentUri: INVOICE }), null, 'only an intent is paid')
 })
 
+test('only a mainnet invoice is paid', () => {
+  const base = { event: WIDGET_EVENT.PAYMENT_INTENT, invoiceId: 'i', paymentMethod: 'lightning' }
+  const rest = INVOICE.slice('lnbc'.length)
+  assert.equal(invoiceFromIntent({ ...base, paymentUri: `lnbc1p${rest}` }), `lnbc1p${rest}`, 'an invoice without an amount is still mainnet')
+  for (const prefix of ['lntb', 'lnbcrt', 'lntbs']) {
+    assert.equal(invoiceFromIntent({ ...base, paymentUri: `lightning:${prefix}${rest}` }), null, prefix)
+  }
+})
+
+test('the amount the widget states must be the amount the invoice asks for', () => {
+  const intent = { event: WIDGET_EVENT.PAYMENT_INTENT, paymentAmount: 0.0013974, paymentCurrency: 'BTC' }
+  assert.equal(intentAmountSats(intent), 139740)
+  assert.equal(intentAmountMatches(intent, 139740), true)
+  assert.equal(intentAmountMatches(intent, 139741), true, 'one sat of rounding')
+  assert.equal(intentAmountMatches(intent, 1397400), false, 'ten times the order')
+  assert.equal(intentAmountMatches(intent, 13974), false)
+  // Nothing readable is stated: the invoice alone decides, as before.
+  assert.equal(intentAmountMatches({ ...intent, paymentCurrency: 'EUR' }, 5), true)
+  assert.equal(intentAmountMatches({ event: WIDGET_EVENT.PAYMENT_INTENT }, 5), true)
+  assert.equal(intentAmountSats({ ...intent, paymentAmount: 'abc' }), null)
+})
+
+test('the shop is off unless the build switched it on', () => {
+  assert.equal(BITREFILL_ENABLED, false)
+})
+
+test('a refund and the end of an order', () => {
+  assert.equal(isRefundedUpdate({ event: 'invoice_update', status: 'refunded' }), true)
+  assert.equal(isRefundedUpdate({ event: 'invoice_update', status: 'payment_detected' }), false)
+  const complete = (extra) => ({ event: 'invoice_complete', invoiceId: 'i', ...extra })
+  assert.equal(deliveryOutcome(complete({ deliveryStatus: 'delivered', refundNeeded: false })), DELIVERY.DELIVERED)
+  assert.equal(deliveryOutcome(complete({ deliveryStatus: 'delivered', refundNeeded: true })), DELIVERY.REFUND, 'a refund always wins')
+  assert.equal(deliveryOutcome(complete({ deliveryStatus: 'failed' })), DELIVERY.REFUND)
+  assert.equal(deliveryOutcome(complete({})), DELIVERY.UNKNOWN, 'no word is no promise')
+  assert.equal(deliveryOutcome({ event: 'invoice_update', deliveryStatus: 'delivered' }), DELIVERY.UNKNOWN)
+})
+
 test('paid and expired updates', () => {
   assert.equal(isPaidUpdate({ event: 'invoice_update', status: 'payment_detected' }), true)
   assert.equal(isPaidUpdate({ event: 'invoice_update', status: 'payment_confirmed' }), true)
@@ -216,4 +264,54 @@ test('email: "Not now" counts as asked; an unreadable envelope reads as no email
   assert.equal(wasEmailAsked(storage), true)
   storage.setItem(EMAIL_KEY, 'garbage')
   assert.equal(await loadEmail({ storage, decrypt: async () => { throw new Error('bad') } }), '')
+})
+
+test('ledger: the same invoice under another order id is the same payment', () => {
+  const ledger = createInvoiceLedger({ storage: memoryStorage() })
+  assert.deepEqual(ledger.claim({ invoiceId: 'order-1', paymentHash: 'AB12' }, { walletId: 'w', expiresAt: 99 }), { ok: true })
+  assert.deepEqual(ledger.claim({ invoiceId: 'order-2', paymentHash: 'ab12' }), { ok: false, reason: PAY_BLOCK.IN_FLIGHT })
+  assert.deepEqual(ledger.canPay('order-1'), { ok: false, reason: PAY_BLOCK.IN_FLIGHT }, 'the order id alone still finds it')
+  const entry = ledger.get({ paymentHash: 'ab12' })
+  assert.equal(entry.invoiceId, 'order-1')
+  assert.equal(entry.walletId, 'w')
+  assert.equal(entry.expiresAt, 99)
+  assert.equal(ledger.unresolved().length, 1)
+  ledger.mark('order-1', PAY_STATE.PAID)
+  assert.deepEqual(ledger.claim({ invoiceId: 'order-3', paymentHash: 'ab12' }), { ok: false, reason: PAY_BLOCK.PAID })
+  assert.equal(ledger.unresolved().length, 0)
+})
+
+test('ledger: a claim is recorded only when it is allowed, and a failed one frees the invoice', () => {
+  const storage = memoryStorage()
+  const ledger = createInvoiceLedger({ storage })
+  const key = { invoiceId: 'order', paymentHash: 'ff00' }
+  ledger.claim(key)
+  ledger.claim(key)
+  assert.equal(JSON.parse(storage.getItem(LEDGER_KEY)).length, 1)
+  ledger.mark(key, PAY_STATE.FAILED)
+  assert.deepEqual(ledger.claim(key), { ok: true })
+  const blocked = createInvoiceLedger({ storage: { getItem: () => null, setItem: () => { throw new Error('quota') } } })
+  assert.throws(() => blocked.claim(key), 'an attempt that cannot be recorded never reaches a wallet')
+})
+
+test('ledger: entries from before payment hashes were kept still block', () => {
+  const storage = memoryStorage()
+  storage.setItem(LEDGER_KEY, JSON.stringify([
+    { invoiceId: 'old-paid', state: 'paid', createdAt: 1, updatedAt: 1 },
+    { invoiceId: 'old-open', state: 'attempted', createdAt: 2, updatedAt: 2 },
+  ]))
+  const ledger = createInvoiceLedger({ storage })
+  assert.deepEqual(ledger.claim({ invoiceId: 'old-paid', paymentHash: 'aa' }), { ok: false, reason: PAY_BLOCK.PAID })
+  assert.deepEqual(ledger.claim({ invoiceId: 'old-open', paymentHash: 'bb' }), { ok: false, reason: PAY_BLOCK.IN_FLIGHT })
+  assert.deepEqual(ledger.claim({ invoiceId: 'new', paymentHash: 'cc' }), { ok: true })
+})
+
+test('ledger: delivery facts are added without changing whether an invoice may be paid', () => {
+  const ledger = createInvoiceLedger({ storage: memoryStorage() })
+  ledger.mark({ invoiceId: 'order', paymentHash: 'aa' }, PAY_STATE.PAID)
+  ledger.annotate('order', { delivery: 'refund', state: 'failed' })
+  assert.equal(ledger.get('order').delivery, 'refund')
+  assert.deepEqual(ledger.canPay('order'), { ok: false, reason: PAY_BLOCK.PAID }, 'a note cannot free a paid invoice')
+  assert.equal(ledger.annotate('unknown', { delivery: 'refund' }), null)
+  assert.equal(ledger.all().length, 1)
 })

@@ -17,6 +17,10 @@
  *                                 payment_confirmed | expired | refunded
  *              invoice_complete { invoiceId, deliveryStatus, refundNeeded }
  *
+ * `invoice_update` says what happened to the money; `invoice_complete` says
+ * what happened to the order. Paid is not delivered: an order can be paid and
+ * still need a refund, which Bitrefill handles in the widget.
+ *
  * With showPaymentInfo=false the widget skips its own payment screen: after
  * the user confirms the order it sends `payment_intent`, and the app pays.
  *
@@ -29,6 +33,13 @@
 export const WIDGET_ORIGIN = 'https://embed.bitrefill.com'
 
 const env = import.meta.env || {}
+
+/**
+ * The shop is off until Bitrefill approved the integration: a build without
+ * `VITE_BITREFILL_ENABLED=true` keeps the "on its way" sheet in Spend and
+ * sends /bitrefill back to Spend, so nobody meets an unapproved widget.
+ */
+export const BITREFILL_ENABLED = env.VITE_BITREFILL_ENABLED === 'true'
 
 /**
  * The name Bitrefill approves the integration under. Until BuhoGO is approved
@@ -54,6 +65,13 @@ export const WIDGET_EVENT = Object.freeze({
 
 /** `invoice_update` statuses that mean the invoice is paid. */
 export const PAID_STATUSES = Object.freeze(['payment_detected', 'payment_confirmed'])
+
+/** What an `invoice_complete` says about the order (see `deliveryOutcome`). */
+export const DELIVERY = Object.freeze({
+  DELIVERED: 'delivered',
+  REFUND: 'refund',
+  UNKNOWN: 'unknown',
+})
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
@@ -116,14 +134,39 @@ export function parseWidgetMessage(event, frameWindow) {
 
 /**
  * The BOLT11 invoice of a `payment_intent`, or null when it carries none the
- * app can pay (another payment method, a missing or malformed URI).
+ * app can pay: another payment method, a missing or malformed URI, or an
+ * invoice for a test network (real money only moves on mainnet, and `lnbcrt`
+ * must not pass for `lnbc`).
  */
 export function invoiceFromIntent(message) {
   if (!message || message.event !== WIDGET_EVENT.PAYMENT_INTENT) return null
   if (message.paymentMethod && message.paymentMethod !== 'lightning') return null
   const uri = typeof message.paymentUri === 'string' ? message.paymentUri.trim() : ''
-  const invoice = uri.replace(/^lightning:/i, '')
-  return /^ln(bc|tb|bcrt|tbs)[0-9a-z]+$/i.test(invoice) ? invoice.toLowerCase() : null
+  const invoice = uri.replace(/^lightning:/i, '').toLowerCase()
+  return /^lnbc(\d+[munp]?)?1[0-9a-z]+$/.test(invoice) ? invoice : null
+}
+
+/**
+ * The amount the widget states for an intent, in sats, or null when it
+ * states none the app can read. The documented `paymentAmount` is in
+ * `paymentCurrency`; only BTC is read, anything else is left unjudged.
+ */
+export function intentAmountSats(message) {
+  const amount = Number(message?.paymentAmount)
+  if (!Number.isFinite(amount) || amount <= 0) return null
+  if (String(message?.paymentCurrency || '').toUpperCase() !== 'BTC') return null
+  return Math.round(amount * 1e8)
+}
+
+/**
+ * True when the invoice asks for what the widget said the order costs. The
+ * invoice is what gets paid, so a stated amount that differs from it means
+ * the two no longer describe the same order. One sat of rounding is allowed;
+ * an intent that states no readable amount is not judged.
+ */
+export function intentAmountMatches(message, invoiceSats) {
+  const stated = intentAmountSats(message)
+  return stated === null || Math.abs(stated - Number(invoiceSats)) <= 1
 }
 
 /** True when an `invoice_update` says the invoice was paid. */
@@ -134,4 +177,23 @@ export function isPaidUpdate(message) {
 /** True when an `invoice_update` says the price ran out before payment. */
 export function isExpiredUpdate(message) {
   return message?.event === WIDGET_EVENT.INVOICE_UPDATE && message.status === 'expired'
+}
+
+/** True when an `invoice_update` says the money went back to the buyer. */
+export function isRefundedUpdate(message) {
+  return message?.event === WIDGET_EVENT.INVOICE_UPDATE && message.status === 'refunded'
+}
+
+/**
+ * What an `invoice_complete` says about the order: delivered, in need of a
+ * refund (Bitrefill took the money but could not deliver), or unknown when
+ * the message says neither. A refund always wins: it is the case the user
+ * must hear about.
+ */
+export function deliveryOutcome(message) {
+  if (message?.event !== WIDGET_EVENT.INVOICE_COMPLETE) return DELIVERY.UNKNOWN
+  const status = String(message.deliveryStatus || '').toLowerCase()
+  if (message.refundNeeded === true || /fail|error|refund|cancel/.test(status)) return DELIVERY.REFUND
+  if (/deliver|complete|success|sent|done/.test(status)) return DELIVERY.DELIVERED
+  return DELIVERY.UNKNOWN
 }
