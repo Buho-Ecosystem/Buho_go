@@ -46,8 +46,9 @@ Arkade: the transaction id) and waits for exactly that payment; the History
 row keeps its "Bitcoin sent" title.
 
 The amount is the amount the user entered: what the recipient was sent, not
-the fee-inclusive total (an Arkade on-chain send takes its network fee out of
-that amount).
+the fee-inclusive total. Every on-chain send, Arkade's included, now adds its
+network fee on top of that amount (Arkade's quote is receiver-exact,
+`ArkadeWalletProvider._quoteOffboard`).
 When the user paid in the recipient's own currency (LUD-21) from a wallet
 that sends it as such (Spark, Arkade, LNbits), that amount is kept too, and
 the sheet starts in that currency while the recipient still offers it and
