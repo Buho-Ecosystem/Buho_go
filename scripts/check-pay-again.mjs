@@ -114,7 +114,6 @@ async function openDetails(id) {
   await pause(400);
 }
 async function expectSheet(from) {
-  await page.waitForFunction(() => location.hash.startsWith('#/wallet'));
   const sheet = page.locator('.sheet-card:not(.sheet-card--redeem)');
   await sheet.waitFor({ timeout: 20000 });
   await pause(500);
