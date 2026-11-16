@@ -40,19 +40,17 @@ Before: the PIN took over the whole screen, the kiosk went back to its QR after 
 - **A card tapped before there was a sale** is held for two minutes ("Card held · enter the amount"). After Charge it waits for an explicit "Charge card", because its holder never saw the amount.
 - **The card stays on screen while it pays** ("Paying…"), for at most a minute after its service answered OK (`CARD_PAYMENT_WAIT_MS`). That OK only accepts the request: the service pays afterwards (LUD-03), and one whose wallet has no funds or no route never pays (#460). The sale's own payment watch decides paid, never the callback's OK, and it keeps running after the card lets go, so a later payment still completes the sale. When the minute is over, the sale is checked once more before the card lets go (`LAST_CHECK_MS`), so a payment that came while the phone slept, or since the last check, completes the sale instead of a line saying none came. An invoice that expires while the card waits lets go of the card too.
 - **A card that does not pay** says why in one line on the pay screen, with the QR, Park and Cancel back: locked after wrong PINs, outside the card's limits, no answer from the card's service (then the screen says that a payment, if it happened, still shows up), or no payment within the minute ("No payment came from the card."). The next tap tries the same invoice again. No dialog to dismiss at the counter.
-- The success screen says "Paid by card" when the payment came while the card was paying, also from a service that pays before it answers OK.
+- The success screen confirms the receiving wallet settled the invoice. It does not infer whether the customer paid through the card or the QR.
 
 ## Parked sales
 
-`src/composables/useKioskParkedSales.js`. Parking sets the sale on screen aside so the register can take the next customer. Parking never stops a sale from being paid, so it never stops it from being watched.
+`src/stores/kioskMerchant.js` and `src/composables/useKioskPayments.js` retain each sale and all of its issued requests. Starting the next customer detaches the screen without deleting the original sale or stopping payment checks.
 
-- **Several at once**, up to six. A seventh is refused with a notice; nothing is ever dropped to make room (before, a second park silently replaced the first).
-- **Still watched.** Every parked sale is checked every few seconds and whenever the kiosk comes back to the front (paid means settled, `store.lookupInvoiceOnWallet`). A paid one leaves the list, is recorded as a kiosk sale on its incoming payment, and a toast says "Parked sale paid", whatever is on screen.
-- **Saved on the device**, so a restart keeps every parked sale and its watch. Only invoice data is stored: nothing secret.
-- **One quiet line** under the header: "2 parked sales ›", which pops when a sale is parked. It opens the list: amount, item count and age, Waiting or Expired.
-- **Opening a parked sale** needs an empty register, so nothing typed is lost. An expired sale cannot be opened; it was checked once more after its expiry (paid just before still counts).
-- **Removing** an expired sale is immediate. Removing one that can still be paid asks first: a later payment still reaches the wallet, but the kiosk will not show the sale.
-- Cancelling the sale on screen, or switching the kiosk wallet, leaves parked sales alone.
+- **Durable before display.** The register saves an immutable item and amount snapshot, then its request identity, in IndexedDB before showing a QR. A storage failure keeps the request hidden until it can be saved.
+- **Checked by exact identity.** Every issued request remains associated with its receiving wallet and payment hash. A restart restores waiting requests; expiry changes the display but late payments still reconcile to the original sale.
+- **Safe replacement.** A replacement request for an expired sale first checks all earlier requests. Unknown creation results cannot be retried blindly. Distinct payments against two attempts remain visible as a duplicate-payment exception on one receipt.
+- **Separate from saved baskets.** An unfinished basket has no invoice and may be saved for later. Issued requests retain their original item prices and cannot be deleted by clearing the next customer's basket.
+- Existing parked invoice records migrate once into this register. The previous local-storage key is retained as a recovery copy.
 
 ## The slide
 

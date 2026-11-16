@@ -1,9 +1,8 @@
 <!--
   KioskPinSheet: a new kiosk PIN, typed twice, in one bottom sheet (issue
   #449). Turning Kiosk Mode on and Change PIN both use it. The old PIN is
-  never asked for: whoever is in the owner area got there with it, or with
-  the forgotten-PIN taps in the register, the way a new Guided Access
-  passcode is set in Settings without the old one.
+  never asked for: owner access already required the register PIN or
+  successful verification through the native device-authentication sheet.
 
   Emits `done` with the PIN once both entries match; the parent saves it.
   Closing the sheet any other way saves nothing.

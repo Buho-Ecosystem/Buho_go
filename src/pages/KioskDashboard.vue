@@ -10,41 +10,32 @@
             <span>{{ kioskWalletName }}</span>
           </div>
         </div>
-        <div class="kiosk-logo" @click="handleScreenTap">
+        <div class="kiosk-logo">
           <img src="/buho_logo.svg" alt="Buho" class="kiosk-logo-img" />
         </div>
-        <button class="kiosk-lock-btn" @click.stop="showUnlockDialog = true">
+        <button :aria-label="$t('Owner settings')" class="kiosk-lock-btn" @click.stop="showUnlockDialog = true">
           <q-icon name="lock" size="18px" />
         </button>
       </header>
 
-      <!-- Parked sales, said in words: one quiet line, one tap to the list.
-           It takes the parked sale the moment it is parked (it pops). -->
-      <button
-        v-if="parkedCount && (state === 'input' || state === 'payment')"
-        class="pos-parked-line"
-        :class="{ 'pos-parked-line--pop': parkPop }"
-        @click.stop="showParkedSheet = true"
-      >
-        <q-icon name="pause_circle" size="16px" />
-        <span>{{ parkedCount === 1 ? $t('1 parked sale') : $t('{n} parked sales', { n: parkedCount }) }}</span>
-        <q-icon name="chevron_right" size="16px" class="pos-parked-line-chevron" />
-      </button>
-
+      <div v-if="storageProblem || merchant.storageError" class="pos-notice" role="alert">{{ $t('Register data could not be saved. Keep this screen open and try again.') }}<button @click="retryStorage">{{ $t('Try again') }}</button></div>
+      <button v-if="pendingOrders.length && state === 'input'" class="pos-parked-line" @click="showParkedSheet = true"><q-icon name="schedule" size="18px" /><span>{{ $t('{n} waiting payments', { n: pendingOrders.length }) }}</span><q-icon name="chevron_right" size="18px" /></button>
       <!-- ═══ Paid ═══ -->
       <div v-if="state === 'success'" class="pos-state-center">
         <div class="pos-paid-ring"><q-icon name="check" size="36px" /></div>
         <span class="pos-state-title mt-4">{{ $t('kiosk.paymentReceived') }}</span>
-        <div class="pos-amount-pill mt-2">{{ displaySats(invoiceData?.amountSats ?? finalAmountSats) }}</div>
-        <span v-if="paidByCard" class="pos-paid-method">{{ $t('Paid by card') }}</span>
-        <button class="pos-primary-btn mt-8" @click.stop="resetToInput">{{ $t('kiosk.newCharge') }}</button>
+        <div class="pos-amount-pill mt-2">{{ paymentAmount }}</div>
+        <small v-if="paymentShowsFiat" class="pos-state-sub">{{ displaySats(activeOrder.totalSats) }}</small>
+        <button class="pos-text-btn" @click="showCurrentReceipt = true">{{ $t('Receipt') }}</button>
+        <p v-if="activeOrder?.duplicatePayment" role="alert">{{ $t('More than one payment arrived for this sale. Ask the owner to review it.') }}</p><button class="pos-primary-btn mt-8" @click.stop="resetToInput">{{ $t('kiosk.newCharge') }}</button>
       </div>
 
       <!-- ═══ QR ═══ -->
       <div v-else-if="state === 'payment'" class="pos-state-center pos-pay">
         <template v-if="!cardPinActive">
           <p class="pos-qr-label">{{ $t('kiosk.waitingForPayment') }}</p>
-          <div class="pos-qr-amount-lg">{{ displaySats(invoiceData?.amountSats ?? finalAmountSats) }}</div>
+          <div class="pos-qr-amount-lg">{{ paymentAmount }}</div>
+          <small v-if="paymentShowsFiat" class="pos-state-sub">{{ displaySats(activeOrder.totalSats) }}</small>
         </template>
 
         <!-- The card's PIN, asked on this screen. Mounted for the whole sale
@@ -78,7 +69,7 @@
               <img v-else :src="qrDataUrl" alt="QR" class="pos-qr-img" />
             </div>
           </div>
-          <p class="pos-qr-hint">{{ $t('Scan with any Bitcoin wallet') }}</p>
+          <p class="pos-qr-hint">{{ $t('Scan with your wallet') }}</p>
           <!-- A card that did not pay: why, in one line, with the QR still
                here so the sale can finish another way. -->
           <div v-if="cardProblem" class="pos-card-problem" role="alert">
@@ -87,23 +78,31 @@
           </div>
           <div v-else-if="nfcReady" class="pos-card-lane">
             <span class="pos-card-wave"><svg class="pos-contactless" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" aria-hidden="true"><path d="M7.5 9.2a4.2 4.2 0 0 1 0 5.6" /><path d="M11 6.6a8 8 0 0 1 0 10.8" /><path d="M14.5 4a11.8 11.8 0 0 1 0 16" /></svg></span>
-            <span class="pos-card-lane-text"><b>{{ $t('Hold a Bolt Card here') }}</b><span>{{ $t('Against the back of this phone') }}</span></span>
+            <span class="pos-card-lane-text"><b>{{ $t('Hold a Lightning card here') }}</b><span>{{ $t('Against the back of this phone') }}</span></span>
           </div>
         </template>
 
         <p v-if="paymentProblem" role="status">{{ paymentProblem }}</p>
-        <button v-if="retryStatus" class="pos-text-btn" @click="startPolling">{{ $t('Check payment again') }}</button>
+        <button class="pos-text-btn" @click="payments.checkNow()">{{ $t('Check payment again') }}</button>
         <div v-if="!cardBusy && !cardPinActive" class="pos-payment-actions">
-          <button class="pos-outline-btn" @click.stop="parkInvoice"><q-icon name="pause_circle" size="18px" />{{ $t('kiosk.park') }}</button>
-          <button class="pos-outline-btn pos-cancel-btn" @click.stop="cancelPayment">{{ $t('Cancel') }}</button>
+          <button class="pos-outline-btn" @click.stop="resetToInput">{{ $t('Next customer') }}</button>
         </div>
       </div>
 
       <!-- ═══ Processing ═══ -->
       <div v-else-if="state === 'processing'" class="pos-state-center">
-        <div class="pos-processing-wrap"><div class="pos-processing-ring pos-ring-1"></div><div class="pos-processing-ring pos-ring-2"></div><div class="pos-processing-core"><q-icon name="bolt" size="26px" /></div></div>
+        <div class="pos-processing-wrap"><div class="pos-processing-ring pos-ring-1"></div><div class="pos-processing-ring pos-ring-2"></div><div class="pos-processing-core"><q-icon name="receipt_long" size="26px" /></div></div>
         <span class="pos-state-title mt-6">{{ $t('kiosk.creatingInvoice') || 'Creating Invoice' }}</span>
         <span class="pos-state-sub">{{ $t('kiosk.generatingInvoice') || 'Generating payment invoice...' }}</span>
+      </div>
+
+      <div v-else-if="state === 'interrupted'" class="pos-state-center" role="status">
+        <q-icon :name="payments.status.value === 'expired' ? 'schedule' : 'help_outline'" size="36px" />
+        <h1 class="pos-state-title">{{ payments.status.value === 'expired' ? $t('Payment request expired') : $t('Payment not confirmed') }}</h1>
+        <p class="pos-state-sub">{{ paymentProblem || $t('We are checking the original payment. Do not ask the customer to pay again yet.') }}</p>
+        <button class="pos-primary-btn" @click="payments.reconnect()">{{ $t('Check payment again') }}</button>
+        <button v-if="payments.status.value === 'expired'" class="pos-secondary-btn" @click="retryExpired">{{ $t('Create a new payment request') }}</button>
+        <button class="pos-text-btn" @click="resetToInput">{{ $t('Next customer') }}</button>
       </div>
 
       <!-- ═══ Tipping ═══ -->
@@ -136,75 +135,32 @@
         </div>
       </div>
 
-      <!-- ═══ Entry (Numpad) ═══ -->
       <template v-else>
-        <div v-if="accumulatedItems.length > 0" class="pos-cart-summary" @click.stop="showCartSheet = true">
-          <span class="pos-cart-count">{{ accumulatedItems.length }} {{ accumulatedItems.length === 1 ? $t('kiosk.item') : $t('kiosk.items') }}  ·  {{ displaySats(accumulatedSats) }}</span>
-          <button class="pos-cart-x" @click.stop.prevent="clearAll"><q-icon name="close" size="14px" /></button>
+        <div class="pos-entry-controls">
+          <div class="pos-entry-switch" role="group" :aria-label="$t('Sale entry')"><button :aria-pressed="entryMode === 'amount'" :class="{ active: entryMode === 'amount' }" @click="setEntryMode('amount')">{{ $t('Amount') }}</button><button :aria-pressed="entryMode === 'products'" :class="{ active: entryMode === 'products' }" @click="setEntryMode('products')">{{ $t('Products') }}</button></div>
+          <button v-if="entryMode === 'products'" class="pos-icon-btn" :aria-label="$t('Search products')" @click="openProductSearch"><q-icon name="search" size="22px" /></button>
+          <button class="pos-icon-btn" :aria-label="$t('Basket actions')"><q-icon name="more_horiz" size="22px" /><q-menu auto-close><q-list><q-item clickable :disable="!hasDraft" @click="saveBasket"><q-item-section>{{ $t('Save basket') }}</q-item-section></q-item><q-item clickable @click="showSavedSheet = true"><q-item-section>{{ $t('Saved baskets') }}</q-item-section></q-item><q-item clickable :disable="!hasDraft" @click="clearAll"><q-item-section>{{ $t('Clear basket') }}</q-item-section></q-item></q-list></q-menu></button>
         </div>
-        <div v-if="card.phase.value === 'ready'" class="pos-card-held" role="status"><svg class="pos-contactless" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" aria-hidden="true"><path d="M7.5 9.2a4.2 4.2 0 0 1 0 5.6" /><path d="M11 6.6a8 8 0 0 1 0 10.8" /><path d="M14.5 4a11.8 11.8 0 0 1 0 16" /></svg><span>{{ $t('Card held · enter the amount') }}</span></div>
-        <div v-if="priceMissing" class="pos-card-held pos-price-wait" role="status"><q-icon name="schedule" size="18px" /><span>{{ $t('Waiting for the Bitcoin price to charge in {currency}', { currency: fiatCurrency }) }}</span></div>
-        <div class="pos-top">
-          <div class="pos-amount-area">
-            <div class="pos-amount-row"><span class="pos-currency-sym">{{ amountPrefix }}</span><span class="pos-amount-value" :class="{ 'pos-amount-sm': formattedDisplay.length > 7 }" :style="amountFontStyle">{{ formattedDisplay }}</span><span v-if="showSatsSuffix" class="pos-currency-suffix">sats</span></div>
-          </div>
-        </div>
-        <div class="pos-bottom">
-          <div class="pos-keypad">
-            <button v-for="n in ['1','2','3','4','5','6','7','8','9']" :key="n" class="pos-key pos-key-num" @click.stop="handleNumpad(n)">{{ n }}</button>
-            <button v-if="isFiatMode" class="pos-key pos-key-num" @click.stop="handleNumpad('.')">.</button>
-            <button v-else class="pos-key pos-key-num" @click.stop="handleNumpad('000')">000</button>
-            <button class="pos-key pos-key-num" @click.stop="handleNumpad('0')">0</button>
-            <button class="pos-key pos-key-action" @click.stop="handleNumpad('delete')"><q-icon name="backspace" size="22px" /></button>
-          </div>
-          <div class="pos-actions">
-            <button class="pos-add-btn" :class="{ 'pos-btn-disabled': amountSats <= 0 }" :disabled="amountSats <= 0" @click.stop="addToAccumulated"><q-icon name="add" size="22px" /></button>
-            <button class="pos-primary-btn pos-charge-btn" :class="{ 'pos-btn-disabled': !walletReady || priceMissing || totalSatsForCharge <= 0 }" :disabled="!walletReady || priceMissing || totalSatsForCharge <= 0" @click.stop="proceedToTipOrCharge"><q-icon name="receipt_long" size="20px" /><span v-if="!walletReady">{{ $t('kiosk.connecting') || 'Connecting...' }}</span><span v-else-if="priceMissing">{{ $t('kiosk.charge') }}</span><span v-else-if="totalSatsForCharge > 0">{{ $t('kiosk.charge') }} {{ displaySats(totalSatsForCharge) }}</span><span v-else>{{ $t('kiosk.enterAmount') }}</span></button>
-          </div>
-        </div>
+        <form v-if="entryMode === 'products' && productSearchOpen" class="pos-product-search" @submit.prevent="closeSearchKeyboard"><input ref="productSearchInput" v-model="productSearch" :placeholder="$t('Search products')" :aria-label="$t('Search products')" type="search" /><button @click.prevent="closeProductSearch">{{ $t('Cancel') }}</button></form>
+        <button v-if="draft.items.length" class="pos-cart-summary" @click="showCartSheet = true"><span>{{ itemCount }} {{ itemCount === 1 ? $t('kiosk.item') : $t('kiosk.items') }} · {{ basketDisplay }}</span><q-icon name="chevron_right" size="18px" /></button>
+        <div v-if="card.phase.value === 'ready'" class="pos-card-held" role="status">{{ $t('Card held · enter the amount') }}</div>
+        <div v-if="priceMissing" class="pos-card-held pos-price-wait" role="status">{{ $t('Waiting for the Bitcoin price to charge in {currency}', { currency: fiatCurrency }) }}</div>
+        <div v-if="!walletReady" class="pos-connection" role="status"><span>{{ connectionChecking ? $t('Connecting your receiving wallet…') : $t('Your receiving wallet is unavailable.') }}</span><button :disabled="connectionChecking" @click="connectWallet">{{ $t('Try again') }}</button></div>
+        <AmountKeypad v-if="entryMode === 'amount'" presentation="kiosk" :model-value="draft.amountRaw" :fiat="isFiatMode" :fiat-code="fiatCurrency" :fiat-rate="fiatRate" :exact-sats="draft.exactSats" :bip177="store.useBip177Format !== false" :locale="$i18n.locale" :disabled="busy" @update:model-value="editAmount" @swap-unit="swapAmount" @swap-unavailable="explainMissingRate">
+          <template #actions><div class="pos-actions"><button class="pos-add-btn" :disabled="amountSats <= 0 || priceMissing || busy" :aria-label="$t('Add amount to basket')" @click="addToAccumulated"><q-icon name="add" size="22px" /></button><button class="pos-primary-btn pos-charge-btn" :class="{ 'pos-btn-disabled': !canCharge }" :disabled="!canCharge" @click="proceedToTipOrCharge"><q-icon name="receipt_long" size="20px" /><span>{{ chargeLabel }}</span></button></div></template>
+        </AmountKeypad>
+        <template v-else><KioskProducts ref="productList" :products="merchant.products" :categories="merchant.categories" :quantities="quantities" :format-price="productPrice" :search="productSearch" :category="productCategory" :disabled="busy" :empty-action-label="$t('Enter an amount')" @add="addProduct" @update:category="productCategory = $event" @clear-filters="productSearch = ''; productCategory = ''" @manage="setEntryMode('amount')" /><div class="pos-products-actions"><button class="pos-primary-btn" :class="{ 'pos-btn-disabled': !canCharge }" :disabled="!canCharge" @click="proceedToTipOrCharge"><q-icon name="receipt_long" size="20px" />{{ chargeLabel }}</button></div></template>
       </template>
 
-      <!-- ═══ Cart Sheet ═══ -->
-      <q-dialog v-model="showCartSheet" position="bottom">
-        <q-card class="pos-cart-sheet" :class="$q.dark.isActive ? 'pos-cart-sheet-dark' : 'pos-cart-sheet-light'">
-          <q-card-section>
-            <div class="pos-sheet-header">
-              <span class="pos-sheet-title">{{ accumulatedItems.length }} {{ accumulatedItems.length === 1 ? $t('kiosk.item') : $t('kiosk.items') }}</span>
-              <span class="pos-sheet-total">{{ displaySats(accumulatedSats) }}</span>
-            </div>
-            <div v-for="(item, idx) in accumulatedItems" :key="idx" class="pos-sheet-row">
-              <span>{{ displaySats(item) }}</span>
-              <button class="pos-sheet-remove" @click.stop="removeAccumulatedItem(idx)"><q-icon name="remove_circle_outline" size="18px" /></button>
-            </div>
-          </q-card-section>
-        </q-card>
-      </q-dialog>
+      <q-dialog v-model="showCartSheet" position="bottom"><q-card class="pos-cart-sheet pos-basket-sheet">
+        <div class="pos-sheet-header"><strong>{{ $t('Basket') }}</strong><button class="pos-icon-btn" :aria-label="$t('Close')" @click="showCartSheet = false"><q-icon name="close" size="22px" /></button></div>
+        <div class="pos-basket-items"><div v-for="item in draft.items" :key="item.id" class="pos-basket-row"><span>{{ item.name }}<small>{{ itemPrice(item) }}</small></span><div class="pos-quantity"><button :aria-label="$t('Remove one {name}', { name: item.name })" @click="changeQuantity(item, -1)"><q-icon name="remove" /></button><span>{{ item.qty }}</span><button :aria-label="$t('Add one {name}', { name: item.name })" @click="changeQuantity(item, 1)"><q-icon name="add" /></button></div></div></div>
+        <div class="pos-sheet-total">{{ basketDisplay }}</div><button class="pos-primary-btn" @click="showCartSheet = false">{{ $t('Done') }}</button>
+      </q-card></q-dialog>
+      <q-dialog v-model="showSavedSheet" position="bottom"><q-card class="pos-cart-sheet pos-basket-sheet"><div class="pos-sheet-header"><strong>{{ $t('Saved baskets') }}</strong><button class="pos-icon-btn" :aria-label="$t('Close')" @click="showSavedSheet = false"><q-icon name="close" /></button></div><div class="pos-basket-items"><p v-if="!merchant.savedBaskets.length">{{ $t('No saved baskets') }}</p><button v-for="basket in merchant.savedBaskets" :key="basket.id" class="pos-saved-row" :disabled="hasDraft" @click="resumeBasket(basket.id)">{{ basket.name }}<q-icon name="chevron_right" /></button><p v-if="hasDraft">{{ $t('Save or clear this basket before opening another.') }}</p></div></q-card></q-dialog>
+      <q-dialog v-model="showParkedSheet" position="bottom"><q-card class="pos-cart-sheet pos-basket-sheet"><div class="pos-sheet-header"><strong>{{ $t('Waiting payments') }}</strong><button class="pos-icon-btn" :aria-label="$t('Close')" @click="showParkedSheet = false"><q-icon name="close" /></button></div><p>{{ $t('Still checked for payment, even after expiry.') }}</p><div class="pos-basket-items"><button v-for="order in pendingOrders" :key="order.id" class="pos-saved-row" :disabled="hasDraft" @click="resumeOrder(order.id)"><span>{{ displaySats(order.totalSats) }}<small>{{ $t(order.status === 'uncertain' ? 'Not confirmed' : order.status === 'expired' ? 'Expired' : 'Waiting') }}</small></span><q-icon name="chevron_right" /></button><p v-if="hasDraft">{{ $t('Save or clear this basket before opening another.') }}</p></div></q-card></q-dialog>
 
-      <!-- ═══ Parked sales ═══ -->
-      <q-dialog v-model="showParkedSheet" position="bottom">
-        <q-card class="pos-cart-sheet pos-parked-sheet" :class="$q.dark.isActive ? 'pos-cart-sheet-dark' : 'pos-cart-sheet-light'">
-          <q-card-section>
-            <div class="pos-sheet-header">
-              <span class="pos-sheet-title">{{ $t('Parked sales') }}</span>
-              <span class="pos-parked-note">{{ $t('Still watched for payment') }}</span>
-            </div>
-            <p v-if="!canResume" class="pos-parked-hint">{{ $t('Finish or clear the current sale to open a parked one.') }}</p>
-            <div v-for="sale in parkedList" :key="sale.id" class="pos-parked-row" :class="{ 'pos-parked-row--expired': sale.status === 'expired' }">
-              <button
-                class="pos-parked-open"
-                :disabled="!canResume || sale.status === 'expired'"
-                @click.stop="resumeParked(sale.id)"
-              >
-                <span class="pos-parked-amount">{{ displaySats(sale.invoiceData.amountSats) }}</span>
-                <span class="pos-parked-meta">{{ parkedMeta(sale) }}</span>
-              </button>
-              <span class="pos-parked-status" :class="`pos-parked-status--${sale.status}`">{{ sale.status === 'expired' ? $t('Expired') : $t('Waiting') }}</span>
-              <button class="pos-sheet-remove" :aria-label="$t('Remove')" @click.stop="removeParked(sale)"><q-icon name="remove_circle_outline" size="20px" /></button>
-            </div>
-          </q-card-section>
-        </q-card>
-      </q-dialog>
-
+      <q-dialog v-model="showCurrentReceipt" position="bottom"><q-card v-if="activeOrder?.status === 'paid'" class="pos-cart-sheet pos-basket-sheet pos-current-receipt"><div class="pos-sheet-header"><strong>{{ $t('Receipt') }}</strong><button class="pos-icon-btn" :aria-label="$t('Close')" @click="showCurrentReceipt = false"><q-icon name="close" /></button></div><KioskReceipt :sale="activeOrder" :format-currency="money" :format-sats="displaySats" /><button class="pos-primary-btn" @click="exportCurrentReceipt">{{ $t('Export receipt') }}</button><button v-if="canPrintReceipt" class="pos-secondary-btn" @click="printCurrentReceipt">{{ $t('Print receipt') }}</button></q-card></q-dialog>
       <!-- ═══ Unlock ═══
            The lock goes straight to the PIN, as Guided Access does: the right
            PIN ends the register (owner area), Resume goes back to it. -->
@@ -212,7 +168,7 @@
         <div class="kiosk-dialog">
           <div class="kiosk-dialog-body">
             <KioskPinPad ref="unlockPinRef" :title="$t('kiosk.enterPin')" :subtitle="$t('Only the owner can leave the register.')" :error-message="unlockError" @complete="handleUnlockPin" />
-            <button class="pos-text-btn" @click="showUnlockDialog = false">{{ $t('Resume') }}</button>
+            <button class="pos-text-btn" @click="recoverOwner">{{ $t('Forgot PIN?') }}</button><button class="pos-text-btn" @click="showUnlockDialog = false">{{ $t('Resume') }}</button>
           </div>
         </div>
       </q-dialog>
@@ -221,611 +177,287 @@
 </template>
 
 <script>
-import { defineComponent, ref, computed, onMounted, onUnmounted, getCurrentInstance, watch } from 'vue'
+import { defineComponent, ref, computed, onMounted, onUnmounted, getCurrentInstance, watch, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
-import { useWalletStore } from 'stores/wallet'
-import { roundUpTargetSats } from 'src/utils/roundUp'
-import { useTransactionMetadataStore } from 'stores/transactionMetadata'
-import KioskPinPad from 'components/KioskPinPad.vue'
+import { useQuasar } from 'quasar'
+import { useWalletStore } from '../stores/wallet.js'
+import { useKioskMerchantStore } from '../stores/kioskMerchant.js'
+import { useKioskPayments } from '../composables/useKioskPayments.js'
+import { roundUpTargetSats } from '../utils/roundUp.js'
+import { cloneKiosk, buildSaleSnapshot, priceBasket, newKioskId, kioskDraftHasValue, formatKioskMoney } from '../utils/kioskMerchant.js'
+import { keypadSats } from '../utils/amountKeypad.js'
+import { freshRate } from '../utils/fiatCurrencies.js'
+import { formatAmount } from '../utils/amountFormatting.js'
+import { kioskWalletBlocker } from '../utils/walletCapabilities.js'
+import KioskPinPad from '../components/KioskPinPad.vue'
+import AmountKeypad from '../components/AmountKeypad.vue'
+import KioskProducts from '../components/kiosk/KioskProducts.vue'
+import KioskReceipt from '../components/kiosk/KioskReceipt.vue'
+import { saveFile } from '../services/fileExport.js'
 import QRCode from 'qrcode'
 import WithdrawAuthorization from '../components/WithdrawAuthorization.vue'
 import CardFace from '../components/CardFace.vue'
 import { CARD_NOT_PAID, useKioskCardPayment } from '../composables/useKioskCardPayment.js'
-import { useKioskParkedSales, MAX_PARKED } from '../composables/useKioskParkedSales.js'
 import { isNfcAvailable } from '../utils/nfc.js'
 import { haptics } from '../utils/haptics.js'
-import { useQuasar } from 'quasar'
-import { createPaymentMonitor, PaymentStatus } from '../utils/paymentMonitor.js'
 import { safeWithdrawError } from '../services/lnurlWithdraw.js'
-import { fiatSymbol as fiatSymbolFor, freshRate } from 'src/utils/fiatCurrencies'
-import { formatAmount } from 'src/utils/amountFormatting'
-import { kioskWalletBlocker, KIOSK_BLOCKER } from '../utils/walletCapabilities.js'
-import { NWC_ERROR, nwcError } from '../utils/nwcErrors.js'
 
 export default defineComponent({
   name: 'KioskDashboard',
-  components: { KioskPinPad, WithdrawAuthorization, CardFace },
-
+  components: { KioskPinPad, AmountKeypad, KioskProducts, KioskReceipt, WithdrawAuthorization, CardFace },
   setup() {
-    const router = useRouter()
-    const store = useWalletStore()
-    const metadataStore = useTransactionMetadataStore()
+    const router = useRouter(), store = useWalletStore(), merchant = useKioskMerchantStore(), $q = useQuasar()
     const { proxy } = getCurrentInstance()
     const t = (key, values) => proxy.$t(key, values)
-
-    const state = ref('input')
-    const walletReady = ref(false)
-    const rawInput = ref('0')
-    const accumulatedItems = ref([])
-    const accumulatedSats = computed(() => accumulatedItems.value.reduce((s, v) => s + v, 0))
-    const selectedTipPercent = ref(0)
-    const useRoundUp = ref(false)
-    const baseAmountSats = ref(0)
-    // Curated point-of-sale breakdown for the CURRENT invoice, captured at
-    // invoice-creation time (see captureSaleBreakdown). A plain object, not
-    // derived from the live refs above, because parking or resetting the
-    // register clears those before the payment settles — showSuccess()
-    // reads this snapshot instead so the sale details it stamps are never
-    // zeroed out from under it.
-    const saleBreakdownSnapshot = ref(null)
-    const tipInteractive = ref(false)
-    const invoiceData = ref(null)
-    const qrDataUrl = ref('')
-    let paymentMonitor = null
-    let visibilityHandler = null
-    let saleRevision = 0
-    const paymentProblem = ref('')
-    const retryStatus = ref(false)
-    const $q = useQuasar()
-    const cardAuthorization = ref(null)
-    const cardPinActive = ref(false)
-    const cardPinChecking = ref(false)
-    const cardProblem = ref('')
-    const paidByCard = ref(false)
-    const nfcReady = ref(false)
-    const sale = computed(() => state.value === 'payment' && !paymentProblem.value ? invoiceData.value : null)
-    const card = useKioskCardPayment({
-      sale,
-      authorize: (...args) => cardAuthorization.value.submit(...args),
-      checkPayment: () => paymentMonitor?.checkNow(),
-      onError: (error) => {
-        cardProblem.value = cardProblemText(error)
-        void haptics.error()
-      },
-    })
-    const cardBusy = computed(() => ['loading', 'review', 'submitting', 'waiting'].includes(card.phase.value))
-
-    /**
-     * Why a card did not pay, in the customer's words. Shown on the pay
-     * screen with the QR still there: at a counter a dialog to dismiss is
-     * one step too many, and the sale is not over.
-     */
-    function cardProblemText(error) {
-      const message = String(error?.message || '')
-      if (error?.code === 'CARD_BLOCKED') return t('Card locked after too many wrong PINs.')
-      if (/payment limits/i.test(message)) return t("This card can't pay this amount.")
-      if (error?.code === CARD_NOT_PAID) return t('No payment came from the card.')
-      // The request may have reached the card's service: whether it paid is
-      // for the sale's own watch to tell, not for this line to guess.
-      if (error?.name === 'TimeoutError' || error?.name === 'TypeError' || /did not respond|network|failed to fetch/i.test(message)) {
-        return t("No answer from the card's service. If the card paid, this screen shows it.")
-      }
-      return t(safeWithdrawError(message))
-    }
-    function confirmHeldCard() {
-      if (invoiceData.value) void card.confirm({ amountSats: invoiceData.value.amountSats })
-    }
-    function cancelCardPin() {
-      if (!cardPinChecking.value) cardAuthorization.value?.cancel()
-    }
-
-    let successTimer = null
-    const showCartSheet = ref(false)
-    const showParkedSheet = ref(false)
-    const parkPop = ref(false)
-    let parkPopTimer = null
-    const parked = useKioskParkedSales({
-      lookup: (walletId, hash) => store.lookupInvoiceOnWallet(walletId, hash),
-      onPaid: (sale) => {
-        recordSale(sale.invoiceData, sale.saleBreakdown)
-        void haptics.success()
-        $q.notify({ type: 'positive', icon: 'check_circle', position: 'top', timeout: 4000,
-          message: t('Parked sale paid'), caption: displaySats(sale.invoiceData.amountSats) })
-      },
-    })
-    const parkedList = parked.list
-    const parkedCount = parked.count
-    const showUnlockDialog = ref(false)
-    const unlockPinRef = ref(null)
-    const unlockError = ref('')
-    let tapCount = 0
-    let tapTimer = null
-    let priceTimer = null
-
-    const isFiatMode = computed(() => store.kioskDisplayCurrency === 'fiat')
-    const fiatCurrency = computed(() => (store.preferredFiatCurrency || 'USD').toUpperCase())
-    // A fiat sale is priced only with a Bitcoin price fetched in the last
-    // hour. Without one the register says so and charges nothing: the typed
-    // number is never read as Bitcoin (#456). `now` ticks with each refresh,
-    // so a price ages out while the register stays open.
-    const now = ref(Date.now())
+    const payments = useKioskPayments({ merchant, walletStore: store })
+    const { activeOrder, activeInvoice: invoiceData, pendingOrders } = payments
+    const initialized = ref(false), busy = ref(false), walletReady = ref(false), storageProblem = ref(false), connectionChecking = ref(false)
+    const draft = ref(cloneKiosk(merchant.draft)), entryMode = computed(() => merchant.entryMode)
+    let draftSave = Promise.resolve(), draftRevision = 0, swappingRaw = null
+    const localStage = ref('input'), now = ref(Date.now()), qrDataUrl = ref('')
+    const productSearchOpen = ref(false), productSearch = ref(''), productCategory = ref(''), productSearchInput = ref(null), productList = ref(null)
+    let browsing = null
+    const showCurrentReceipt = ref(false)
+    const showCartSheet = ref(false), showSavedSheet = ref(false), showParkedSheet = ref(false)
+    const showUnlockDialog = ref(false), unlockPinRef = ref(null), unlockError = ref('')
+    const cardAuthorization = ref(null), cardPinActive = ref(false), cardPinChecking = ref(false), cardProblem = ref(''), nfcReady = ref(false)
+    const selectedTipPercent = ref(0), useRoundUp = ref(false), baseAmountSats = ref(0), tipInteractive = ref(true)
+    const quotedItems = ref([]), quotedRate = ref(0)
+    const fiatCurrency = computed(() => merchant.catalogCurrency || (store.preferredFiatCurrency || 'USD').toUpperCase())
+    const isFiatMode = computed(() => draft.value.amountUnit === 'fiat')
     const fiatRate = computed(() => freshRate(store.exchangeRates, store.exchangeRateTimes, fiatCurrency.value, now.value))
-    const priceMissing = computed(() => isFiatMode.value && !(fiatRate.value > 0))
-    const fiatSymbol = computed(() => fiatSymbolFor(store.preferredFiatCurrency || 'USD').trim())
-    // The amount wears its unit the way the Home balance does: the fiat
-    // symbol, or ₿ in front, or "sats" after it in the legacy format.
-    const useBip177 = computed(() => store.useBip177Format !== false)
-    const amountPrefix = computed(() => (isFiatMode.value ? fiatSymbol.value : useBip177.value ? '₿' : ''))
-    const showSatsSuffix = computed(() => !isFiatMode.value && !useBip177.value)
-    const formattedDisplay = computed(() => {
-      if (rawInput.value === '0') return '0'
-      if (isFiatMode.value) return rawInput.value
-      return (parseInt(rawInput.value) || 0).toLocaleString()
+    const hasDraft = computed(() => kioskDraftHasValue(draft.value))
+    const amountSats = computed(() => draft.value.exactSats ?? keypadSats(draft.value.amountRaw, { fiat: isFiatMode.value, rate: fiatRate.value }))
+    const priceMissing = computed(() => !(fiatRate.value > 0) && (draft.value.items.some(item => item.unit === 'fiat') || isFiatMode.value && Number(draft.value.amountRaw) > 0 && draft.value.exactSats == null))
+    const basketQuote = computed(() => { try { return priceBasket(draft.value.items, { currency: fiatCurrency.value, rate: fiatRate.value }) } catch { return null } })
+    const chargeItems = computed(() => { const item = amountItem(); return [...draft.value.items, ...(item ? [item] : [])] })
+    const chargeQuote = computed(() => { try { return priceBasket(chargeItems.value, { currency: fiatCurrency.value, rate: fiatRate.value }) } catch { return null } })
+    const totalSatsForCharge = computed(() => chargeQuote.value?.baseSats || 0)
+    const itemCount = computed(() => draft.value.items.reduce((sum, item) => sum + item.qty, 0))
+    const quantities = computed(() => Object.fromEntries(merchant.products.map(product => [product.id, draft.value.items.filter(item => item.productId === product.id).reduce((sum, item) => sum + item.qty, 0)])))
+    const canCharge = computed(() => initialized.value && !busy.value && !storageProblem.value && !merchant.storageError && walletReady.value && !priceMissing.value && totalSatsForCharge.value > 0)
+    const quotedLabel = quote => quote?.subtotalMinor > 0 && (isFiatMode.value || entryMode.value === 'products')
+      ? formatKioskMoney(quote.subtotalMinor, quote.currency, proxy.$i18n.locale) : displaySats(quote?.baseSats || 0)
+    const chargeLabel = computed(() => !walletReady.value ? t('kiosk.connecting') : totalSatsForCharge.value > 0 ? `${t('kiosk.charge')} ${quotedLabel(chargeQuote.value)}` : t('kiosk.enterAmount'))
+    const paymentShowsFiat = computed(() => activeOrder.value?.totalMinor > 0 && activeOrder.value.items.some(item => item.unit === 'fiat'))
+    const paymentAmount = computed(() => paymentShowsFiat.value ? formatKioskMoney(activeOrder.value.totalMinor, activeOrder.value.currency, proxy.$i18n.locale) : displaySats(invoiceData.value?.amountSats || finalAmountSats.value))
+    const kioskWalletName = computed(() => store.kioskWallet?.name || t('Register'))
+    const state = computed(() => {
+      if (!initialized.value) return 'processing'
+      if (activeOrder.value) return { paid: 'success', waiting: 'payment', preparing: 'processing' }[payments.status.value] || 'interrupted'
+      return localStage.value
     })
-    // Past ten characters the amount shrinks with its length so the
-    // largest allowed entry (12 digits plus grouping) stays on screen.
-    const amountFontStyle = computed(() => {
-      const chars = formattedDisplay.value.length + (showSatsSuffix.value ? 3 : 1)
-      return chars > 10 ? { fontSize: `${Math.max(1.5, (3 * 10) / chars).toFixed(2)}rem` } : null
+    const paymentProblem = computed(() => {
+      if (payments.status.value === 'expired') return t('This code has expired. We still check it for late payments.')
+      const code = payments.problem.value?.code
+      if (code === 'KIOSK_STORAGE_FAILED') return t('Register data could not be saved. Keep this screen open and try again.')
+      if (code === 'KIOSK_WALLET_UNAVAILABLE') return t('Ask the owner to check the receiving wallet.')
+      if (payments.status.value === 'uncertain') return t('The wallet has not confirmed whether a request was created. Check the wallet before asking for another payment.')
+      if (code) return t('No payment confirmed yet. Check your connection and try again.')
+      return ''
     })
-    const amountSats = computed(() => {
-      const num = parseFloat(rawInput.value) || 0
-      if (isFiatMode.value) return fiatRate.value > 0 ? Math.round((num / fiatRate.value) * 100_000_000) : 0
-      return Math.round(num)
-    })
-    const totalSatsForCharge = computed(() => accumulatedSats.value + amountSats.value)
-    const kioskWalletName = computed(() => store.kioskWallet?.name || 'Kiosk')
-
-    const tipOptions = computed(() => store.kioskTipValues.map(pct => ({ percent: pct, amount: Math.round(baseAmountSats.value * pct / 100) })))
-    const selectedTipAmount = computed(() => selectedTipPercent.value === 0 ? 0 : Math.round(baseAmountSats.value * selectedTipPercent.value / 100))
+    const cardSale = computed(() => state.value === 'payment' && !paymentProblem.value ? invoiceData.value : null)
+    const card = useKioskCardPayment({ sale: cardSale, authorize: (...args) => cardAuthorization.value.submit(...args), checkPayment: () => payments.checkNow(), onError(error) { cardProblem.value = cardProblemText(error); void haptics.error() } })
+    const cardBusy = computed(() => ['loading', 'review', 'submitting', 'waiting'].includes(card.phase.value))
+    function cardProblemText(error) {
+      if (error?.code === 'CARD_BLOCKED') return t('Card locked after too many wrong PINs.')
+      if (error?.code === CARD_NOT_PAID) return t('No payment came from the card.')
+      if (/payment limits/i.test(error?.message || '')) return t("This card can't pay this amount.")
+      return t(safeWithdrawError(String(error?.message || '')))
+    }
+    function confirmHeldCard() { if (invoiceData.value) void card.confirm({ amountSats: invoiceData.value.amountSats }) }
+    function cancelCardPin() { if (!cardPinChecking.value) cardAuthorization.value?.cancel() }
+    function showError(error) {
+      if (error?.code === 'KIOSK_STORAGE_FAILED') storageProblem.value = true
+      $q.notify({ type: 'negative', message: error?.code === 'KIOSK_STORAGE_FAILED' ? t('Register data could not be saved. Keep this screen open and try again.') : t('This action could not be completed. Try again.'), timeout: 5000 })
+    }
+    function saveDraft(next) {
+      draft.value = next
+      const revision = ++draftRevision
+      draftSave = merchant.saveDraft(cloneKiosk(next)).then(() => { if (revision === draftRevision) storageProblem.value = false; return true }).catch(error => { showError(error); return false })
+      return draftSave
+    }
+    function syncDraft() { draft.value = cloneKiosk(merchant.draft); swappingRaw = null }
+    function editAmount(value) {
+      if (swappingRaw === value) { swappingRaw = null; return }
+      void saveDraft({ ...draft.value, amountRaw: value, exactSats: null })
+    }
+    function swapAmount(value) {
+      swappingRaw = value.value
+      void saveDraft({ ...draft.value, amountRaw: value.value, amountUnit: value.fiat ? 'fiat' : 'sats', exactSats: value.sats })
+      void Promise.resolve(store.setKioskDisplayCurrency(value.fiat ? 'fiat' : 'sats')).catch(showError)
+    }
+    function explainMissingRate() { $q.notify({ message: t('A recent Bitcoin price is needed to switch this amount. Your amount is kept.'), timeout: 4000 }) }
+    function amountItem() {
+      if (!(amountSats.value > 0) && !(isFiatMode.value && Number(draft.value.amountRaw) > 0)) return null
+      // Entered sats retain their exact identity even when displayed as fiat.
+      return draft.value.exactSats != null || !isFiatMode.value
+        ? { id: newKioskId('item'), name: t('Amount'), qty: 1, unit: 'sats', unitSats: amountSats.value, currency: fiatCurrency.value }
+        : { id: newKioskId('item'), name: t('Amount'), qty: 1, unit: 'fiat', priceMinor: Math.round(Number(draft.value.amountRaw) * 100), currency: fiatCurrency.value }
+    }
+    function addToAccumulated() {
+      const item = amountItem(); if (!item || priceMissing.value) return
+      void saveDraft({ ...draft.value, items: [...draft.value.items, item], amountRaw: '', exactSats: null })
+    }
+    function addProduct(product) {
+      const items = cloneKiosk(draft.value.items)
+      const old = items.find(item => item.productId === product.id && item.priceMinor === product.priceMinor && item.name === product.name)
+      if (old) old.qty++
+      else items.push({ ...product, id: newKioskId('item'), productId: product.id, unit: 'fiat', qty: 1 })
+      void saveDraft({ ...draft.value, items })
+    }
+    function changeQuantity(item, delta) { void saveDraft({ ...draft.value, items: draft.value.items.filter(value => value.id !== item.id || item.qty + delta > 0).map(value => value.id === item.id ? { ...value, qty: value.qty + delta } : value) }) }
+    function clearAll() { $q.dialog({ title: t('Clear basket?'), message: t('This removes the items and entered amount from this basket.'), cancel: true, ok: { label: t('Clear basket'), color: 'negative' } }).onOk(async () => { try { await draftSave; await merchant.clearDraft(); syncDraft() } catch(error) { showError(error) } }) }
+    async function saveBasket() { try { if (!await draftSave) return; await merchant.saveBasket(`${t('Basket')} ${merchant.savedBaskets.length + 1}`); syncDraft() } catch(error) { showError(error) } }
+    async function resumeBasket(id) { try { if (!await draftSave) return; await merchant.resumeBasket(id); syncDraft(); showSavedSheet.value = false } catch(error) { showError(error) } }
+    async function resumeOrder(id) { try { if (hasDraft.value) return; await payments.resume(id); showParkedSheet.value = false } catch(error) { showError(error) } }
+    async function setEntryMode(mode) {
+      try {
+        if (mode === 'products' && entryMode.value !== 'products') {
+          const item = amountItem()
+          // A typed amount becomes a visible basket row when the keypad leaves.
+          if (item && !await saveDraft({ ...draft.value, items: [...draft.value.items, item], amountRaw: '', exactSats: null })) return
+        }
+        await merchant.setEntryMode(mode)
+      } catch(error) { showError(error) }
+    }
+    function productPrice(product) { return formatKioskMoney(product.priceMinor, product.currency, proxy.$i18n.locale) }
+    function itemPrice(item) { return item.unit === 'sats' ? displaySats(item.unitSats * item.qty) : formatKioskMoney(item.priceMinor * item.qty, item.currency, proxy.$i18n.locale) }
+    const basketDisplay = computed(() => basketQuote.value ? quotedLabel(basketQuote.value) : draft.value.items.every(item => item.unit === 'fiat') ? formatKioskMoney(draft.value.items.reduce((sum,item) => sum + item.priceMinor * item.qty,0), fiatCurrency.value, proxy.$i18n.locale) : t('Price unavailable'))
+    function displaySats(sats) { return formatAmount(sats || 0, store.useBip177Format !== false) }
+    const tipOptions = computed(() => store.kioskTipValues.map(percent => ({ percent, amount: Math.round(baseAmountSats.value * percent / 100) })))
+    const selectedTipAmount = computed(() => Math.round(baseAmountSats.value * selectedTipPercent.value / 100))
     const totalBeforeRoundUp = computed(() => baseAmountSats.value + selectedTipAmount.value)
-    /**
-     * What the sale would round up to, or null when there is nothing to
-     * offer. The arithmetic lives in utils/roundUp.js so it can be tested on
-     * its own; the rule is the next convenient amount, with the step scaled
-     * to the size of the bill.
-     */
-    const roundUpValue = computed(() => roundUpTargetSats({
-      amountSats: totalBeforeRoundUp.value,
-      isFiat: isFiatMode.value,
-      rate: fiatRate.value,
-    }))
-
-    const finalAmountSats = computed(() => (useRoundUp.value && roundUpValue.value) ? roundUpValue.value : totalBeforeRoundUp.value)
-
-    /**
-     * Tipping and rounding up are two independent settings, so they are two
-     * independent offers here.
-     *
-     * They used to be one: the extras screen was reached only when tipping
-     * was on, which left a merchant who wanted rounding alone with a switch
-     * that did nothing at all. Each now answers for itself, and the screen
-     * shows whichever of them has something to offer.
-     */
+    const roundUpValue = computed(() => roundUpTargetSats({ amountSats: totalBeforeRoundUp.value, isFiat: isFiatMode.value, rate: quotedRate.value }))
+    const finalAmountSats = computed(() => useRoundUp.value && roundUpValue.value ? roundUpValue.value : totalBeforeRoundUp.value)
     const offersTip = computed(() => store.kioskTipEnabled && tipOptions.value.length > 0)
-
-    // Rounding is only an offer when it would actually change the total. On a
-    // sum that is already whole there is nothing to round, and a button that
-    // adds zero is worse than no button.
     const offersRoundUp = computed(() => store.kioskRoundUpEnabled && !!roundUpValue.value)
-
-    /** Whether the extras screen has any reason to exist for this sale. */
-    const offersExtras = computed(() => offersTip.value || offersRoundUp.value)
-
-    /**
-     * What the screen is asking for, which decides its wording. Rounding up
-     * is not a tip, and calling it one in front of a paying customer is both
-     * wrong and, where tips are taxed differently, misleading.
-     */
-    const extrasMode = computed(() => {
-      if (offersTip.value && offersRoundUp.value) return 'both'
-      return offersTip.value ? 'tip' : 'roundUp'
-    })
-
-    const extrasTitle = computed(() => (
-      extrasMode.value === 'roundUp' ? t('kiosk.roundUpPrompt') : t('kiosk.addTip')
-    ))
-
-    const extrasSkipLabel = computed(() => (
-      extrasMode.value === 'roundUp' ? t('kiosk.exactAmount') : t('kiosk.noTip')
-    ))
-
-    /** The added amount is a tip or a rounding, never labelled as both. */
-    const extraLabel = computed(() => (
-      useRoundUp.value && selectedTipPercent.value === 0
-        ? t('kiosk.roundUp')
-        : t('kiosk.tipLabel')
-    ))
-
-    function handleNumpad(btn) {
-      if (btn === 'delete') { rawInput.value = rawInput.value.length <= 1 ? '0' : rawInput.value.slice(0, -1); return }
-      if (btn === '.') { if (!isFiatMode.value || rawInput.value.includes('.')) return; rawInput.value += '.'; return }
-      if (rawInput.value.length >= 12) return
-      if (isFiatMode.value && rawInput.value.includes('.')) { const d = rawInput.value.split('.')[1]; if (d && d.length >= 2) return }
-      // Append, then collapse leading zeros so '0' + '5' becomes '5', not '05',
-      // and '0' + '000' becomes '0' (still a valid zero state). Mirrors the
-      // receive modal numpad's keypadTap() behaviour.
-      let next = rawInput.value + btn
-      while (next.length > 1 && next.startsWith('0') && !next.startsWith('0.')) {
-        next = next.slice(1)
-      }
-      if (next.length > 12) next = next.slice(0, 12)
-      rawInput.value = next
+    const extrasTitle = computed(() => t(offersTip.value ? 'kiosk.addTip' : 'kiosk.roundUpPrompt'))
+    const extrasSkipLabel = computed(() => t(offersTip.value ? 'kiosk.noTip' : 'kiosk.exactAmount'))
+    const extraLabel = computed(() => t(useRoundUp.value && !selectedTipPercent.value ? 'kiosk.roundUp' : 'kiosk.tipLabel'))
+    async function proceedToTipOrCharge() {
+      if (!canCharge.value) return
+      busy.value = true
+      try {
+        if (!await draftSave) return
+        quotedItems.value = cloneKiosk(chargeItems.value)
+        quotedRate.value = fiatRate.value
+        baseAmountSats.value = priceBasket(quotedItems.value, { currency: fiatCurrency.value, rate: quotedRate.value }).baseSats
+        selectedTipPercent.value = 0; useRoundUp.value = false
+        if (offersTip.value || offersRoundUp.value) localStage.value = 'tipping'
+        else await createCharge()
+      } catch(error) { showError(error) } finally { busy.value = false }
     }
-    function addToAccumulated() { if (amountSats.value <= 0) return; accumulatedItems.value.push(amountSats.value); rawInput.value = '0' }
-    function removeAccumulatedItem(idx) {
-      accumulatedItems.value.splice(idx, 1)
-      if (accumulatedItems.value.length === 0) showCartSheet.value = false
-    }
-    function clearAll() { rawInput.value = '0'; accumulatedItems.value = [] }
-
-    function proceedToTipOrCharge() {
-      if (state.value !== 'input' || priceMissing.value || totalSatsForCharge.value <= 0) return
-      baseAmountSats.value = totalSatsForCharge.value
-      selectedTipPercent.value = 0; useRoundUp.value = false
-      // Either setting alone is enough to earn the screen. Reading only
-      // kioskTipEnabled here is what made the round-up switch inert.
-      if (offersExtras.value) {
-        tipInteractive.value = false
-        state.value = 'tipping'
-        setTimeout(() => { tipInteractive.value = true }, 300)
-      } else {
-        createCharge()
-      }
-    }
-    function confirmTip() { createCharge() }
-
     async function createCharge() {
-      if (state.value !== 'input' && state.value !== 'tipping') return
-      // The price ran out on the tip screen: back to the amount, which says why.
-      if (priceMissing.value) { state.value = 'input'; return }
-      const revision = ++saleRevision
-      const walletId = store.kioskWalletId
-      const amountSats = finalAmountSats.value
-      if (!walletId || !Number.isSafeInteger(amountSats) || amountSats <= 0) return
-      const current = () => revision === saleRevision && walletId === store.kioskWalletId && store.kioskEnabled && !store.kioskOwnerAccess
-      captureSaleBreakdown()
-      cardProblem.value = ''
-      state.value = 'processing'; invoiceData.value = null; qrDataUrl.value = ''
-      paymentProblem.value = ''
+      tipInteractive.value = false
       try {
-        // A sale this wallet could never see paid is refused before a QR is
-        // shown (its connection may have lost the grant since it was chosen).
-        const wallet = store.wallets.find(w => w.id === walletId)
-        if (kioskWalletBlocker(wallet) === KIOSK_BLOCKER.CANNOT_CONFIRM) {
-          throw nwcError(NWC_ERROR.CONFIRM_NOT_ALLOWED, 'This connection cannot confirm payments')
-        }
-        // The store knows how each kind of wallet makes an invoice (NWC
-        // included) and reconnects one whose connection went stale (hot
-        // reload, wallet switch, Spark disconnect on lock), as it does for
-        // every other screen that asks a wallet to receive.
-        const result = await store.createInvoiceDetailsOnWallet(walletId, amountSats, 'Kiosk Payment')
-        if (!current()) return
-        if (!result.paymentHash) throw new Error('Invoice must have a payment_hash')
-        invoiceData.value = { ...result, walletId, amountSats }
-        const qr = await QRCode.toDataURL(result.paymentRequest, { width: 300, margin: 2, color: { dark: '#000000', light: '#ffffff' } })
-        if (!current()) return
-        qrDataUrl.value = qr
-        state.value = 'payment'; startPolling()
-      } catch (err) {
-        if (!current()) return
-        card.reset()
-        console.error('[kiosk] charge error:', err)
-        // Unified dialog. Same modal users see across every other
-        // payment failure in the app, so the kiosk operator gets a
-        // familiar surface (and a "Copy details" button for support)
-        // instead of a thin caption-only toast.
-        store.showPaymentError(err, { context: 'kiosk', t })
-        state.value = 'input'
-      }
+        const snapshot = buildSaleSnapshot({ items: quotedItems.value, currency: fiatCurrency.value, rate: quotedRate.value, walletId: store.kioskWalletId, walletName: kioskWalletName.value, method: 'Lightning', tipSats: selectedTipAmount.value, roundUpSats: finalAmountSats.value - totalBeforeRoundUp.value, tipPercent: selectedTipPercent.value || null })
+        await payments.createCharge(snapshot)
+        localStage.value = 'input'
+        if (!activeOrder.value && payments.problem.value) $q.notify({ type: 'negative', message: paymentProblem.value })
+      } catch(error) { showError(error) } finally { tipInteractive.value = true }
     }
-    function startPolling() {
-      clearPolling()
-      const invoice = invoiceData.value
-      if (!invoice) return
-      paymentProblem.value = ''
-      retryStatus.value = false
-      const monitor = createPaymentMonitor({ maxAttempts: Number.MAX_SAFE_INTEGER, maxInterval: 3000, expiryBuffer: 0 })
-      paymentMonitor = monitor
-      let failures = 0
-      monitor.start({
-        invoice: { payment_hash: invoice.paymentHash, amount: invoice.amountSats, expires_at: invoice.expiresAt || invoice.expires_at },
-        provider: { lookupInvoice: async hash => {
-          try {
-            const result = await store.lookupInvoiceOnWallet(invoice.walletId, hash)
-            failures = 0
-            return result
-          } catch (error) {
-            if (++failures >= 5 && store.wallets.find(wallet => wallet.id === invoice.walletId)?.type === 'spark') {
-              failures = 0
-              await store.connectSparkWallet(invoice.walletId, { forceReinit: true })
-            }
-            throw error
-          }
-        } },
-        onStatusChange(status) {
-          if (paymentMonitor !== monitor || invoiceData.value !== invoice) return
-          // A payment while the card pays is the card's: the QR is not on
-          // screen then, and many card services pay before they answer OK.
-          if (status === PaymentStatus.CONFIRMED) { paidByCard.value = ['submitting', 'waiting'].includes(card.phase.value); clearPolling(); showSuccess() }
-          else if (status === PaymentStatus.EXPIRED || status === PaymentStatus.ERROR) {
-            paymentProblem.value = t(status === PaymentStatus.EXPIRED ? 'Payment expired' : 'Could not check payment status. Please check again.')
-            retryStatus.value = status === PaymentStatus.ERROR
-          }
-        },
-      })
-      visibilityHandler = () => { if (document.visibilityState === 'visible') monitor.checkNow() }
-      document.addEventListener('visibilitychange', visibilityHandler)
-      void monitor.checkNow()
+    const confirmTip = () => createCharge()
+    async function retryExpired() {
+      if (payments.status.value !== 'expired' || !activeOrder.value) return
+      $q.dialog({ title: t('Create a new payment request?'), message: t('The old code may still be paid. Check with the customer before continuing.'), cancel: true, ok: { label: t('Create request') } }).onOk(() => payments.createCharge(cloneKiosk(activeOrder.value)))
     }
-    function clearPolling() {
-      paymentMonitor?.stop()
-      paymentMonitor = null
-      if (visibilityHandler) document.removeEventListener('visibilitychange', visibilityHandler)
-      visibilityHandler = null
+    async function resetToInput() {
+      try { await draftSave; await payments.nextCustomer(); syncDraft(); localStage.value = 'input'; card.reset(); cardProblem.value = ''; useRoundUp.value = false; selectedTipPercent.value = 0 } catch(error) { showError(error) }
     }
-    function cancelPayment() { saleRevision++; clearPolling(); card.reset(); cardProblem.value = ''; invoiceData.value = null; saleBreakdownSnapshot.value = null; state.value = 'input' }
-
-    /**
-     * Set the sale on screen aside, still watched, and free the register.
-     * Nothing is ever dropped to make room: a full list says so instead.
-     */
-    function parkInvoice() {
-      if (!invoiceData.value) return
-      if (parked.full.value) {
-        $q.notify({ type: 'warning', position: 'top', timeout: 4000, message: t('{n} sales are parked', { n: MAX_PARKED }), caption: t('Open or remove one first.') })
-        return
-      }
-      const ok = parked.park({
-        invoiceData: invoiceData.value,
-        baseAmountSats: baseAmountSats.value,
-        accumulatedItems: [...accumulatedItems.value],
-        // Carried with the sale so a SECOND charge started while this one
-        // waits can't clobber the snapshot it needs once paid.
-        saleBreakdown: saleBreakdownSnapshot.value
-      })
-      if (!ok) return
-      saleRevision++
-      clearPolling()
-      card.reset()
-      cardProblem.value = ''
-      rawInput.value = '0'
-      accumulatedItems.value = []
-      baseAmountSats.value = 0
-      selectedTipPercent.value = 0
-      useRoundUp.value = false
-      invoiceData.value = null
-      qrDataUrl.value = ''
-      saleBreakdownSnapshot.value = null
-      state.value = 'input'
-      void haptics.medium()
-      // The header pill takes the sale: it pops so the eye follows it there.
-      parkPop.value = false
-      clearTimeout(parkPopTimer)
-      requestAnimationFrame(() => { parkPop.value = true; parkPopTimer = setTimeout(() => { parkPop.value = false }, 600) })
-    }
-
-    /** A parked sale opens on an empty register only: nothing on it is lost. */
-    const canResume = computed(() => state.value === 'input' && rawInput.value === '0' && accumulatedItems.value.length === 0)
-
-    async function resumeParked(id) {
-      if (!canResume.value) return
-      const sale = parked.take(id)
-      if (!sale) return
-      showParkedSheet.value = false
-      saleRevision++
-      const revision = saleRevision
-      cardProblem.value = ''
-      paymentProblem.value = ''
-      invoiceData.value = sale.invoiceData
-      baseAmountSats.value = sale.baseAmountSats
-      accumulatedItems.value = sale.accumulatedItems || []
-      saleBreakdownSnapshot.value = sale.saleBreakdown || null
-      qrDataUrl.value = ''
-      state.value = 'payment'
-      startPolling()
+    async function retryStorage() {
       try {
-        const qr = await QRCode.toDataURL(sale.invoiceData.paymentRequest, { width: 300, margin: 2, color: { dark: '#000000', light: '#ffffff' } })
-        if (revision === saleRevision) qrDataUrl.value = qr
-      } catch (error) {
-        console.error('[kiosk] QR for a parked sale:', error)
-      }
+        if (merchant.storageError === 'KIOSK_STORAGE_CONFLICT') {
+          const local = cloneKiosk(draft.value)
+          await merchant.reload()
+          if (kioskDraftHasValue(local) && JSON.stringify(local) !== JSON.stringify(merchant.draft)) await merchant.saveRecoveredBasket(local, t('Recovered basket'))
+          syncDraft(); storageProblem.value = false
+        } else if (!await saveDraft(cloneKiosk(draft.value))) return
+        await payments.checkNow()
+      } catch(error) { showError(error) }
     }
-
-    /** "2 items · 4 min ago": enough to tell parked sales apart at a glance. */
-    function parkedMeta(sale) {
-      const minutes = Math.max(0, Math.round((Date.now() - sale.parkedAt) / 60000))
-      const age = minutes < 1 ? t('just now') : t('{n} min ago', { n: minutes })
-      const items = sale.accumulatedItems?.length || 0
-      return items > 1 ? `${items} ${t('kiosk.items')} · ${age}` : age
-    }
-
-    /**
-     * Removing stops the watch. An expired sale goes at once; one that can
-     * still be paid asks first, because a payment after removal reaches the
-     * wallet without the kiosk showing the sale.
-     */
-    function removeParked(sale) {
-      if (sale.status === 'expired') { parked.remove(sale.id); if (!parkedCount.value) showParkedSheet.value = false; return }
-      $q.dialog({
-        title: t('Remove parked sale?'),
-        message: t('If the customer still pays it, the payment reaches the wallet but this kiosk will not show the sale.'),
-        cancel: { label: t('Keep'), flat: true, noCaps: true },
-        ok: { label: t('Remove'), flat: true, noCaps: true, color: 'negative' },
-        persistent: true,
-      }).onOk(() => {
-        parked.remove(sale.id)
-        if (!parkedCount.value) showParkedSheet.value = false
-      })
-    }
-
-    /**
-     * Snapshot the sale breakdown before creating this invoice, while
-     * baseAmountSats/selectedTipPercent/useRoundUp/
-     * accumulatedItems are all settled by this point (nothing between here
-     * and a paid invoice mutates them except a park or a reset, both of
-     * which now carry/clear this same snapshot). Never fabricated — a
-     * non-positive total (shouldn't happen; the charge button is disabled
-     * below that) leaves the snapshot cleared rather than stamping zeros.
-     *
-     * `discountSats` is always 0: the POS has no discount control yet, but
-     * the field is reserved so Tx Details can render a Discount row the
-     * day one exists without another metadata shape change.
-     */
-    function captureSaleBreakdown() {
-      const total = finalAmountSats.value
-      if (!(total > 0)) { saleBreakdownSnapshot.value = null; return }
-      const hasPercentTip = !useRoundUp.value && selectedTipPercent.value > 0
-      saleBreakdownSnapshot.value = {
-        baseSats: baseAmountSats.value,
-        tipSats: total - baseAmountSats.value,
-        tipPercent: hasPercentTip ? selectedTipPercent.value : null,
-        roundUp: useRoundUp.value,
-        discountSats: 0,
-        itemCount: accumulatedItems.value.length,
-        totalSats: total
-      }
-    }
-
-    /** Stamp a paid sale onto its incoming tx, and refresh the wallet. */
-    function recordSale(invoice, breakdown) {
-      void store.refreshBalance(invoice.walletId)
-      // Stamp the sale onto the incoming tx once it surfaces in history.
-      // Best-effort and non-blocking: the kiosk boots on its own path, so
-      // the metadata store lazy-initializes itself, and a metadata failure
-      // must never stall or break the success screen.
-      try {
-        metadataStore.enqueuePendingContactLink({
-          label: t('Kiosk sale'),
-          source: 'kiosk',
-          direction: 'incoming',
-          amountSats: invoice.amountSats,
-          // The kiosk's destination wallet — the one whose tx list will
-          // actually show the sale once it surfaces.
-          walletId: invoice.walletId,
-          // The curated subtotal/tip/round-up/total captured at invoice
-          // creation (see captureSaleBreakdown) — null when there was
-          // nothing meaningful to attach.
-          saleBreakdown: breakdown,
-        }).catch(() => {})
-      } catch (_) { /* non-critical */ }
-    }
-
-    function showSuccess() {
-      // Idempotent: overlapping poll chains or a race between the event and
-      // the poll must not record the same sale twice.
-      if (state.value === 'success') return
-      recordSale(invoiceData.value, saleBreakdownSnapshot.value)
-      state.value = 'success'
-      // Felt at the counter while the goods change hands.
-      void haptics.success()
-      clearTimeout(successTimer)
-      successTimer = setTimeout(resetToInput, 7000)
-    }
-
-    function resetToInput() {
-      cancelPayment()
-      paidByCard.value = false
-      clearTimeout(successTimer)
-      rawInput.value = '0'
-      accumulatedItems.value = []
-      baseAmountSats.value = 0
-      selectedTipPercent.value = 0
-      useRoundUp.value = false
-      invoiceData.value = null
-      qrDataUrl.value = ''
-      saleBreakdownSnapshot.value = null
-      state.value = 'input'
-    }
-    function displaySats(sats) {
-      if (isFiatMode.value && fiatRate.value > 0) {
-        const fiat = (sats / 100_000_000) * fiatRate.value
-        return `${fiatSymbol.value} ${fiat.toFixed(2)}`
-      }
-      return formatAmount(sats, useBip177.value)
-    }
-
-    function handleUnlockPin(pin) { if (store.unlockToOwnerMode(pin)) { showUnlockDialog.value = false; router.push('/wallet') } else { unlockError.value = t('kiosk.incorrectPin'); unlockPinRef.value?.fail() } }
+    async function handleUnlockPin(pin) { if (store.unlockToOwnerMode(pin)) { showUnlockDialog.value = false; await router.push('/kiosk-mode') } else { unlockError.value = t('kiosk.incorrectPin'); unlockPinRef.value?.fail() } }
     function resetUnlock() { unlockError.value = ''; unlockPinRef.value?.reset() }
-    // A forgotten PIN: 13 taps on the logo open the owner area without it, and
-    // the owner sets a new PIN on the Kiosk Mode page (kept on purpose, #449).
-    function handleScreenTap() { tapCount++; clearTimeout(tapTimer); tapTimer = setTimeout(() => { tapCount = 0 }, 5000); if (tapCount >= 13) { tapCount = 0; store.forceUnlockKiosk(); router.push('/wallet') } }
-
-    watch(() => store.pendingDeepLink, payment => {
-      if (payment?.target !== 'kiosk') return
-      store.pendingDeepLink = null
-      if (!store.kioskEnabled || store.kioskOwnerAccess || state.value === 'success') return
-      if (card.phase.value === 'empty') cardProblem.value = ''
-      if (card.accept(payment) && state.value === 'input' && totalSatsForCharge.value > 0) proceedToTipOrCharge()
-    }, { immediate: true })
-
-    watch(() => [store.kioskWalletId, store.kioskEnabled, store.kioskOwnerAccess], () => cancelPayment(), { flush: 'sync' })
-
-    onMounted(async () => {
-      // Home refreshes the price, but a kiosk boots straight into the
-      // register: it keeps its own price current while it prices in fiat.
-      // Started before any await, so onUnmounted always finds the timer.
-      refreshPrice()
-      priceTimer = setInterval(refreshPrice, 60_000)
-      document.addEventListener('visibilitychange', refreshPriceWhenVisible)
-
-      // Load persisted state if store hasn't initialized yet
-      if (!store.kioskEnabled) {
-        await store.initialize()
-      }
-
-      // Redirect away if kiosk is not active
-      if (!store.kioskEnabled || store.kioskOwnerAccess) {
-        router.replace('/wallet')
-        return
-      }
-
-      // Connect only the kiosk wallet. Use ensureWalletConnectedForTransfer
-      // so a stale provider entry (where this.wallet was released) is
-      // detected and reconnected — `providers[id]` alone is not a liveness
-      // check for Spark.
+    async function recoverOwner() { try { if (await store.recoverKioskOwnerAccess()) { showUnlockDialog.value = false; await router.push('/kiosk-mode') } else unlockError.value = t('Owner verification is unavailable here. Use the register PIN or verify on your device.') } catch { unlockError.value = t('Owner verification was not completed.') } }
+    async function openProductSearch() { browsing = { category: productCategory.value, scroll: productList.value?.getScrollPosition() || 0 }; productSearchOpen.value = true; await nextTick(); productSearchInput.value?.focus() }
+    async function closeProductSearch() { productSearchOpen.value = false; productSearch.value = ''; if (browsing) { productCategory.value = browsing.category; await nextTick(); const list = productList.value?.$el?.querySelector('.kiosk-products__list'); if (list) list.scrollTop = browsing.scroll } }
+    function closeSearchKeyboard() { productSearchInput.value?.blur(); productList.value?.focusList() }
+    watch(() => invoiceData.value?.paymentRequest, async request => { qrDataUrl.value = ''; if (!request) return; const url = await QRCode.toDataURL(request, { width: 320, margin: 2, errorCorrectionLevel: 'M' }); if (invoiceData.value?.paymentRequest === request) qrDataUrl.value = url })
+    watch(() => payments.status.value, value => { if (value === 'paid') void haptics.success() })
+    watch(() => store.pendingDeepLink, payment => { if (payment?.target !== 'kiosk') return; store.pendingDeepLink = null; if (!store.isKioskRestricted || state.value === 'success') return; if (card.accept(payment) && state.value === 'input' && totalSatsForCharge.value > 0) void proceedToTipOrCharge() }, { immediate: true })
+    let priceTimer
+    async function connectWallet() {
+      if (connectionChecking.value) return
       const walletId = store.kioskWalletId
-      if (walletId) {
-        try {
-          await store.ensureWalletConnectedForTransfer(walletId)
-        } catch (err) {
-          console.error('[kiosk] Failed to connect wallet:', err.message)
-        }
-      }
-
-      walletReady.value = !!store.providers[store.kioskWalletId]
-    })
-    function refreshPrice() {
-      now.value = Date.now()
-      if (isFiatMode.value) store.loadExchangeRates().catch(() => {})
+      walletReady.value = false; connectionChecking.value = true
+      try {
+        if (kioskWalletBlocker(store.kioskWallet)) return
+        await store.ensureWalletConnectedForTransfer(walletId)
+        if (walletId === store.kioskWalletId && store.isKioskRestricted) walletReady.value = true
+      } catch { walletReady.value = false } finally { connectionChecking.value = false }
     }
-    function refreshPriceWhenVisible() { if (document.visibilityState === 'visible') refreshPrice() }
-    isNfcAvailable().then((ok) => { nfcReady.value = ok }).catch(() => {})
-    onUnmounted(() => {
-      saleRevision++; clearPolling(); clearTimeout(tapTimer); clearTimeout(successTimer); clearTimeout(parkPopTimer)
-      clearInterval(priceTimer); document.removeEventListener('visibilitychange', refreshPriceWhenVisible)
+    function refreshPrice() { now.value = Date.now(); if (isFiatMode.value || merchant.products.length || draft.value.items.some(item => item.unit === 'fiat')) void store.loadExchangeRates().catch(() => {}) }
+    function onVisible() { if (document.visibilityState === 'visible') { refreshPrice(); if (!walletReady.value) void connectWallet() } }
+    onMounted(async () => {
+      await payments.ready
+      if (!store.kioskEnabled || store.kioskOwnerAccess) { await router.replace('/kiosk-mode'); return }
+      syncDraft(); initialized.value = true; refreshPrice(); priceTimer = setInterval(refreshPrice, 60000); document.addEventListener('visibilitychange', onVisible)
+      void connectWallet()
+      isNfcAvailable().then(value => { nfcReady.value = value }).catch(() => {})
     })
-
-    return {
-      state, walletReady, rawInput, formattedDisplay, amountFontStyle, amountSats, isFiatMode, fiatSymbol, fiatCurrency, priceMissing, amountPrefix, showSatsSuffix, kioskWalletName,
-      accumulatedItems, accumulatedSats, totalSatsForCharge,
-      handleNumpad, addToAccumulated, removeAccumulatedItem, clearAll, proceedToTipOrCharge,
-      tipOptions, selectedTipPercent, selectedTipAmount, tipInteractive,
-      totalBeforeRoundUp, roundUpValue, useRoundUp, finalAmountSats,
-      offersTip, offersRoundUp, extrasTitle, extrasSkipLabel, extraLabel,
-      baseAmountSats, displaySats, createCharge, confirmTip,
-      card, cardAuthorization, cardBusy, cardPinActive, cardPinChecking, cardProblem, paidByCard, nfcReady,
-      confirmHeldCard, cancelCardPin, paymentProblem, retryStatus, startPolling,
-      invoiceData, qrDataUrl, cancelPayment, parkInvoice, resumeParked, resetToInput,
-      parkedList, parkedCount, canResume, showParkedSheet, parkPop, parkedMeta, removeParked,
-      showCartSheet, showUnlockDialog, unlockPinRef, unlockError,
-      handleUnlockPin, resetUnlock, handleScreenTap, store
+    watch(() => [store.kioskWalletId, store.kioskOwnerAccess, store.kioskEnabled], () => { card.reset(); walletReady.value = false }, { flush: 'sync' })
+    const onOnline = () => { if (!walletReady.value) void connectWallet() }
+    onMounted(() => window.addEventListener('online', onOnline))
+    onUnmounted(() => window.removeEventListener('online', onOnline))
+    onUnmounted(() => { clearInterval(priceTimer); document.removeEventListener('visibilitychange', onVisible); cardAuthorization.value?.cancel() })
+    const canPrintReceipt = !$q.platform?.is?.capacitor
+    function printCurrentReceipt() {
+      if (!canPrintReceipt || activeOrder.value?.status !== 'paid') return
+      document.body.dataset.kioskPrint = 'true'
+      try { window.print() } finally { delete document.body.dataset.kioskPrint }
     }
-  }
+    const money = (minor, currency) => formatKioskMoney(minor, currency, proxy.$i18n.locale)
+    async function exportCurrentReceipt() { if (activeOrder.value?.status === 'paid') { const order = cloneKiosk(activeOrder.value); try { await saveFile({ filename: `receipt-${order.id}.csv`, data: merchant.salesCsv([order]), mimeType: 'text/csv' }) } catch(error) { showError(error) } } }
+    return { paymentAmount, paymentShowsFiat, canPrintReceipt, printCurrentReceipt, showCurrentReceipt, money, exportCurrentReceipt, connectWallet, connectionChecking, store, merchant, payments, draft, entryMode, state, busy, activeOrder, invoiceData, pendingOrders, storageProblem, retryStorage, qrDataUrl, hasDraft, itemCount, quantities, basketDisplay, chargeLabel, canCharge, walletReady, priceMissing, fiatCurrency, fiatRate, isFiatMode, amountSats, totalSatsForCharge, kioskWalletName, productSearchOpen, productSearch, productCategory, productSearchInput, productList, showCartSheet, showSavedSheet, showParkedSheet, showUnlockDialog, unlockPinRef, unlockError, paymentProblem, card, cardAuthorization, cardPinActive, cardPinChecking, cardProblem, cardBusy, nfcReady, selectedTipPercent, useRoundUp, baseAmountSats, tipInteractive, tipOptions, selectedTipAmount, totalBeforeRoundUp, roundUpValue, finalAmountSats, offersTip, offersRoundUp, extrasTitle, extrasSkipLabel, extraLabel, displaySats, productPrice, itemPrice, editAmount, swapAmount, explainMissingRate, addToAccumulated, addProduct, changeQuantity, clearAll, saveBasket, resumeBasket, resumeOrder, setEntryMode, openProductSearch, closeProductSearch, closeSearchKeyboard, proceedToTipOrCharge, createCharge, confirmTip, retryExpired, resetToInput, handleUnlockPin, resetUnlock, recoverOwner, confirmHeldCard, cancelCardPin }
+  },
 })
 </script>
 
+
 <style scoped>
+.pos-connection { display:flex; gap:12px; align-items:center; padding:4px 16px; font-size:13px; color:var(--text-secondary); }
+.pos-connection button { min-height:44px; border:0; background:transparent; color:var(--text-primary); flex:none; }
+.pos-current-receipt { height:85dvh; }
+.pos-current-receipt :deep(.kiosk-receipt) { height:auto; flex:1 1 0; min-height:0; }
+.pos-current-receipt > button { flex:0 0 auto; margin:0; }
+.pos-current-receipt .pos-secondary-btn { color:var(--text-secondary); border-color:var(--border-card); }
+.pos-entry-controls { display:flex; align-items:center; gap:6px; padding:0 16px 8px; flex:none; }
+.pos-entry-switch { display:flex; flex:1; gap:3px; padding:3px; border-radius:12px; background:var(--bg-input); }
+.pos-entry-switch button { flex:1; min-height:44px; border:0; border-radius:9px; background:transparent; color:var(--text-secondary); font:650 14px 'Manrope',sans-serif; }
+.pos-entry-switch button.active { background:var(--bg-card); color:var(--text-primary); box-shadow:0 1px 4px #0001; }
+.pos-icon-btn { width:44px; min-height:44px; flex:none; border:0; border-radius:12px; color:var(--text-secondary); background:transparent; display:inline-flex; align-items:center; justify-content:center; cursor:pointer; }
+.pos-product-search { display:flex; gap:8px; padding:0 16px 8px; }
+.pos-product-search input { width:0; flex:1; min-height:44px; border:1px solid var(--border-card); border-radius:12px; background:var(--bg-input); color:var(--text-primary); padding:8px 12px; font:16px 'Manrope',sans-serif; }
+.pos-product-search button { border:0; background:transparent; color:var(--text-primary); min-height:44px; }
+.pos-products-actions { padding:12px 16px calc(16px + var(--safe-bottom,16px)); }
+.pos-notice { padding:12px 16px; color:var(--text-primary); background:var(--bg-input); font-size:14px; }
+.pos-notice button { display:block; min-height:44px; background:transparent; color:inherit; border:0; text-decoration:underline; }
+.pos-cart-sheet.pos-basket-sheet { box-sizing:border-box; overflow:hidden; width:100%; max-height:85dvh; display:flex; flex-direction:column; padding:16px 20px calc(16px + var(--safe-bottom,16px)); gap:12px; color:var(--text-primary); background:var(--bg-card); }
+.pos-basket-items { min-height:0; overflow:auto; overscroll-behavior:contain; }
+.pos-basket-row { display:flex; justify-content:space-between; align-items:center; gap:12px; padding:12px 0; border-bottom:1px solid var(--border-card); }
+.pos-basket-row > span { min-width:0; overflow-wrap:anywhere; }
+.pos-basket-row small,.pos-saved-row small { display:block; color:var(--text-secondary); font-size:12px; margin-top:3px; }
+.pos-quantity { display:flex; align-items:center; flex:none; }
+.pos-quantity button { width:44px; height:44px; border:0; border-radius:12px; background:var(--bg-input); color:var(--text-primary); }
+.pos-quantity span { min-width:30px; text-align:center; }
+.pos-saved-row { display:flex; align-items:center; justify-content:space-between; width:100%; min-height:64px; padding:12px; text-align:left; border:0; border-bottom:1px solid var(--border-card); color:var(--text-primary); background:transparent; }
+.kiosk-shell > :deep(.amount-keypad) { width:auto; margin:0 16px; min-height:360px; }
+.kiosk-lock-btn { min-width:44px; min-height:44px; }
+.pos-state-center { min-height:0; overflow-y:auto; }
+.pos-state-sub { font-size:14px; line-height:1.5; }
+button:disabled { cursor:default; opacity:.5; }
+button:focus-visible,input:focus-visible { outline:2px solid var(--brand-accent-text); outline-offset:2px; }
+@media(max-height:560px) { .kiosk-shell { overflow-y:auto; } }
 /* padding-top: 0 cancels the global `.q-page { padding-top: var(--safe-top) }`
    in app.css. The kiosk shell is exactly one viewport tall, so inheriting that
    pad would make the page 100dvh + --safe-top — it scrolls, and the charge
@@ -839,6 +471,9 @@ export default defineComponent({
 
 /* Header */
 .kiosk-header { display: flex; align-items: center; justify-content: space-between; padding: calc(14px + var(--safe-top, 0px)) 16px 14px; flex-shrink: 0; position: relative; }
+.kiosk-header-left { min-width:0; max-width:calc(50% - 30px); }
+.kiosk-wallet-badge span { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.kiosk-wallet-badge .q-icon { flex:none; }
 .kiosk-logo { position: absolute; left: 50%; transform: translateX(-50%); display: flex; align-items: center; }
 .kiosk-wallet-badge { display: flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 600; font-family: 'Manrope', sans-serif; padding: 5px 10px; border-radius: 8px; background: rgba(255,255,255,0.05); color: #9ca3af; letter-spacing: 0.2px; }
 .kiosk-light .kiosk-wallet-badge { background: var(--bg-input); color: var(--text-secondary); }
@@ -848,7 +483,7 @@ export default defineComponent({
 .kiosk-light .kiosk-lock-btn { background: var(--bg-input); }
 
 /* State center */
-.pos-state-center { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 24px 20px; padding-bottom: max(24px, var(--safe-bottom, 16px)); text-align: center; }
+.pos-state-center { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: safe center; padding: 24px 20px; padding-bottom: max(24px, var(--safe-bottom, 16px)); text-align: center; }
 .pos-state-title { font-size: 1rem; font-weight: 700; font-family: 'Manrope', sans-serif; }
 .pos-state-sub { font-size: 0.75rem; color: #6b7280; margin-top: 4px; }
 .mt-2 { margin-top: 0.5rem; } .mt-4 { margin-top: 1rem; } .mt-6 { margin-top: 1.5rem; } .mt-8 { margin-top: 2rem; }
@@ -901,8 +536,9 @@ export default defineComponent({
 
 /* Cart summary row */
 .pos-cart-summary {
+  text-align: left; border: 0; color: var(--text-primary);
   display: flex; align-items: center; justify-content: space-between;
-  margin: 4px 20px 0; padding: 8px 14px;
+  margin: 4px 16px 0; padding: 8px 14px; min-height:44px;
   border-radius: 10px; background: rgba(5,149,115,0.06);
   border: 1px solid rgba(5,149,115,0.15);
   cursor: pointer; flex-shrink: 0;
@@ -910,9 +546,6 @@ export default defineComponent({
   font-family: 'Manrope', sans-serif;
 }
 .kiosk-light .pos-cart-summary { background: rgba(5,149,115,0.04); }
-.pos-cart-count { font-size: 13px; font-weight: 600; color: #059573; }
-.pos-cart-x { background: none; border: none; color: #6b7280; cursor: pointer; padding: 2px; -webkit-tap-highlight-color: transparent; }
-.pos-cart-x:active { color: #ef4444; }
 
 /* Cart bottom sheet */
 .pos-cart-sheet { width: 100%; border-radius: 16px 16px 0 0 !important; padding-bottom: var(--safe-bottom, 0px); }
@@ -921,22 +554,16 @@ export default defineComponent({
 .pos-sheet-header { display: flex; justify-content: space-between; font-family: 'Manrope', sans-serif; font-weight: 700; font-size: 15px; padding-bottom: 12px; border-bottom: 1px solid #2A342A; margin-bottom: 8px; }
 .pos-cart-sheet-light .pos-sheet-header { border-color: var(--border-card); }
 .pos-sheet-total { color: #059573; }
-.pos-sheet-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; font-family: 'Manrope', sans-serif; font-size: 14px; }
-.pos-sheet-remove { background: none; border: none; cursor: pointer; padding: 4px; -webkit-tap-highlight-color: transparent; }
 .pos-cart-sheet-dark .pos-sheet-remove { color: rgba(255, 255, 255, 0.4); }
 .pos-cart-sheet-light .pos-sheet-remove { color: var(--text-muted); }
-.pos-sheet-remove:active { color: #ef4444; }
 
 .kiosk-header-left { display: flex; align-items: center; gap: 6px; }
 
-.pos-parked-line { align-self: center; display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 6px 12px 6px 10px; border: none; border-radius: 999px; background: rgba(247,147,26,0.1); color: #F7931A; font-family: 'Manrope', sans-serif; font-size: 13px; font-weight: 700; cursor: pointer; -webkit-tap-highlight-color: transparent; flex-shrink: 0; }
+.pos-parked-line { align-self: center; display: inline-flex; align-items: center; gap: 6px; min-height: 44px; padding: 6px 12px 6px 10px; border: none; border-radius: 999px; background: rgba(247,147,26,0.1); color: #F7931A; font-family: 'Manrope', sans-serif; font-size: 13px; font-weight: 700; cursor: pointer; -webkit-tap-highlight-color: transparent; flex-shrink: 0; }
 .kiosk-light .pos-parked-line { color: #8A5F00; background: rgba(138,95,0,0.08); }
-.pos-parked-line-chevron { opacity: 0.7; margin-left: -2px; }
-.pos-parked-line--pop { animation: park-pop 0.55s cubic-bezier(0.34, 1.56, 0.64, 1); }
-@keyframes park-pop { 0% { transform: scale(1); } 35% { transform: scale(1.12); } 100% { transform: scale(1); } }
 
-/* Payment screen actions: two equal, labelled buttons. */
-.pos-payment-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; width: 100%; max-width: 340px; margin-top: 18px; }
+/* Keep the next-customer action clear while the current request remains watched. */
+.pos-payment-actions { display: grid; grid-template-columns: 1fr; gap: 12px; width: 100%; max-width: 340px; margin-top: 18px; }
 .pos-outline-btn { height: 48px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; border-radius: 14px; border: 1px solid rgba(107,114,128,0.4); background: transparent; color: inherit; font-family: 'Manrope', sans-serif; font-size: 0.9375rem; font-weight: 700; cursor: pointer; -webkit-tap-highlight-color: transparent; transition: transform 0.08s ease, background 0.12s ease; }
 .pos-outline-btn:active { transform: scale(0.97); background: rgba(107,114,128,0.08); }
 .kiosk-light .pos-outline-btn { border-color: var(--border-card); }
@@ -966,47 +593,6 @@ export default defineComponent({
 .pos-price-wait { background: rgba(245,158,11,0.14); color: #FBBF24; }
 .kiosk-light .pos-price-wait { background: rgba(180,83,9,0.1); color: #92400E; }
 .pos-pay :deep(.card-pin) { max-width: 340px; }
-.pos-paid-method { margin-top: 8px; font-size: 0.8125rem; color: #9ca3af; font-family: 'Manrope', sans-serif; }
-
-/* ─── Parked sales ─── */
-.pos-parked-note { font-size: 12px; font-weight: 500; color: #9ca3af; }
-.pos-parked-hint { margin: 0 0 6px; font-size: 12.5px; color: #9ca3af; font-family: 'Manrope', sans-serif; }
-.pos-parked-row { display: flex; align-items: center; gap: 10px; padding: 6px 0; border-bottom: 1px solid rgba(255,255,255,0.06); }
-.pos-cart-sheet-light .pos-parked-row { border-color: var(--border-card); }
-.pos-parked-row:last-child { border-bottom: none; }
-.pos-parked-open { flex: 1; min-width: 0; min-height: 52px; display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: 2px; background: none; border: none; padding: 4px 0; color: inherit; text-align: left; cursor: pointer; font-family: 'Manrope', sans-serif; -webkit-tap-highlight-color: transparent; }
-.pos-parked-open:disabled { cursor: default; }
-.pos-parked-amount { font-size: 1.0625rem; font-weight: 800; letter-spacing: -0.01em; }
-.pos-parked-meta { font-size: 12px; color: #9ca3af; }
-.pos-parked-row--expired .pos-parked-amount { color: #9ca3af; text-decoration: line-through; text-decoration-color: rgba(156,163,175,0.5); }
-.pos-parked-status { font-size: 11.5px; font-weight: 700; padding: 4px 9px; border-radius: 999px; font-family: 'Manrope', sans-serif; }
-.pos-parked-status--waiting { background: rgba(247,147,26,0.12); color: #F7931A; }
-.pos-parked-status--expired { background: rgba(156,163,175,0.14); color: #9ca3af; }
-
-@media (prefers-reduced-motion: reduce) {
-  .pos-parked-line--pop, .pos-card-wave::before, .pos-card-wave::after { animation: none; }
-}
-
-/* Amount */
-.pos-top { flex: 1; min-height: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 1rem 1.5rem 0.5rem; overflow: hidden; }
-.pos-amount-area { text-align: center; }
-.pos-amount-row { display: flex; align-items: baseline; justify-content: center; gap: 4px; margin-bottom: 8px; }
-.pos-currency-sym { font-size: 1.75rem; font-weight: 600; color: #6b7280; font-family: 'Manrope', sans-serif; }
-.pos-amount-value { font-size: 4rem; font-weight: 800; letter-spacing: -0.03em; line-height: 1; font-family: 'Manrope', sans-serif; }
-.pos-amount-sm { font-size: 3rem; }
-.pos-currency-suffix { font-size: 1.25rem; font-weight: 600; color: #6b7280; margin-left: 6px; align-self: center; font-family: 'Manrope', sans-serif; }
-.pos-fiat-hint { font-size: 0.8125rem; font-weight: 500; color: #6b7280; margin-top: 6px; font-family: 'Manrope', sans-serif; }
-
-/* Keypad */
-.pos-bottom { flex-shrink: 0; padding: 4px 20px 0; }
-.pos-keypad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 12px; }
-.pos-key { height: 56px; border-radius: 14px; border: none; display: flex; align-items: center; justify-content: center; font-family: 'Manrope', sans-serif; font-size: 1.375rem; font-weight: 700; cursor: pointer; transition: transform 0.08s ease, background 0.08s ease; -webkit-tap-highlight-color: transparent; }
-.pos-key-num { background: rgba(255,255,255,0.05); color: inherit; border: 1px solid rgba(255,255,255,0.04); }
-.pos-key-num:active { background: rgba(255,255,255,0.1); transform: scale(0.94); }
-.kiosk-light .pos-key-num { background: var(--bg-input); border-color: var(--border-card); }
-.kiosk-light .pos-key-num:active { background: var(--border-card); }
-.pos-key-action { background: transparent; color: #6b7280; }
-.pos-key-action:active { color: inherit; transform: scale(0.94); }
 
 /* Actions */
 /* 48px floor clears a 3-button Android nav bar even when the WebView
@@ -1023,7 +609,7 @@ export default defineComponent({
 .pos-charge-btn { flex: 1; }
 
 /* Tipping */
-.tip-screen { flex: 1; display: flex; flex-direction: column; justify-content: space-between; padding: 1.5rem 1.25rem; padding-bottom: calc(1.5rem + var(--safe-bottom, 0px)); opacity: 0; transition: opacity 0.3s ease; }
+.tip-screen { min-height:0; overflow-y:auto; flex: 1; display: flex; flex-direction: column; justify-content: space-between; padding: 1.5rem 1.25rem; padding-bottom: calc(1.5rem + var(--safe-bottom, 0px)); opacity: 0; transition: opacity 0.3s ease; }
 .tip-screen.tip-ready { opacity: 1; }
 .tip-header { text-align: center; flex-shrink: 0; padding-bottom: 0.75rem; }
 .tip-prompt { display: block; font-size: 1.25rem; font-weight: 700; font-family: 'Manrope', sans-serif; line-height: 1.3; margin-bottom: 1rem; }
@@ -1103,9 +689,17 @@ export default defineComponent({
 .kiosk-dialog .pos-text-btn { margin-top: 20px; }
 
 @media (max-height: 680px) {
-  .pos-amount-value { font-size: 3rem; }
-  .pos-key { height: 48px; font-size: 1.25rem; }
   .pos-add-btn { width: 48px; height: 48px; }
   .pos-primary-btn { height: 48px; }
+}
+.pos-state-sub,.pos-text-btn,.tip-skip,.tip-opt-amt,.tip-break-row { color:var(--text-secondary); }
+.tip-break-tip { color:var(--text-primary); }
+.pos-amount-pill,.tip-break-val,.kiosk-light .tip-opt-on .tip-opt-pct,.kiosk-light .tip-opt-on .tip-opt-amt,.kiosk-light .tip-roundup-on .tip-roundup-label,.kiosk-light .tip-roundup-on .tip-roundup-val { color:var(--brand-accent-text); }
+@media(prefers-reduced-motion:reduce) { .kiosk-shell * { animation:none !important; transition:none !important; } }
+@media print {
+  :global(body[data-kiosk-print] #q-app), :global(body[data-kiosk-print] .q-dialog__backdrop) { display:none !important; }
+  :global(body[data-kiosk-print] .q-dialog), :global(body[data-kiosk-print] .q-dialog__inner) { position:static !important; height:auto !important; padding:0 !important; }
+  .pos-current-receipt { display:flex; height:auto; max-height:none; width:100%; overflow:visible; box-shadow:none; }
+  .pos-current-receipt > button,.pos-current-receipt > .pos-sheet-header { display:none; }
 }
 </style>

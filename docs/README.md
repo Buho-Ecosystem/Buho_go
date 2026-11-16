@@ -21,7 +21,7 @@ How each feature works and the rules that keep it right, written for developers 
 | [Incoming payments](INCOMING_PAYMENTS.md) | "Bitcoin received" for every wallet type: live hints, one ledger, once per payment |
 | [Auto-Transfer](AUTO_TRANSFER.md) | Rules that move money on their own, and when they run |
 | [Bolt Card](BOLT_CARD.md) | Taking money from a Bolt Card, in the wallet and at the kiosk |
-| [Kiosk Mode](KIOSK_MODE.md) | The register for staff: its settings page, the PIN, and leaving the register |
+| [Kiosk Mode](KIOSK_MODE.md) | Local register setup, catalog, durable payments, owner tools and recovery |
 | [Business check](BRANTA.md) | The business behind a payment before paying, the saved check on the receipt and changed-code protection (Branta) |
 | [Shared payment requests](SHARED_REQUESTS.md) | Requests from Receive and repayments from receipts |
 | [Payment review and default wallet](PAYMENT_PREPARATION.md) | Shared payment sheet, header wallet choice, optional details, immediate contact preparation and default payment wallets |

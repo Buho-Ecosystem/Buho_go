@@ -6,6 +6,7 @@
  * with up to two decimals. The other unit is derived from the exchange rate
  * (fiat per bitcoin); without a rate there is only sats.
  */
+import { fiatToSats as exactFiatToSats } from './fiatCurrencies.js';
 
 /** Longest raw input, so the amount stays readable on one line. */
 export const KEYPAD_MAX_LENGTH = 12;
@@ -14,8 +15,7 @@ const SATS_PER_BTC = 100_000_000;
 
 /** Fiat to whole sats, rounded down; 0 without a rate. */
 export function fiatToSats(fiat, rate) {
-  if (!rate || !(fiat > 0)) return 0;
-  return Math.floor((fiat / rate) * SATS_PER_BTC);
+  return exactFiatToSats(String(fiat), rate);
 }
 
 /** Sats to fiat; 0 without a rate. */
@@ -26,7 +26,7 @@ export function satsToFiat(sats, rate) {
 
 /** The sats a raw keypad value stands for. */
 export function keypadSats(value, { fiat, rate }) {
-  return fiat ? fiatToSats(parseFloat(value) || 0, rate) : parseInt(value, 10) || 0;
+  return fiat ? fiatToSats(value, rate) : parseInt(value, 10) || 0;
 }
 
 /**
@@ -40,7 +40,8 @@ export function keypadSats(value, { fiat, rate }) {
  */
 export function applyKeypadKey(value, key, { fiat }) {
   if (key === 'del') return value.slice(0, -1);
-  if (key === '.') return value.includes('.') ? value : `${value || '0'}.`;
+  if (key === '.') return !fiat || value.includes('.') ? value : `${value || '0'}.`;
+  if (!/^(?:[0-9]|000)$/.test(String(key))) return value;
   if (value.length >= KEYPAD_MAX_LENGTH) return value;
   if (fiat && value.includes('.') && value.split('.')[1].length >= 2) return value;
 
@@ -53,9 +54,17 @@ export function applyKeypadKey(value, key, { fiat }) {
  * Switch the unit typed in, converting the value so the amount stays the
  * same (sats round down, fiat keeps two decimals). Null without a rate.
  */
-export function swapKeypadUnit(value, { fiat, rate }) {
-  if (!rate) return null;
-  const sats = keypadSats(value, { fiat, rate });
+export function swapKeypadUnit(value, { fiat, rate, exactSats = null }) {
+  const usableRate = Number.isFinite(Number(rate)) && Number(rate) > 0;
+  // Leaving an empty fiat field for sats needs no exchange rate. A nonzero
+  // value never becomes zero simply because its price is unavailable.
+  if (!usableRate) {
+    return fiat && !(Number(value) > 0) && !(exactSats > 0)
+      ? { value: '', fiat: false, sats: 0 }
+      : null;
+  }
+  const sats = exactSats ?? keypadSats(value, { fiat, rate });
+  if (!Number.isSafeInteger(sats) || sats < 0) return null;
   if (fiat) return { value: sats > 0 ? String(sats) : '', fiat: false };
   const amount = satsToFiat(sats, rate);
   return { value: amount > 0 ? amount.toFixed(2) : '', fiat: true };

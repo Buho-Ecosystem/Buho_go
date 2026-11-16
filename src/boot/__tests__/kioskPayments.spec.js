@@ -60,7 +60,7 @@ test('receiving cards does not weaken kiosk route restrictions, including cold s
     });
     boot({ router: { beforeEach: fn => { guard = fn; } } });
     assert.equal(guard({ path: '/kiosk' }), true);
-    for (const path of ['/wallet', '/settings', '/identity']) assert.deepEqual(guard({ path }), { path: '/kiosk' });
+    for (const path of ['/wallet', '/settings', '/identity', '/spark-setup', '/spark-restore', '/spark-success', '/nwc-setup', '/connect-wallet', '/nwc/connected', '/lnbits-setup', '/arkade-setup', '/arkade-restore']) assert.deepEqual(guard({ path }), { path: '/kiosk' });
   }
 });
 test('NFC toasts are translated, and a reader error never shows its own text', async () => {

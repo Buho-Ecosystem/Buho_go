@@ -133,6 +133,17 @@ test('a new intent is immediately cancelled while lock or kiosk suspension is ac
   assert.deepEqual(h.cancelled, [1, 2])
 })
 
+test('a verified register owner may review a withdrawal; relocking invalidates its uncommitted intent', () => {
+  const h = harness()
+  h.wallets.kioskOwnerAccess = true
+  h.wallets.kioskEnabled = true
+  h.flush()
+  assert.equal(h.flow.intent.id, 1)
+  h.wallets.kioskOwnerAccess = false
+  h.flush()
+  assert.equal(h.flow.intent, null)
+})
+
 test('the wallet page is fetched on its own, never with the layout that hosts contact payments', () => {
   assert.doesNotMatch(source, /import\s+\w+\s+from\s+['"][^'"]*pages\/Wallet\.vue['"]/)
   const h = harness()

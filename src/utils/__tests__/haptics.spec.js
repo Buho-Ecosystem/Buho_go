@@ -57,7 +57,7 @@ const EXPECTED = {
   'components/ReceiveModal.vue': ['success'], // a payment arrived
   'components/ScannerOverlay.vue': ['tap', 'tap'], // a code recognised (one-shot; a new code when scanning several)
   'components/SlideToSend.vue': ['medium', 'medium'], // the commit: the finger at the detent, or finish() for a flick or keyboard run
-  'pages/KioskDashboard.vue': ['error', 'medium', 'success', 'success'], // card failed, sale parked, sale paid, parked sale paid
+  'pages/KioskDashboard.vue': ['error', 'success'], // card failed; visible sale confirmed
   'pages/Settings.vue': ['tap'], // turning haptics on
   'pages/TransactionHistory.vue': ['tap'], // the Pay again swipe's threshold
   // Send failed (twice: a payment, an on-chain withdrawal), a card locked, a

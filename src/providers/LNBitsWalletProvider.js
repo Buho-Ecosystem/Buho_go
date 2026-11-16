@@ -390,7 +390,7 @@ export class LNBitsWalletProvider extends WalletProvider {
     return details.pending === false ? 'completed' : 'pending';
   }
 
-  async lookupInvoice(paymentHash) {
+  async lookupInvoice(paymentHash, { strict = false } = {}) {
     this._ensureConnected();
 
     try {
@@ -404,16 +404,19 @@ export class LNBitsWalletProvider extends WalletProvider {
       const details = response.details || response;
       const status = this._parsePaymentStatus(details.status, details.pending);
       const isPaid = response.paid === true || (response.paid !== false && status === 'completed');
-      const amount = details.amount ? Math.floor(Math.abs(details.amount) / 1000) : 0;
+      const amount = details.amount != null ? Math.floor(Math.abs(details.amount) / 1000) : undefined;
       const receiverFee = details.fee ? Math.floor(Math.abs(details.fee) / 1000) : 0;
 
       return {
         paid: isPaid,
         preimage: response.preimage || null,
         amount,
+        paymentHash: details.payment_hash || null,
+        transactionId: details.payment_hash || details.checking_id || null,
         ...(isPaid && receiverFee > 0 ? { receivedSats: Math.max(0, amount - receiverFee) } : {}),
       };
     } catch (error) {
+      if (strict) throw error;
       // Payment not found or error - assume not paid
       console.warn('lookupInvoice error:', error.message);
       return { paid: false };

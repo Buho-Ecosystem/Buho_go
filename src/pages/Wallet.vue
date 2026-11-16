@@ -477,8 +477,9 @@
            and the breakdown. The panel's gate blocks the slide until a
            quote is selected and the total fits the balance. Balance and
            quote belong to the wallet that pays, not necessarily the active one. -->
-      <template v-if="isSparkL1Payment" #extras>
+      <template v-if="isSparkL1Payment || paymentIntent?.context === 'kiosk-withdraw'" #extras>
         <OnchainFeePanel
+          v-if="isSparkL1Payment"
           :amount-sats="sendSheetAmountSats"
           :address="l1DestinationAddress"
           :available-balance="sendingWalletBalance ?? 0"
@@ -488,6 +489,10 @@
           @update:fee="l1Fee = $event"
           @use-max="$refs.sendSheetRef?.setAmountSats($event)"
         />
+        <div v-else-if="paymentSheetProps?.amount?.mode !== 'fixed'" class="kiosk-withdraw-max">
+          <q-btn v-if="kioskWithdrawalMax !== null" flat no-caps :label="$t('Max after fees')" :disable="isSendingPayment" @click="applyKioskWithdrawalMax" />
+          <p>{{ kioskWithdrawalMax !== null ? $t('The fee allowance stays in your wallet. Review the final amount before sending.') : $t('This wallet cannot guarantee a full-balance withdrawal. Leave room for fees.') }}</p>
+        </div>
       </template>
     </PaymentConfirmSheet>
 
@@ -685,6 +690,7 @@
 </template>
 
 <script>
+import { boundedPaymentMax } from '../utils/paymentMax.js';
 import { offerAddressRequest } from '../services/addressRequestIntake.js';
 import { assertPaymentInput } from '../utils/lud23.js';
 import { withdrawInfo, withdrawRecipient, isCardRequest, isCardLink, withdrawLinkHost } from '../utils/lnurlWithdraw.js';
@@ -1107,6 +1113,14 @@ export default {
     };
   },
   computed: {
+    kioskWithdrawalMax() {
+      if (this.paymentIntent?.context !== 'kiosk-withdraw' || this.paymentSheetProps?.payoutCurrency) return null;
+      return boundedPaymentMax(this.sendingWalletBalance, {
+        walletType: this.getSendingWalletType(),
+        destinationType: this.pendingDestinationType,
+        recipientMax: this.paymentSheetProps?.amount?.maxSats,
+      });
+    },
     contextualPaymentSheet() {
       if (!this.paymentOnly || this.preparationState === 'ready') return this.paymentSheetProps;
       const intent = this.paymentIntent || {};
@@ -2760,6 +2774,16 @@ export default {
     },
   },
   methods: {
+    async applyKioskWithdrawalMax() {
+      if (this.isSendingPayment || this.paymentIntent?.context !== 'kiosk-withdraw') return;
+      const walletId = this.getSendingWallet()?.id;
+      const intentId = this.paymentIntent.id;
+      try {
+        await this.walletStore.refreshBalance(walletId);
+        if (this.isSendingPayment || !this.paymentFlow.isCurrent(intentId) || this.getSendingWallet()?.id !== walletId) return;
+        if (this.kioskWithdrawalMax !== null) this.$refs.sendSheetRef?.setAmountSats(this.kioskWithdrawalMax);
+      } catch { this.$q.notify({ type: 'negative', message: this.$t('Could not refresh the balance. Try again.') }); }
+    },
     /**
      * A payment is being confirmed or sent (the business check before the
      * slide commits, the confirm itself, the wallet's send). From here to
@@ -2814,8 +2838,11 @@ export default {
         if (!this.isContextualAttemptCurrent(attempt)) return;
         const target = { ...intent, ...resolved };
         if (!target.address) throw new Error('Missing destination');
-        const types = { spark: 'spark_address', arkade: 'arkade_address', bitcoin: 'bitcoin_address', lightning: 'lightning_address', lnurl: 'lnurl', invoice: 'lightning_invoice' };
+        const types = { spark: 'spark_address', arkade: 'arkade_address', bitcoin: 'bitcoin_address', lightning: 'lightning_address', lnurl: 'lnurl', invoice: 'lightning_invoice', nostr: 'nostr_identifier' };
         await this.onPaymentDetected({
+          // Keep parsed request amounts and verification parameters from the
+          // shared destination chooser; these remain subject to its pipeline.
+          ...(target.context === 'kiosk-withdraw' ? target.paymentData : {}),
           type: types[target.addressType] || 'lightning_address', data: target.address,
           contactName: target.name || null, paymentOnly: true,
           sendingWalletId: target.walletId || null,

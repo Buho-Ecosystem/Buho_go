@@ -25,11 +25,6 @@ export default boot(({ router }) => {
 
     if (!kioskLocked) return true
 
-    // Kiosk is locked — only allow setup routes
-    const setupRoutes = ['/spark-setup', '/spark-restore', '/spark-success',
-      '/nwc-setup', '/connect-wallet', '/nwc/connected', '/lnbits-setup', '/arkade-setup', '/arkade-restore']
-    if (setupRoutes.includes(to.path)) return true
-
     return { path: '/kiosk' }
   })
 })

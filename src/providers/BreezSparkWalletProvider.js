@@ -756,11 +756,11 @@ export class BreezSparkWalletProvider extends WalletProvider {
     const amountSats = Number(amount) > 0 ? Math.round(Number(amount)) : undefined;
 
     try {
-      const response = await this._withTransportRetry(() =>
-        this.sdk.receivePayment({
-          paymentMethod: bolt11ReceiveMethod({ description: memo, amountSats, expiry })
-        })
-      );
+      // A lost reply does not prove that no invoice was created. Let the caller
+      // retain the unresolved intent instead of silently minting another request.
+      const response = await this.sdk.receivePayment({
+        paymentMethod: bolt11ReceiveMethod({ description: memo, amountSats, expiry })
+      });
 
       const paymentRequest = response?.paymentRequest;
       if (!paymentRequest) {
@@ -805,16 +805,19 @@ export class BreezSparkWalletProvider extends WalletProvider {
    * invoice can settle over Lightning OR as a native Spark transfer, so both
    * detail arms are checked. Scans newest-first with paging.
    */
-  async _findReceiveByHash(paymentHash, { maxPages = 3, pageSize = 100 } = {}) {
+  async _findReceiveByHash(paymentHash, { maxPages = 3, pageSize = 100, createdAt } = {}) {
     const record = breezSdk.getInvoiceRecord(paymentHash);
+    const savedCreation = Number.isSafeInteger(createdAt) && createdAt > 0 ? Math.floor(createdAt / 1000) : null;
     // Without a record (foreign restart, pre-persistence invoice) bound the
     // scan to the last 24h - the maximum invoice lifetime this engine mints -
     // instead of walking the whole history every poll tick.
-    const fromTimestamp = record?.createdAt
-      ? record.createdAt - 60
+    const fromTimestamp = savedCreation || record?.createdAt
+      ? Math.max(0, (savedCreation || record.createdAt) - 60)
       : Math.floor(Date.now() / 1000) - 24 * 60 * 60;
-
-    for (let page = 0; page < maxPages; page++) {
+    // Durable register requests may settle after a restart or after newer pages.
+    // Preserve the bounded legacy read when the caller has no creation context.
+    const pages = savedCreation ? Number.MAX_SAFE_INTEGER : maxPages;
+    for (let page = 0; page < pages; page++) {
       const response = await this.sdk.listPayments({
         typeFilter: ['receive'],
         fromTimestamp,
@@ -823,7 +826,7 @@ export class BreezSparkWalletProvider extends WalletProvider {
         sortAscending: false,
       });
       const payments = response?.payments || [];
-      const match = payments.find((p) => paymentHashOf(p) === paymentHash);
+      const match = payments.find((p) => String(paymentHashOf(p) || '').toLowerCase() === String(paymentHash).toLowerCase());
       if (match) return match;
       if (payments.length < pageSize) return null;
     }
@@ -867,7 +870,7 @@ export class BreezSparkWalletProvider extends WalletProvider {
     }
   }
 
-  async lookupInvoice(paymentHash) {
+  async lookupInvoice(paymentHash, options = {}) {
     this._ensureConnected();
 
     try {
@@ -875,7 +878,7 @@ export class BreezSparkWalletProvider extends WalletProvider {
       let payment = null;
 
       if (isHash) {
-        payment = await this._findReceiveByHash(paymentHash);
+        payment = await this._findReceiveByHash(paymentHash, options);
       } else if (paymentHash) {
         try {
           const response = await this.sdk.getPayment({ paymentId: paymentHash });
@@ -892,9 +895,13 @@ export class BreezSparkWalletProvider extends WalletProvider {
       return {
         paid: true,
         preimage: arm?.htlcDetails?.preimage || null,
-        amount: Number(payment.amount)
+        amount: Number(payment.amount) + Number(payment.fees || 0),
+        ...(Number(payment.fees) > 0 ? { receivedSats: Number(payment.amount) } : {}),
+        paymentHash: paymentHashOf(payment),
+        transactionId: payment.id,
       };
     } catch (error) {
+      if (options.strict) throw error;
       // Transport/connection failures must PROPAGATE - PaymentMonitor bails
       // out after consecutive throws, and a swallowed error would keep a
       // dead wallet "waiting for payment" for the full poll budget.
