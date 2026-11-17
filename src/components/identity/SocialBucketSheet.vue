@@ -45,7 +45,7 @@
           </span>
           <span class="sb-balance-copy">
             <small>{{ bucket.hasBalance ? $t('Ready to move') : $t('Social Bucket') }}</small>
-            <strong>{{ formatSats(bucket.balanceSats) }} <em>{{ $t('sats') }}</em></strong>
+            <strong>{{ formatSats(bucket.balanceSats) }}</strong>
           </span>
         </div>
         <p class="sb-lede">{{ $t('Payments to your name land here first.') }}</p>
@@ -76,7 +76,7 @@
             <span class="sb-wallet-icon"><Icon :icon="walletIcon(selectedWallet.type)" width="20" height="20" /></span>
             <span class="sb-wallet-copy">
               <strong>{{ selectedWallet.name }}</strong>
-              <small>{{ formatSats(selectedWallet.balance) }} {{ $t('sats') }}</small>
+              <small>{{ formatSats(selectedWallet.balance) }}</small>
             </span>
             <span v-if="wallets.length === 1" class="sb-selected-mark"><Icon icon="tabler:check" width="17" height="17" /></span>
             <Icon
@@ -115,7 +115,7 @@
                 <span class="sb-wallet-icon"><Icon :icon="walletIcon(wallet.type)" width="18" height="18" /></span>
                 <span class="sb-wallet-copy">
                   <strong>{{ wallet.name }}</strong>
-                  <small v-if="wallet.canReceive">{{ formatSats(wallet.balance) }} {{ $t('sats') }}</small>
+                  <small v-if="wallet.canReceive">{{ formatSats(wallet.balance) }}</small>
                   <small v-else>{{ $t("Can't receive") }}</small>
                 </span>
                 <Icon v-if="wallet.id === selectedWalletId" icon="tabler:check" width="18" height="18" class="sb-option-check" />
@@ -307,8 +307,9 @@ export default {
   },
 
   methods: {
-    formatSats(n) {
-      return new Intl.NumberFormat().format(Math.max(0, Math.floor(n || 0)));
+    /** An amount with its unit, as Settings writes it: "₿ 1,234" or "1,234 sats". */
+    formatSats(n, sign = '') {
+      return formatAmountWithPrefix(Math.max(0, Math.floor(Number(n) || 0)), this.walletStore.useBip177Format !== false, sign);
     },
 
     walletIcon(type) {
@@ -371,7 +372,7 @@ export default {
 
         this.$q.notify({
           type: 'positive',
-          message: this.$t('{n} sats moved to {wallet}', {
+          message: this.$t('{n} moved to {wallet}', {
             n: this.formatSats(result.moved),
             wallet: walletName,
           }),

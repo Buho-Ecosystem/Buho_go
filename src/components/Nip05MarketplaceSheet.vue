@@ -45,7 +45,7 @@
             <tbody>
               <tr v-for="tier in pricingRows" :key="tier.id">
                 <th scope="row">{{ tier.label }}</th>
-                <td>{{ formatSats(tier.priceSats) }} {{ $t('sats') }}</td>
+                <td>{{ formatSats(tier.priceSats) }}</td>
               </tr>
             </tbody>
           </table>
@@ -151,7 +151,7 @@
                     >
                       <q-item-section>
                         <q-item-label>{{ wallet.name }}</q-item-label>
-                        <q-item-label caption>{{ formatSats(wallet.balance) }} {{ $t('sats') }}</q-item-label>
+                        <q-item-label caption>{{ formatSats(wallet.balance) }}</q-item-label>
                       </q-item-section>
                       <q-item-section v-if="wallet.id === selectedWalletId" side>
                         <Icon icon="tabler:check" width="16" height="16" />
@@ -219,7 +219,7 @@
             @click="getWithWallet"
           >
             <q-spinner v-if="busy" size="18px" />
-            <span v-else>{{ $t('Get it for {sats} sats', { sats: formatSats(totalSats) }) }}</span>
+            <span v-else>{{ $t('Get it for {sats}', { sats: formatSats(totalSats) }) }}</span>
           </button>
           <button
             v-else-if="primaryAction === 'external'"
@@ -388,7 +388,7 @@ export default {
         case 'mine': return this.$t('Already yours');
         case 'unavailable': return this.$t('Not available');
         case 'available':
-          return this.$t('Available · {sats} sats a year', { sats: this.formatSats(this.lookup.pricePerYear) });
+          return this.$t('Available · {sats} a year', { sats: this.formatSats(this.lookup.pricePerYear) });
         default: return this.$t('Type a name to check it.');
       }
     },
@@ -434,8 +434,8 @@ export default {
       const until = formatCalendarDate(expiresAtFor(Date.now(), this.years), this.$i18n.locale);
       const fiat = this.fiatFor(this.totalSats);
       const total = fiat
-        ? this.$t('{sats} sats · about {fiat}', { sats: this.formatSats(this.totalSats), fiat })
-        : this.$t('{sats} sats', { sats: this.formatSats(this.totalSats) });
+        ? this.$t('{sats} · about {fiat}', { sats: this.formatSats(this.totalSats), fiat })
+        : this.formatSats(this.totalSats);
       return this.$t('{years}, until {date} · {total}', { years: this.yearsLabel, date: until, total });
     },
 
@@ -473,7 +473,7 @@ export default {
 
     selectedWalletLabel() {
       const wallet = this.selectedWallet;
-      return wallet ? `${wallet.name} · ${this.formatSats(wallet.balance)} ${this.$t('sats')}` : '';
+      return wallet ? `${wallet.name} · ${this.formatSats(wallet.balance)}` : '';
     },
 
     /** 'use' | 'get' | 'external' | '' (disabled) */

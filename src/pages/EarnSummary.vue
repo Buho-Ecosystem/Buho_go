@@ -112,7 +112,7 @@
             <div class="info-item">
               <div class="info-item-icon"><Icon icon="tabler:coin" width="18" height="18" /></div>
               <div class="info-item-text" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'">
-                {{ $t('You can claim once you reach 25 sats') }}
+                {{ $t('You can claim once you reach {amount}', { amount: amountText(25) }) }}
               </div>
             </div>
             <div class="info-item">
@@ -130,7 +130,7 @@
       <div class="payout-progress-card" :class="$q.dark.isActive ? 'stat-dark' : 'stat-light'">
         <div class="payout-progress-info">
           <span class="payout-progress-value" :class="$q.dark.isActive ? 'text-white' : 'text-dark'">
-            {{ earnStore.pendingSats }} {{ $t('sats') }}
+            {{ amountText(earnStore.pendingSats) }}
           </span>
           <span v-if="!earnStore.canClaim" class="payout-progress-hint">
             {{ earnStore.payoutThreshold - earnStore.pendingSats }} {{ $t('more to go') }}
@@ -147,7 +147,7 @@
           unelevated no-caps
           :label="earnStore.isOnCooldown
             ? $t('Wait {mins} min', { mins: Math.ceil(earnStore.claimCooldownRemaining / 60000) })
-            : $t('Claim {amount} sats', { amount: earnStore.claimableAmount })"
+            : $t('Claim {amount}', { amount: amountText(earnStore.claimableAmount) })"
           class="claim-btn"
           :class="$q.dark.isActive ? 'dialog_add_btn_dark' : 'dialog_add_btn_light'"
           :loading="isClaiming"
@@ -226,6 +226,7 @@
 <script>
 import { useEarnStore, isPayoutsPaused } from '../stores/earn'
 import { useWalletStore } from '../stores/wallet'
+import { formatAmount } from '../utils/amountFormatting.js'
 import { findEarnPayoutWallet, getEarnPayoutWallets } from '../utils/earnWallets'
 import EarnBottomNav from '../components/EarnBottomNav.vue'
 
@@ -256,6 +257,10 @@ export default {
     await this.earnStore.initialize()
   },
   methods: {
+    /** An amount with its unit, as Settings writes it: "₿ 1,234" or "1,234 sats". */
+    amountText(sats) {
+      return formatAmount(sats || 0, this.walletStore.useBip177Format !== false)
+    },
     getGroupProgress(groupId) {
       return this.earnStore.groupProgress(groupId)
     },
@@ -282,7 +287,7 @@ export default {
         if (result.success) {
           this.$q.notify({
             type: 'positive',
-            message: this.$t('{amount} sats claimed!', { amount: result.amount }),
+            message: this.$t('{amount} claimed!', { amount: this.amountText(result.amount) }),
           })
         } else if (result.error === 'cooldown') {
           this.$q.notify({
@@ -330,7 +335,7 @@ export default {
         if (result.success) {
           this.$q.notify({
             type: 'positive',
-            message: this.$t('Bonus claimed! {amount} sats earned', { amount: result.totalPayout }),
+            message: this.$t('Bonus claimed! {amount} earned', { amount: this.amountText(result.totalPayout) }),
           })
         } else if (result.error === 'cooldown') {
           // The bonus is cooldown-exempt on both sides, so this only fires if

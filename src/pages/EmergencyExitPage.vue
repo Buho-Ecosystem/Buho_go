@@ -25,7 +25,7 @@
             <template #trailing><span class="exit-figure">{{ sats(triage.fundingSat) }}</span></template>
           </IdentityRow>
           <IdentityRow :label="$t('Taken from the amount')" :caption="$t('The final transaction pays its own fee.')" wrap :interactive="false" :chevron="false">
-            <template #trailing><span class="exit-figure">{{ $t('about {amount} sats', { amount: num(triage.sweepFeeSat) }) }}</span></template>
+            <template #trailing><span class="exit-figure">{{ $t('about {amount}', { amount: sats(triage.sweepFeeSat) }) }}</span></template>
           </IdentityRow>
           <IdentityRow :label="$t('Not worth moving')" :caption="$t('They stay in this Spark wallet and can be spent normally if Spark comes back.')" wrap :interactive="false" :chevron="false">
             <template #trailing><span class="exit-figure">{{ sats(triage.notWorthSat) }}</span></template>
@@ -33,7 +33,7 @@
           <IdentityRow :label="$t('Arrives as plain Bitcoin')" :caption="shortAddress(destinationAddress)" mono :chevron="false" @click="openDestination">
             <template #trailing>
               <span class="exit-change">{{ $t('Change') }}</span>
-              <span class="exit-figure exit-figure--strong">{{ $t('about {amount} sats', { amount: num(triage.arrivesSat) }) }}</span>
+              <span class="exit-figure exit-figure--strong">{{ $t('about {amount}', { amount: sats(triage.arrivesSat) }) }}</span>
             </template>
           </IdentityRow>
         </IdentityGroup>
@@ -45,7 +45,7 @@
 
         <p v-if="legacyFundingNote" class="exit-note">{{ legacyFundingNote }}</p>
 
-        <p v-if="triage.fundingSat > 0" class="exit-note exit-note--center">{{ $t('You will need about {amount} sats of on-chain Bitcoin from another wallet to pay the fees.', { amount: num(triage.fundingSat) }) }}</p>
+        <p v-if="triage.fundingSat > 0" class="exit-note exit-note--center">{{ $t('You will need about {amount} in on-chain Bitcoin from another wallet to pay the fees.', { amount: sats(triage.fundingSat) }) }}</p>
         <p v-if="startError" class="exit-error" role="alert">{{ startError }}</p>
         <button type="button" class="btn-primary" :disabled="!canStart" @click="start">{{ $t('Start emergency exit') }}</button>
         <p class="exit-hint">{{ $t('Starting is free and can be cancelled before anything is sent.') }}</p>
@@ -124,14 +124,14 @@
             </div>
             <div>
               <dt>{{ $t('Fee money used') }}</dt>
-              <dd>{{ $t('about {amount} sats', { amount: num(exit.quote.singleUtxoFundingSat) }) }}</dd>
+              <dd>{{ $t('about {amount}', { amount: sats(exit.quote.singleUtxoFundingSat) }) }}</dd>
             </div>
             <div>
               <dt>{{ $t('Taken from the amount') }}</dt>
-              <dd>{{ $t('about {amount} sats', { amount: num(confirmSweepFeeSat) }) }}</dd>
+              <dd>{{ $t('about {amount}', { amount: sats(confirmSweepFeeSat) }) }}</dd>
             </div>
           </dl>
-          <p v-if="fundingExcessSat > 0" class="exit-confirm-extra">{{ $t('{amount} sats of extra fee money may also be spent on fees.', { amount: num(fundingExcessSat) }) }}</p>
+          <p v-if="fundingExcessSat > 0" class="exit-confirm-extra">{{ $t('{amount} of extra fee money may also be spent on fees.', { amount: sats(fundingExcessSat) }) }}</p>
           <div class="exit-confirm-warning">
             <strong id="exit-confirm-warning">{{ $t('Once sent, this cannot be stopped.') }}</strong>
             <p>{{ $t('It takes about two weeks') }}</p>
@@ -185,6 +185,7 @@ import IdentityGroup from '../components/identity/IdentityGroup.vue';
 import IdentityRow from '../components/identity/IdentityRow.vue';
 import HowExitWorksSheet from '../components/exit/HowExitWorksSheet.vue';
 import { useWalletStore } from '../stores/wallet';
+import { formatAmount } from '../utils/amountFormatting.js';
 import { useExitKitStore } from '../stores/exitKit';
 import { useEmergencyExitStore } from '../stores/emergencyExit';
 import { exitDriver } from '../services/emergencyExit.js';
@@ -284,12 +285,12 @@ export default {
      */
     legacyFundingNote() {
       if (!(this.legacyFundingSat > 0) || !this.kit?.legacyFundingAddress) return '';
-      const amount = this.num(this.legacyFundingSat);
+      const amount = this.sats(this.legacyFundingSat);
       const address = shortAddress(this.kit.legacyFundingAddress);
       const owner = this.wallet.sparkWallets.find(w => w.id !== this.walletId && sparkAccountNumberOf(w) === 1);
       return owner
-        ? this.$t('{amount} sats of fee money from an earlier exit are at {address}. That address now pays for the emergency exit of {wallet}, and any Bitcoin wallet restoring your recovery words finds the money.', { amount, address, wallet: owner.name })
-        : this.$t('{amount} sats of fee money from an earlier exit are at {address}. Any Bitcoin wallet restoring your recovery words finds the money.', { amount, address });
+        ? this.$t('{amount} of fee money from an earlier exit is at {address}. That address now pays for the emergency exit of {wallet}, and any Bitcoin wallet restoring your recovery words finds the money.', { amount, address, wallet: owner.name })
+        : this.$t('{amount} of fee money from an earlier exit is at {address}. Any Bitcoin wallet restoring your recovery words finds the money.', { amount, address });
     },
     quoteFooter() {
       const when = this.kit?.checkedAt ? this.relativeDay(this.kit.checkedAt) : '';
@@ -312,21 +313,21 @@ export default {
     lastFinished() {
       const exit = this.exit;
       if (!exit || exit.stage !== 'done' || !exit.acknowledgedAt) return '';
-      return this.$t('Last exit finished {date}: {amount} sats to {address}', { date: this.day(exit.doneAt), amount: this.num(arrivedSat(exit)), address: shortAddress(exit.destination.address) });
+      return this.$t('Last exit finished {date}: {amount} to {address}', { date: this.day(exit.doneAt), amount: this.sats(arrivedSat(exit)), address: shortAddress(exit.destination.address) });
     },
     fundingHeadline() {
       const funding = this.exit?.funding;
       if (!funding) return '';
-      if (funding.confirmedSat > 0 && funding.shortfallSat > 0) return this.$t('Send {amount} sats more to this address.', { amount: this.num(funding.shortfallSat) });
-      return this.$t('Send exactly {amount} sats to this address. It pays the network fees. Anything extra may also go to fees.', { amount: this.num(funding.requiredSat) });
+      if (funding.confirmedSat > 0 && funding.shortfallSat > 0) return this.$t('Send {amount} more to this address.', { amount: this.sats(funding.shortfallSat) });
+      return this.$t('Send exactly {amount} to this address. It pays the network fees. Anything extra may also go to fees.', { amount: this.sats(funding.requiredSat) });
     },
     fundingStatus() {
       const funding = this.exit?.funding;
       if (!funding) return '';
       const seen = funding.utxos.filter(u => !u.confirmed).reduce((sum, u) => sum + u.value, 0);
       let line;
-      if (funding.confirmedSat > 0 && funding.shortfallSat > 0) line = this.$t('{confirmed} sats confirmed · {shortfall} sats more needed', { confirmed: this.num(funding.confirmedSat), shortfall: this.num(funding.shortfallSat) });
-      else if (seen > 0) line = this.$t('{amount} sats seen, waiting for one confirmation.', { amount: this.num(seen) });
+      if (funding.confirmedSat > 0 && funding.shortfallSat > 0) line = this.$t('{confirmed} confirmed · {shortfall} more needed', { confirmed: this.sats(funding.confirmedSat), shortfall: this.sats(funding.shortfallSat) });
+      else if (seen > 0) line = this.$t('{amount} seen, waiting for one confirmation.', { amount: this.sats(seen) });
       else line = this.$t('Waiting for the fee money to arrive.');
       return `${line} ${this.$t('Continues each time you open BuhoGO.')}`;
     },
@@ -358,7 +359,7 @@ export default {
         }
         if (state === 'none') return { icon: 'tabler:fire-extinguisher', tone: 'neutral', title: t('Exit kit not checked yet'), text: t('Checking now.') };
         if (this.triage.recoverableSat <= 0) {
-          if (this.triage.notWorthSat > 0) return { icon: 'tabler:coins', tone: 'neutral', title: t('Nothing worth moving at today\'s fees'), text: `${t('{amount} sats are here, but each piece costs more to move than it is worth.', { amount: this.num(this.triage.notWorthSat) })} ${t('They stay in this Spark wallet and can be spent normally if Spark comes back.')}` };
+          if (this.triage.notWorthSat > 0) return { icon: 'tabler:coins', tone: 'neutral', title: t('Nothing worth moving at today\'s fees'), text: `${t('{amount} is here, but each piece costs more to move than it is worth.', { amount: this.sats(this.triage.notWorthSat) })} ${t('They stay in this Spark wallet and can be spent normally if Spark comes back.')}` };
           return { icon: 'tabler:wallet', tone: 'neutral', title: t('This wallet is empty'), text: t('There is nothing to move.') };
         }
         const at = this.kit.checkedAt || this.kit.exportedAt;
@@ -373,7 +374,7 @@ export default {
           : { icon: 'tabler:fire-extinguisher', tone: 'accent', title: t('Signed, sending the first transaction'), text: t('Continues each time you open BuhoGO.') };
         case 'unlock': return { icon: 'tabler:calendar-time', tone: 'accent', title: t('Unlocks around {date}', { date: this.day(exit.unlock?.estimatedAt) }), text: this.unlockNote };
         case 'sweep': return { icon: 'tabler:fire-extinguisher', tone: 'accent', title: t('Unlocked, sending the last transaction'), text: t('Waiting for its confirmation.') };
-        default: return { icon: 'tabler:check', tone: 'accent', title: t('Your money is plain Bitcoin now'), text: t('{amount} sats arrived on {date}.', { amount: this.num(arrivedSat(exit)), date: this.day(exit.doneAt) }) };
+        default: return { icon: 'tabler:check', tone: 'accent', title: t('Your money is plain Bitcoin now'), text: t('{amount} arrived on {date}.', { amount: this.sats(arrivedSat(exit)), date: this.day(exit.doneAt) }) };
       }
     },
     stages() {
@@ -388,11 +389,11 @@ export default {
         : exit.stage === 'sweep' ? (sweepSent ? t('Final transaction sent, waiting for confirmation') : t('Unlocked'))
           : exit.stage === 'done' && exit.unlock ? this.day(exit.unlock.estimatedAt) : '';
       const items = [
-        { key: 'check', name: t('Check'), summary: t('{amount} sats can leave · {dust} sats stay', { amount: this.num(exit.triage.recoverableSat), dust: this.num(exit.triage.notWorthSat) }) },
-        { key: 'fund', name: t('Add fee money'), summary: exit.funding.confirmedAt ? t('{amount} sats confirmed', { amount: this.num(exit.funding.confirmedSat) }) : '' },
+        { key: 'check', name: t('Check'), summary: t('{amount} can leave · {dust} stays', { amount: this.sats(exit.triage.recoverableSat), dust: this.sats(exit.triage.notWorthSat) }) },
+        { key: 'fund', name: t('Add fee money'), summary: exit.funding.confirmedAt ? t('{amount} confirmed', { amount: this.sats(exit.funding.confirmedSat) }) : '' },
         { key: 'send', name: t('Send to Bitcoin'), summary: index >= 2 ? t('{confirmed} of {total} transactions confirmed', { confirmed: progress.confirmed, total: progress.total }) : '' },
         { key: 'unlock', name: t('Unlocking'), summary: unlockSummary },
-        { key: 'done', name: t('Done'), summary: exit.stage === 'done' ? t('Fee money used {funding} sats · From the amount {sweep} sats · Left in Spark {dust} sats', { funding: this.num(exit.quote.singleUtxoFundingSat), sweep: this.num(sweepFeeSat(exit)), dust: this.num(exit.triage.notWorthSat) }) : '' },
+        { key: 'done', name: t('Done'), summary: exit.stage === 'done' ? t('Fee money used {funding} · From the amount {sweep} · Left in Spark {dust}', { funding: this.sats(exit.quote.singleUtxoFundingSat), sweep: this.sats(sweepFeeSat(exit)), dust: this.sats(exit.triage.notWorthSat) }) : '' },
       ];
       return items.map((item, i) => ({ ...item, state: exit.stage === 'done' ? 'done' : i < index ? 'done' : i === index ? 'current' : 'upcoming' }));
     },
@@ -421,7 +422,8 @@ export default {
       return day === this.$t('today') ? `${day} ${formatTime(at, this.$i18n.locale)}` : day;
     },
     num(value) { return formatSats(value, this.$i18n.locale); },
-    sats(value) { return `${this.num(value)} sats`; },
+    /** An amount with its unit, as Settings writes it: "₿ 1,234" or "1,234 sats". */
+    sats(value) { return formatAmount(Math.round(Number(value) || 0), this.wallet.useBip177Format !== false); },
     day(timestamp) { return timestamp ? formatDay(timestamp, this.$i18n.locale) : ''; },
     relativeDay(timestamp) { return relativeDay(timestamp, this.tr, this.$i18n.locale); },
     refreshKit() {
@@ -447,7 +449,7 @@ export default {
       switch (code) {
         case 'NOT_CONNECTED': return this.$t('Switch to {wallet} on the home screen to connect it, then come back here.', { wallet: this.walletName });
         case 'NOTHING_TO_EXIT': return this.$t('Nothing worth moving at today\'s fees');
-        case 'MORE_FEE_MONEY': return this.$t('Fees rose. {amount} sats more fee money is needed.', { amount: this.num(this.exit?.funding?.shortfallSat || 0) });
+        case 'MORE_FEE_MONEY': return this.$t('Fees rose. {amount} more fee money is needed.', { amount: this.sats(this.exit?.funding?.shortfallSat || 0) });
         case 'DESTINATION_NOT_ONCHAIN': return this.$t('Not a Bitcoin address');
         case 'DESTINATION_WRONG_NETWORK': return this.$t('This address belongs to another network.');
         case 'DESTINATION_SPARK_DEPOSIT': return this.$t('This is a Spark deposit address. It would send the money back into Spark.');
@@ -486,7 +488,7 @@ export default {
     cancel() {
       const funding = this.exit?.funding;
       const message = funding?.confirmedSat > 0
-        ? this.$t('{amount} sats of fee money stay at {address} and belong to your recovery words. Start again any time to reuse them.', { amount: this.num(funding.confirmedSat), address: shortAddress(funding.address) })
+        ? this.$t('{amount} of fee money stays at {address} and belongs to your recovery words. Start again any time to reuse it.', { amount: this.sats(funding.confirmedSat), address: shortAddress(funding.address) })
         : this.$t('Nothing has been sent or spent.');
       this.$q.dialog({
         title: this.$t('Cancel emergency exit?'),

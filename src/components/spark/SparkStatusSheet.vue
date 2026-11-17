@@ -75,7 +75,8 @@ import { LEVEL } from '../../utils/sparkReachability.js'
 import { checkSparkNow } from '../../services/sparkReachabilityCheck.js'
 import { useExitKitStore } from '../../stores/exitKit'
 import { useWalletStore } from '../../stores/wallet'
-import { formatSats, formatTime, relativeDay } from '../../composables/useExitFormat.js'
+import { formatTime, relativeDay } from '../../composables/useExitFormat.js'
+import { formatAmount } from '../../utils/amountFormatting.js'
 
 const props = defineProps({
   modelValue: { type: Boolean, default: false },
@@ -156,7 +157,7 @@ const exit = computed(() => {
   const worth = (kit.recoverableSat || 0) > fee && (kit.arrivesSat || 0) > 0
   const cost = wallets.balanceHidden
     ? t('About 2 weeks')
-    : t('2 weeks · about {amount} sats in fees', { amount: formatSats(fee, locale()) })
+    : t('2 weeks · about {amount} in fees', { amount: formatAmount(Math.round(fee), wallets.useBip177Format !== false) })
   return { worth, cost }
 })
 

@@ -12,6 +12,8 @@
  * message, so they are recognised by message.
  */
 
+import { formatAmount } from './amountFormatting.js';
+
 /** Codes BuhoGO itself raises around NWC. */
 export const NWC_ERROR = Object.freeze({
   NO_ANSWER: 'NWC_NO_ANSWER',
@@ -124,9 +126,9 @@ function dayOf(ms, locale) {
  *
  * @param {Error} error
  * @param {Function} t vue-i18n translate
- * @param {{ walletName?: string, locale?: string }} [ctx]
+ * @param {{ walletName?: string, locale?: string, useBip177Format?: boolean }} [ctx]
  */
-export function nwcErrorText(error, t, { walletName = '', locale } = {}) {
+export function nwcErrorText(error, t, { walletName = '', locale, useBip177Format = true } = {}) {
   const wallet = walletName || t('your wallet app');
   switch (error?.code) {
     case 'QUOTA_EXCEEDED':
@@ -134,8 +136,8 @@ export function nwcErrorText(error, t, { walletName = '', locale } = {}) {
       return t('This payment is over what this connection may spend right now. Pay less, or raise the limit in {wallet}.', { wallet });
     case NWC_ERROR.LIMIT_TOO_LOW:
       return error.renewsAt
-        ? t('This connection has {amount} sats left until {date}. Raise the limit in {wallet}, or pay less.', { amount: Number(error.remainingSats || 0).toLocaleString(locale), date: dayOf(error.renewsAt, locale), wallet })
-        : t('This connection has {amount} sats left. Raise the limit in {wallet}, or pay less.', { amount: Number(error.remainingSats || 0).toLocaleString(locale), wallet });
+        ? t('This connection has {amount} left until {date}. Raise the limit in {wallet}, or pay less.', { amount: formatAmount(Number(error.remainingSats || 0), useBip177Format), date: dayOf(error.renewsAt, locale), wallet })
+        : t('This connection has {amount} left. Raise the limit in {wallet}, or pay less.', { amount: formatAmount(Number(error.remainingSats || 0), useBip177Format), wallet });
     case 'RESTRICTED':
       return t('{wallet} does not allow this connection to do that. Change it in {wallet}.', { wallet });
     case NWC_ERROR.RECEIVE_NOT_ALLOWED:

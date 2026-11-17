@@ -21,7 +21,7 @@
         type="button"
         class="amount-keypad__kiosk-value"
         :disabled="disabled"
-        :aria-label="`${kioskNumber} ${fiat ? fiatLabel : 'sats'}. ${$t('Enter the amount in {unit}', { unit: otherUnit })}`"
+        :aria-label="`${kioskNumber} ${fiat ? fiatLabel : bitcoinUnit}. ${$t('Enter the amount in {unit}', { unit: otherUnit })}`"
         @click="swap"
       >
         <span class="amount-keypad__currency">{{ kioskPrefix }}</span>
@@ -35,7 +35,7 @@
         :style="{ fontSize: primaryFontSize }"
         aria-live="polite"
       >
-        {{ primary }}<span v-if="!fiat" class="amount-keypad__suffix">sats</span>
+        {{ primary }}<span v-if="!fiat && !bip177" class="amount-keypad__suffix">sats</span>
       </div>
       <button
         v-if="presentation !== 'kiosk'"
@@ -77,6 +77,7 @@ import { Icon } from '@iconify/vue';
 import { applyKeypadKey, groupFiatInput, keypadSats, satsToFiat, swapKeypadUnit } from '../utils/amountKeypad.js';
 import { fiatSymbol as fiatSymbolFor } from '../utils/fiatCurrencies.js';
 import { fiatRatesService } from '../utils/fiatRates.js';
+import { formatPaymentAmount } from '../utils/amountFormatting.js';
 
 const props = defineProps({
   /** The raw typed value, in the unit `fiat` names. */
@@ -101,16 +102,18 @@ const emit = defineEmits(['update:modelValue', 'update:fiat', 'edit', 'swap-unit
 const sats = computed(() => props.exactSats ?? keypadSats(props.modelValue, { fiat: props.fiat, rate: props.fiatRate }));
 const keys = computed(() => ['1', '2', '3', '4', '5', '6', '7', '8', '9', props.fiat ? '.' : '000', '0', 'del']);
 const fiatLabel = computed(() => props.fiatCode.toUpperCase());
-const otherUnit = computed(() => (props.fiat ? 'sats' : fiatLabel.value));
+// The Bitcoin side follows the app's format: "₿ 2,500" or "2,500 sats".
+const bitcoinUnit = computed(() => (props.bip177 ? 'Bitcoin' : 'sats'));
+const otherUnit = computed(() => (props.fiat ? bitcoinUnit.value : fiatLabel.value));
 const numberLocale = computed(() => props.locale || 'en-US');
 const decimalSeparator = computed(() => new Intl.NumberFormat(numberLocale.value).formatToParts(1.1).find(part => part.type === 'decimal')?.value || '.');
 
 const primary = computed(() => (props.fiat
   ? `${fiatSymbolFor(props.fiatCode)}${groupFiatInput(props.modelValue, numberLocale.value)}`
-  : (props.exactSats !== null ? sats.value.toLocaleString(numberLocale.value) : props.modelValue ? Number(props.modelValue).toLocaleString(numberLocale.value) : '0')));
+  : `${props.bip177 ? '₿\u00a0' : ''}${props.exactSats !== null ? sats.value.toLocaleString(numberLocale.value) : props.modelValue ? Number(props.modelValue).toLocaleString(numberLocale.value) : '0'}`));
 
 const secondary = computed(() => {
-  if (props.fiat) return `${sats.value.toLocaleString(numberLocale.value)} sats`;
+  if (props.fiat) return formatPaymentAmount(sats.value, { bip177: props.bip177 }, { locale: numberLocale.value });
   // No rate is "unknown", never a zero value.
   if (!props.fiatRate) return '--';
   const amount = satsToFiat(sats.value, props.fiatRate);
@@ -123,7 +126,7 @@ const secondary = computed(() => {
  * characters on a 360px phone; past that the size steps down with the length.
  */
 const primaryFontSize = computed(() => {
-  const chars = primary.value.length + (props.fiat ? 0 : 3);
+  const chars = primary.value.length + (props.fiat || props.bip177 ? 0 : 3);
   return chars <= 11 ? '44px' : `${Math.max(22, Math.floor((44 * 11) / chars))}px`;
 });
 const kioskPrefix = computed(() => props.fiat ? fiatSymbolFor(props.fiatCode).trim() : props.bip177 ? '₿' : '');

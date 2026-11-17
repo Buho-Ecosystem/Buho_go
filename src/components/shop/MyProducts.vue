@@ -192,6 +192,8 @@
 
 <script>
 import { Icon } from '@iconify/vue';
+import { useWalletStore } from '../../stores/wallet';
+import { formatAmountWithPrefix } from '../../utils/amountFormatting.js';
 import { useNadanadaOrdersStore } from '../../stores/nadanadaOrders';
 import {
   redeemOrder, isRedeemable, isUnconfirmed, ORDER_KIND, ORDER_STATE,
@@ -397,15 +399,15 @@ export default {
         ? this.$t('Paid {when}', { when: this.relativeTime(order.paidAt) })
         : this.$t('Paid');
       const amount = Number.isFinite(order.priceSats)
-        ? `${this.formatSats(order.priceSats)} ${this.$t('sats')}`
+        ? this.formatSats(order.priceSats)
         : '';
       return [paid, amount, this.$t('waiting for the provider')].filter(Boolean).join(' · ');
     },
 
-    formatSats(n) {
-      if (!Number.isFinite(n)) return '';
-      try { return new Intl.NumberFormat(this.$i18n?.locale || undefined).format(n); }
-      catch { return String(n); }
+    /** An amount with its unit, as Settings writes it: "₿ 1,234" or "1,234 sats". */
+    formatSats(n, sign = '') {
+      if (n == null || !Number.isFinite(Number(n))) return '';
+      return formatAmountWithPrefix(Math.max(0, Math.floor(Number(n) || 0)), useWalletStore().useBip177Format !== false, sign);
     },
 
     relativeTime(ts) {

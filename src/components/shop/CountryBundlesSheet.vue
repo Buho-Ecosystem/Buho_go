@@ -66,7 +66,7 @@
                     {{ b.priceSatsEstimate ? `≈ ${formatSats(b.priceSatsEstimate)}` : formatUsd(b.priceUsd) }}
                   </span>
                   <span v-if="b.priceSatsEstimate" class="bundle-price-sub" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'">
-                    {{ $t('sats') }} · {{ formatUsd(b.priceUsd) }}
+                    {{ formatUsd(b.priceUsd) }}
                   </span>
                 </div>
               </button>
@@ -95,6 +95,8 @@
 
 <script>
 import { Icon } from '@iconify/vue';
+import { useWalletStore } from '../../stores/wallet';
+import { formatAmountWithPrefix } from '../../utils/amountFormatting.js';
 
 /**
  * eSIM bundle sheet for one country/region. Lean rows: data, validity, price.
@@ -136,10 +138,10 @@ export default {
   },
 
   methods: {
-    formatSats(n) {
-      if (n == null || !Number.isFinite(n)) return '';
-      try { return new Intl.NumberFormat(this.$i18n?.locale || undefined).format(n); }
-      catch { return String(n); }
+    /** An amount with its unit, as Settings writes it: "₿ 1,234" or "1,234 sats". */
+    formatSats(n, sign = '') {
+      if (n == null || !Number.isFinite(Number(n))) return '';
+      return formatAmountWithPrefix(Math.max(0, Math.floor(Number(n) || 0)), useWalletStore().useBip177Format !== false, sign);
     },
     formatUsd(n) {
       if (n == null || !Number.isFinite(n)) return '';

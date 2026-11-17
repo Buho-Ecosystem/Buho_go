@@ -5190,9 +5190,9 @@ export default {
               this.$q.notify({
                 type: 'negative',
                 message: this.$t('Insufficient balance'),
-                caption: this.$t('You need {amount} sats but only have {balance} sats', {
-                  amount: paymentSats,
-                  balance: payerBalance
+                caption: this.$t('You need {amount} but only have {balance}', {
+                  amount: formatSats(paymentSats, { bip177: this.walletStore.useBip177Format !== false }),
+                  balance: formatSats(payerBalance, { bip177: this.walletStore.useBip177Format !== false })
                 }),
               });
               return;

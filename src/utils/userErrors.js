@@ -422,7 +422,7 @@ export function formatInsufficientBalanceBreakdown(parts, t) {
 export function translateErrorCode(error, t, { walletName = '', useBip177Format = true } = {}) {
   // Nostr Wallet Connect: limits, permissions, no answer (utils/nwcErrors).
   // Asked first: the SDK's "no info event" failure carries no code.
-  const nwc = error && typeof error === 'object' ? nwcErrorText(error, t, { walletName }) : null;
+  const nwc = error && typeof error === 'object' ? nwcErrorText(error, t, { walletName, useBip177Format }) : null;
   if (nwc) return nwc;
 
   const code = error && typeof error === 'object' ? error.code : null;
@@ -450,7 +450,7 @@ export function translateErrorCode(error, t, { walletName = '', useBip177Format 
     case 'ARKADE_ONCHAIN_SOON':
       return t("Sending to a Bitcoin address automatically isn't available for Arkade yet. Use a Lightning or Arkade address instead.");
     case 'ARKADE_OFFBOARD_BELOW_MIN':
-      return t('That amount is too small to send to a Bitcoin address. The minimum is {min} sats.', { min: error.minSats || 0 });
+      return t('That amount is too small to send to a Bitcoin address. The minimum is {min}.', { min: formatAmount(error.minSats || 0, useBip177Format) });
     case 'ARKADE_OFFBOARD_FEE_CHANGED':
       return t('The Bitcoin fee changed. Review the updated fee and try again.');
     case 'ARKADE_OFFBOARD_FAILED':

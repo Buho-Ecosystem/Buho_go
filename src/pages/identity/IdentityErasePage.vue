@@ -50,7 +50,7 @@
           v-if="bucketSats > 0"
           icon="tabler:alert-triangle"
           tone="danger"
-          :label="$t('{n} sats in your Social Bucket are lost', { n: bucketSats })"
+          :label="$t('{n} in your Social Bucket is lost', { n: amountText(bucketSats) })"
           :caption="$t('Move it to a wallet first')"
           :interactive="false"
         />
@@ -112,6 +112,7 @@ import { useAddressBookStore } from '../../stores/addressBook';
 import { usePaymentFlowStore } from '../../stores/paymentFlow.js';
 import { useSocialBucketStore } from '../../stores/socialBucket';
 import { useWalletStore } from '../../stores/wallet';
+import { formatAmount } from '../../utils/amountFormatting.js';
 
 export default {
   name: 'IdentityErasePage',
@@ -193,6 +194,10 @@ export default {
   },
 
   methods: {
+    /** An amount with its unit, as Settings writes it: "₿ 1,234" or "1,234 sats". */
+    amountText(sats) {
+      return formatAmount(sats || 0, this.walletStore.useBip177Format !== false);
+    },
     async onErase() {
       if (!this.canErase || this.busy || this.paymentFlow.paymentBeingSent) return;
       this.busy = true;

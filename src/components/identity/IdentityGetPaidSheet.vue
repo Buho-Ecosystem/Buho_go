@@ -56,7 +56,7 @@
                   {{ latestIncoming.walletName }}<template v-if="relativeIncomingTime"> · {{ relativeIncomingTime }}</template>
                 </small>
               </span>
-              <span class="pay-recent-amount">+{{ formatSats(latestIncoming.amountSats) }} {{ $t('sats') }}</span>
+              <span class="pay-recent-amount">{{ formatSats(latestIncoming.amountSats, '+') }}</span>
               <Icon icon="tabler:chevron-right" width="17" height="17" class="pay-row-chevron" />
             </template>
             <template v-else>
@@ -252,7 +252,7 @@
             <strong>{{ $t('Last 7 days') }}</strong>
             <p>{{ $t('Received through your payment address.') }}</p>
           </div>
-          <span>{{ formatSats(weeklyIncomingTotal) }} {{ $t('sats') }}</span>
+          <span>{{ formatSats(weeklyIncomingTotal) }}</span>
         </div>
 
         <div class="payment-address-band">
@@ -268,7 +268,7 @@
               <small>{{ formatIncomingDate(tx) }}</small>
               <small v-if="incomingMemoFor(tx)" class="payment-list-memo">{{ incomingMemoFor(tx) }}</small>
             </span>
-            <strong class="payment-list-amount">+{{ formatSats(tx.amountSats) }} {{ $t('sats') }}</strong>
+            <strong class="payment-list-amount">{{ formatSats(tx.amountSats, '+') }}</strong>
           </article>
         </div>
       </div>
@@ -292,6 +292,7 @@ import { shareContent } from '../../utils/share.js';
 import { isLightningAddress } from '../../utils/addressUtils.js';
 import { missingAddressState } from '../../utils/profilePaymentAddress.js';
 import { getTxMessage } from '../../utils/txMessage.js';
+import { formatAmountWithPrefix } from '../../utils/amountFormatting.js';
 
 export default {
   name: 'IdentityGetPaidSheet',
@@ -461,7 +462,7 @@ export default {
     bucketCaption() {
       if (this.bucket.isSyncing && !this.bucket.hasBalance) return this.$t('Checking');
       if (!this.bucket.hasBalance) return this.$t('Nothing waiting');
-      return this.$t('{n} sats waiting', { n: this.formatSats(this.bucket.balanceSats) });
+      return this.$t('{n} waiting', { n: this.formatSats(this.bucket.balanceSats) });
     },
 
     bucketFooter() {
@@ -533,8 +534,9 @@ export default {
   },
 
   methods: {
-    formatSats(n) {
-      return new Intl.NumberFormat().format(Math.max(0, Math.floor(n || 0)));
+    /** An amount with its unit, as Settings writes it: "₿ 1,234" or "1,234 sats". */
+    formatSats(n, sign = '') {
+      return formatAmountWithPrefix(Math.max(0, Math.floor(Number(n) || 0)), this.walletStore.useBip177Format !== false, sign);
     },
 
     async prepareSheet() {

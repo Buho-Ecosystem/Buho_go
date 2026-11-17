@@ -367,6 +367,7 @@
           v-model:fiat="isFiatMode"
           :fiat-code="fiatCode"
           :fiat-rate="fiatRate"
+          :bip177="walletStore.useBip177Format !== false"
         >
           <!-- Description: link if empty, chip if set. Both open the sheet. -->
           <button

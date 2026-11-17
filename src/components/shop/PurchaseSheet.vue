@@ -76,9 +76,6 @@
               <span class="summary-price-amount" :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'">
                 {{ formatSats(priceSats) }}
               </span>
-              <span class="summary-price-unit" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-6'">
-                {{ $t('sats') }}
-              </span>
               <span v-if="priceUsd" class="summary-price-fiat" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'">
                 {{ formatUsd(priceUsd) }}
               </span>
@@ -133,7 +130,7 @@
                   >
                     <q-item-section>
                       <q-item-label>{{ w.name }}</q-item-label>
-                      <q-item-label caption>{{ formatSats(w.balance) }} {{ $t('sats') }}</q-item-label>
+                      <q-item-label caption>{{ formatSats(w.balance) }}</q-item-label>
                     </q-item-section>
                     <q-item-section v-if="w.id === selectedWalletId" side>
                       <Icon icon="tabler:check" width="16" height="16" />
@@ -149,7 +146,7 @@
             >
               {{ payableWallets[0].name }}
               <span class="pay-source-balance" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-6'">
-                · {{ formatSats(payableWallets[0].balance) }} {{ $t('sats') }}
+                · {{ formatSats(payableWallets[0].balance) }}
               </span>
             </span>
           </div>
@@ -371,6 +368,7 @@ import VueQrcode from '@chenfengyuan/vue-qrcode';
 import { Invoice } from '@getalby/lightning-tools';
 import { invoiceSats } from '../../utils/lightningInvoice.js';
 import { useWalletStore } from '../../stores/wallet';
+import { formatAmountWithPrefix } from '../../utils/amountFormatting.js';
 import { payWithNwc } from '../../services/nwcPayment.js';
 import { buildPaymentError } from '../../utils/userErrors.js';
 import { isUnconfirmedPayment } from '../../utils/paymentOutcome.js';
@@ -599,7 +597,7 @@ export default {
     selectedWalletLabel() {
       const w = this.payableWallets.find((x) => x.id === this.selectedWalletId);
       if (!w) return this.$t('Pick a wallet');
-      return `${w.name} · ${this.formatSats(w.balance)} ${this.$t('sats')}`;
+      return `${w.name} · ${this.formatSats(w.balance)}`;
     },
 
     canPay() {
@@ -620,7 +618,7 @@ export default {
 
     payLabel() {
       if (!this.priceSats) return this.$t('Pay');
-      return this.$t('Pay · {sats} sats', { sats: this.formatSats(this.priceSats) });
+      return this.$t('Pay · {sats}', { sats: this.formatSats(this.priceSats) });
     },
 
     truncatedInvoice() {
@@ -644,10 +642,10 @@ export default {
   },
 
   methods: {
-    formatSats(n) {
-      if (n == null || !Number.isFinite(n)) return '';
-      try { return new Intl.NumberFormat(this.$i18n?.locale || undefined).format(n); }
-      catch { return String(n); }
+    /** An amount with its unit, as Settings writes it: "₿ 1,234" or "1,234 sats". */
+    formatSats(n, sign = '') {
+      if (n == null || !Number.isFinite(Number(n))) return '';
+      return formatAmountWithPrefix(Math.max(0, Math.floor(Number(n) || 0)), this.walletStore.useBip177Format !== false, sign);
     },
 
     formatUsd(n) {
@@ -1065,7 +1063,6 @@ body.body--dark .error-icon { color: #fbbf24; }
 .summary-meta { font-family: 'Manrope', sans-serif; font-size: 13px; font-weight: 500; }
 .summary-price { display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; }
 .summary-price-amount { font-family: 'Manrope', sans-serif; font-size: 26px; font-weight: 700; letter-spacing: -0.01em; font-variant-numeric: tabular-nums; }
-.summary-price-unit { font-size: 13px; font-weight: 500; }
 .summary-price-fiat { font-size: 13px; font-weight: 500; margin-left: 2px; }
 .summary-discount { font-size: 12px; font-weight: 600; color: #0e7b3f; background: rgba(21, 222, 114, 0.12); padding: 2px 8px; border-radius: 999px; }
 body.body--dark .summary-discount { color: #6ee7a8; background: rgba(21, 222, 114, 0.16); }

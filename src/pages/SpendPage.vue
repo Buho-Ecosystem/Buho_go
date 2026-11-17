@@ -99,6 +99,8 @@
 import { Icon } from '@iconify/vue';
 import { Capacitor } from '@capacitor/core';
 import { useEarnStore } from '../stores/earn';
+import { useWalletStore } from '../stores/wallet';
+import { formatAmount } from '../utils/amountFormatting.js';
 import { useNadanadaOrdersStore } from '../stores/nadanadaOrders';
 import { EARN_BRAND } from '../services/earnBrand';
 import SettingsHubHeader from '../components/settings/SettingsHubHeader.vue';
@@ -152,10 +154,10 @@ export default {
     bitcoinLessonsMeta() {
       const earn = useEarnStore();
       if (earn.claimableAmount > 0) {
-        return this.$t('Claim {n} sats!', { n: earn.claimableAmount });
+        return this.$t('Claim {n}!', { n: formatAmount(earn.claimableAmount, useWalletStore().useBip177Format !== false) });
       }
       if (earn.totalEarned > 0) {
-        return this.$t('{n} sats earned', { n: earn.totalEarned });
+        return this.$t('{n} earned', { n: formatAmount(earn.totalEarned, useWalletStore().useBip177Format !== false) });
       }
       return this.$t('Learn in short lessons and earn real bitcoin');
     },
