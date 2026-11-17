@@ -26,23 +26,23 @@
         <q-icon name="chevron_right" size="18px" />
       </button>
       <!-- ═══ Paid ═══ -->
-      <div v-if="state === 'success'" class="pos-state-center">
-        <div class="pos-paid-ring"><q-icon name="check" size="36px" /></div>
-        <span class="pos-state-title mt-4">{{ $t('Bitcoin received') }}</span>
-        <div class="pos-amount-pill mt-2">{{ paymentAmount }}</div>
-        <small v-if="paymentShowsFiat" class="pos-state-sub">{{ displaySats(activeOrder.totalSats) }}</small>
-        <button class="pos-text-btn" @click="showCurrentReceipt = true">{{ $t('Receipt') }}</button>
-        <p v-if="activeOrder?.duplicatePayment" role="alert">
-          {{ $t('More than one payment arrived for this sale. Ask the owner to review it.') }}
-        </p>
-        <button class="pos-primary-btn mt-8" @click.stop="resetToInput">{{ $t('kiosk.newCharge') }}</button>
-      </div>
+      <KioskPaidScreen
+        v-if="state === 'success'"
+        :amount="paymentAmount"
+        :secondary="paymentShowsFiat ? displaySats(activeOrder.totalSats) : ''"
+        :duplicate="!!activeOrder?.duplicatePayment"
+        :paused="showCurrentReceipt"
+        :dark="$q.dark.isActive"
+        :origin="paidOrigin"
+        @receipt="showCurrentReceipt = true"
+        @done="resetToInput"
+      />
 
       <!-- ═══ QR ═══ -->
       <div v-else-if="state === 'payment'" class="pos-state-center pos-pay">
         <template v-if="!cardPinActive">
           <p class="pos-qr-label">{{ $t('kiosk.waitingForPayment') }}</p>
-          <div class="pos-qr-amount-lg">{{ paymentAmount }}</div>
+          <div ref="paymentAmountEl" class="pos-qr-amount-lg">{{ paymentAmount }}</div>
           <small v-if="paymentShowsFiat" class="pos-state-sub">{{ displaySats(activeOrder.totalSats) }}</small>
         </template>
 
@@ -81,7 +81,7 @@
 
         <template v-else>
           <div class="pos-qr-area">
-            <div class="pos-qr-card animate-pop">
+            <div ref="qrCardEl" class="pos-qr-card animate-pop">
               <q-spinner v-if="!invoiceData" size="36px" color="grey-6" />
               <img v-else :src="qrDataUrl" alt="QR" class="pos-qr-img" />
             </div>
@@ -536,6 +536,7 @@ import KioskPinPad from '../components/KioskPinPad.vue'
 import AmountKeypad from '../components/AmountKeypad.vue'
 import KioskProducts from '../components/kiosk/KioskProducts.vue'
 import KioskReceipt from '../components/kiosk/KioskReceipt.vue'
+import KioskPaidScreen from '../components/kiosk/KioskPaidScreen.vue'
 import { shareContent } from '../utils/share.js'
 import QRCode from 'qrcode'
 import WithdrawAuthorization from '../components/WithdrawAuthorization.vue'
@@ -547,7 +548,7 @@ import { safeWithdrawError } from '../services/lnurlWithdraw.js'
 
 export default defineComponent({
   name: 'KioskDashboard',
-  components: { KioskPinPad, AmountKeypad, KioskProducts, KioskReceipt, WithdrawAuthorization, CardFace },
+  components: { KioskPinPad, AmountKeypad, KioskProducts, KioskReceipt, KioskPaidScreen, WithdrawAuthorization, CardFace },
   setup() {
     const router = useRouter(),
       store = useWalletStore(),
@@ -675,6 +676,28 @@ export default defineComponent({
         return { paid: 'success', waiting: 'payment', preparing: 'processing' }[payments.status.value] || 'interrupted'
       return localStage.value
     })
+    // Where the payment code and its amount sit when the sale is paid, read
+    // before the payment screen goes: the paid screen grows out of them.
+    const qrCardEl = ref(null)
+    const paymentAmountEl = ref(null)
+    const paidOrigin = ref(null)
+    const onScreen = element => {
+      const box = typeof element?.getBoundingClientRect === 'function' ? element.getBoundingClientRect() : null
+      return box?.width
+        ? { top: box.top, left: box.left, right: box.right, bottom: box.bottom, width: box.width, height: box.height }
+        : null
+    }
+    watch(
+      state,
+      (next, previous) => {
+        if (next !== 'success') return
+        const card = previous === 'payment' ? onScreen(qrCardEl.value) : null
+        const amount = previous === 'payment' ? onScreen(paymentAmountEl.value) : null
+        const style = amount && globalThis.getComputedStyle ? getComputedStyle(paymentAmountEl.value) : null
+        paidOrigin.value = { card, amount: amount && style && { ...amount, fontSize: style.fontSize, color: style.color } }
+      },
+      { flush: 'pre' }
+    )
     const paymentProblem = computed(() => {
       const code = payments.problem.value?.code
       if (code === 'KIOSK_STORAGE_FAILED')
@@ -1060,20 +1083,28 @@ export default defineComponent({
         }).onOk(again)
       else if (payments.status.value === 'not-charged') void again()
     }
-    async function resetToInput() {
-      try {
-        await draftSave
-        await payments.nextCustomer()
-        syncDraft()
-        localStage.value = 'input'
-        card.reset()
-        cardTry = null
-        cardProblem.value = ''
-        useRoundUp.value = false
-        selectedTipPercent.value = 0
-      } catch (error) {
-        showError(error)
-      }
+    // One reset at a time: the paid screen's wait and a tap can ask together,
+    // and a second run would clear a key typed on the new sale meanwhile.
+    let resetting = null
+    function resetToInput() {
+      resetting ||= (async () => {
+        try {
+          await draftSave
+          await payments.nextCustomer()
+          syncDraft()
+          localStage.value = 'input'
+          card.reset()
+          cardTry = null
+          cardProblem.value = ''
+          useRoundUp.value = false
+          selectedTipPercent.value = 0
+        } catch (error) {
+          showError(error)
+        }
+      })().finally(() => {
+        resetting = null
+      })
+      return resetting
     }
     async function retryStorage() {
       try {
@@ -1280,6 +1311,9 @@ export default defineComponent({
       canPrintReceipt,
       printCurrentReceipt,
       showCurrentReceipt,
+      qrCardEl,
+      paymentAmountEl,
+      paidOrigin,
       money,
       shareCurrentReceipt,
       count,
@@ -1501,6 +1535,9 @@ export default defineComponent({
   padding: 12px 16px calc(16px + var(--safe-bottom, 16px));
 }
 .pos-notice {
+  /* Stays readable over the paid screen. */
+  position: relative;
+  z-index: 11;
   padding: 12px 16px;
   color: var(--text-primary);
   background: var(--bg-input);
@@ -1896,37 +1933,7 @@ input:focus-visible {
   background: rgba(239, 68, 68, 0.08);
 }
 
-/* Sats pill */
-.pos-amount-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  background: rgba(5, 149, 115, 0.08);
-  border: 1px solid rgba(5, 149, 115, 0.18);
-  border-radius: 9999px;
-  padding: 5px 14px;
-  font-size: 0.875rem;
-  font-weight: 700;
-  color: #059573;
-  letter-spacing: 0.01em;
-  font-family: 'Manrope', sans-serif;
-}
-.kiosk-light .pos-amount-pill {
-  background: rgba(5, 149, 115, 0.06);
-}
-
-/* Paid */
-.pos-paid-ring {
-  width: 80px;
-  height: 80px;
-  border-radius: 50%;
-  background: #059573;
-  color: white;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  animation: paid-pop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
-}
+/* The payment code arriving */
 @keyframes paid-pop {
   0% {
     transform: scale(0);
@@ -2683,7 +2690,6 @@ input:focus-visible {
 .tip-break-tip {
   color: var(--text-primary);
 }
-.pos-amount-pill,
 .tip-break-val,
 .kiosk-light .tip-opt-on .tip-opt-pct,
 .kiosk-light .tip-opt-on .tip-opt-amt,

@@ -93,12 +93,12 @@ try {
   for (const digit of ['1', '2', '3', '4']) await pin.locator('.numpad-key-digit').filter({ hasText: new RegExp(`^${digit}$`) }).click();
   await page.waitForFunction(() => !document.querySelector('.pin-card'));
   await page.locator('.pos-qr-card').waitFor();
-  assert.equal(await page.locator('.pos-paid-ring').count(), 0);
+  assert.equal(await page.locator('.kiosk-paid').count(), 0);
   await page.evaluate(() => {
     window.__kioskTest.paid = true;
     document.dispatchEvent(new Event('visibilitychange'));
   });
-  await page.locator('.pos-paid-ring').waitFor();
+  await page.locator('.kiosk-paid').waitFor();
   await page.screenshot({ path: output + '/03-card-paid.png' });
   assert.equal(await page.evaluate(() => window.__kioskTest.invoices), 1);
   assert.equal(callbacks.length, 2);
