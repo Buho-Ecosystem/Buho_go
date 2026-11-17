@@ -77,8 +77,13 @@ try {
   await checkPayments()
   await page.getByText('Bitcoin received',{exact:true}).waitFor()
   await snapshot('05-confirmed')
+  // Keyboards and screen readers: New charge has focus, the register behind the green is out of reach.
+  const headerInert=()=>page.locator('.kiosk-header').evaluate(header=>header.inert)
+  assert.equal(await page.evaluate(()=>document.activeElement?.textContent.trim()),'New charge')
+  assert.equal(await headerInert(),true,'the owner control is out of reach behind the paid screen')
   await page.getByRole('button',{name:'New charge',exact:true}).click()
   await page.locator('.amount-keypad__kiosk-value').waitFor()
+  assert.equal(await headerInert(),false)
   assert.equal(await page.locator('.amount-keypad__number').innerText(),'0')
   console.log('ok exact sats -> QR -> confirmation -> next customer')
   const currentOrder = () => page.evaluate(async () => { const {useKioskMerchantStore}=await import('/src/stores/kioskMerchant.js');return useKioskMerchantStore().currentOrder })

@@ -1,10 +1,15 @@
 <template>
   <!-- A paid sale fills the screen in green, to be read from across the
        counter. It grows out of the payment code and goes back to the register
-       on its own after a short while, or at a tap anywhere. -->
+       on its own after a short while, or at a tap anywhere. For keyboards and
+       screen readers it is a dialog named by what it says, with New charge
+       focused; the register keeps what lies behind it out of reach. -->
   <div
     class="kiosk-paid"
     :class="{ 'kiosk-paid--dark': dark }"
+    role="dialog"
+    aria-modal="true"
+    :aria-labelledby="`${id}-title ${id}-amount`"
     @pointerdown.capture="pressed"
     @click="tapAnywhere"
   >
@@ -12,16 +17,14 @@
       <span v-if="growsFromCode" class="kiosk-paid__veil" />
       <span class="kiosk-paid__sheen" />
     </div>
-    <!-- Filled just after the screen appears: a live region that arrives
-         together with its text is often not read out. -->
-    <span class="kiosk-paid__announce" role="status">{{ announcement }}</span>
     <section class="kiosk-paid__body">
       <svg class="kiosk-paid__mark" viewBox="0 0 112 112" aria-hidden="true">
         <circle class="kiosk-paid__ring" cx="56" cy="56" r="53" pathLength="1" transform="rotate(-90 56 56)" />
         <path class="kiosk-paid__check" d="M35 57.5 L49.5 72 L77 43" pathLength="1" />
       </svg>
-      <p class="kiosk-paid__title">{{ $t('Bitcoin received') }}</p>
+      <p :id="`${id}-title`" class="kiosk-paid__title">{{ $t('Bitcoin received') }}</p>
       <p
+        :id="`${id}-amount`"
         ref="amount"
         class="kiosk-paid__amount"
         :class="{ 'kiosk-paid__amount--travels': travels }"
@@ -38,7 +41,7 @@
       <button type="button" class="kiosk-paid__receipt" @click.stop="began($event) && $emit('receipt')">
         {{ $t('Receipt') }}
       </button>
-      <button type="button" class="kiosk-paid__next" @click.stop="began($event) && leave()">
+      <button ref="next" type="button" class="kiosk-paid__next" @click.stop="began($event) && leave()">
         <!-- Fills while the screen waits, so going back on its own is no surprise. -->
         <span
           v-if="counting"
@@ -93,12 +96,13 @@ export default {
       pressedAt: null,
       seen: onScreen(),
       left: false,
-      announcement: '',
-      announceTimer: null,
       still: typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches,
     }
   },
   computed: {
+    id() {
+      return `kiosk-paid-${this.$.uid}`
+    },
     /** The wait runs only while someone can see the screen: a phone that slept through the sale shows it on waking. */
     counting() {
       return !this.duplicate && !this.paused && this.seen && !this.left
@@ -121,13 +125,11 @@ export default {
     this.systemBars(SystemBarsStyle?.Dark)
     this.grow()
     this.restartCountdown()
-    this.announceTimer = setTimeout(() => {
-      this.announcement = `${this.$t('Bitcoin received')} ${this.amount}`
-    }, 100)
+    // Enter starts the next sale, and a screen reader reads the dialog's name.
+    this.$refs.next?.focus({ preventScroll: true })
   },
   beforeUnmount() {
     clearTimeout(this.timer)
-    clearTimeout(this.announceTimer)
     globalThis.document?.removeEventListener('visibilitychange', this.onVisibility)
     this.systemBars(SystemBarsStyle?.Default)
   },
@@ -273,14 +275,6 @@ export default {
 }
 .kiosk-paid__body > :last-child {
   margin-bottom: auto;
-}
-.kiosk-paid__announce {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
 }
 .kiosk-paid__mark {
   width: 112px;

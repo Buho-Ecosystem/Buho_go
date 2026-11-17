@@ -18,7 +18,9 @@ const showPage = visibilityState => {
 
 function mounted(props = {}) {
   const emitted = []
-  const vm = { amount: '$15.50', secondary: '', duplicate: false, paused: false, origin: null, ...props, $refs: {} }
+  const focused = []
+  const next = { focus: options => focused.push(options) }
+  const vm = { amount: '$15.50', secondary: '', duplicate: false, paused: false, origin: null, ...props, $refs: { next } }
   Object.assign(vm, screen.data.call(vm), { $t: key => key, $emit: event => emitted.push(event) })
   for (const [key, method] of Object.entries(screen.methods)) vm[key] = method.bind(vm)
   for (const [key, compute] of Object.entries(screen.computed)) Object.defineProperty(vm, key, { get: () => compute.call(vm) })
@@ -29,7 +31,7 @@ function mounted(props = {}) {
     if (vm.counting !== before) screen.watch.counting.call(vm)
   }
   screen.mounted.call(vm)
-  return { vm, emitted, change, unmount: () => screen.beforeUnmount.call(vm) }
+  return { vm, emitted, focused, change, unmount: () => screen.beforeUnmount.call(vm) }
 }
 const press = (vm, target = vm.tapAnywhere) => {
   vm.pressed()
@@ -81,6 +83,15 @@ test('the paid screen goes back after ten seconds on screen, and waits for the r
   mock.timers.tick(60_000)
   assert.deepEqual(twice.emitted, [], 'the warning stays until New charge')
   twice.unmount()
+})
+
+test('New charge has focus when the paid screen appears, so Enter starts the next sale', ctx => {
+  mock.timers.enable({ apis: ['setTimeout', 'Date'] })
+  ctx.after(() => mock.timers.reset())
+  const paid = mounted()
+  assert.deepEqual(paid.focused, [{ preventScroll: true }])
+  assert.equal(paid.vm.began({ detail: 0 }), true, 'a key press has no pointer to begin elsewhere')
+  paid.unmount()
 })
 
 test('only a tap that begins on the paid screen ends it, and a second payment needs New charge', ctx => {

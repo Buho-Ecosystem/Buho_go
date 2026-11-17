@@ -1,8 +1,8 @@
 <template>
   <q-page class="kiosk-page">
     <div class="kiosk-shell" :class="$q.dark.isActive ? 'kiosk-dark' : 'kiosk-light'">
-      <!-- Header -->
-      <header class="kiosk-header">
+      <!-- Header. Out of reach while the paid screen covers it. -->
+      <header class="kiosk-header" :inert="state === 'success'">
         <div class="kiosk-header-left">
           <div class="kiosk-wallet-badge">
             <q-icon name="point_of_sale" size="13px" />
