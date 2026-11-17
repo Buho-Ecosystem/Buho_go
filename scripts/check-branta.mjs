@@ -1,4 +1,4 @@
-// Real Vue + Branta 4.3 cryptography. Guardrail, artwork and wallet SDK are
+// Real Vue + Branta 4.4 cryptography. Guardrail, artwork and wallet SDK are
 // local fixtures. No publishing request, funds or external messages.
 // Start the dev server (npm run dev -- --port 9019), then npm run check:branta.
 // Optional BRANTA_BASE_URL/BRANTA_CASE/BRANTA_OUTPUT.
@@ -173,7 +173,7 @@ async function open({ answer = () => ({ json: [bolt.wire] }), enabled = true, bi
   return { context, requests, logs, close: async () => { await context.close(); contexts.delete(context); } };
 }
 try {
-  await step('Real 4.3 match gives a clean review and same-sheet proof with Back and focus restoration', async () => {
+  await step('Real 4.4 match gives a clean review and same-sheet proof with Back and focus restoration', async () => {
     const scenario = await open({ answer: () => ({ json: [bolt.wire], delay: 600 }) });
     await detect(); await ready(); await sheet().locator('.recipient-cell--checking').waitFor(); assert.equal(await primary().isDisabled(), true);
     await sheet().locator('.recipient-verified').waitFor(); assert.equal(await rawSats(), 2400); assert.equal(await amount().inputValue(), '2,400');
@@ -359,7 +359,7 @@ try {
       await showProof(); await fits(`${locale}: proof`); await shot(`10-large-proof-${locale}`); await scenario.close();
     }
   });
-  assert.deepEqual(errors,[]); console.log('PASS: Branta 4.3 verification, monetary values and saved proof');
+  assert.deepEqual(errors,[]); console.log('PASS: Branta 4.4 verification, monetary values and saved proof');
 } catch (error) {
   console.error(`FAIL at ${stepName}`); console.error(error); if(errors.length)console.error(errors);
   console.error(await page?.evaluate(() => ({ quotes: window.__brantaQuotes, status: window.__brantaWallet?.pendingPayment?.branta?.status,

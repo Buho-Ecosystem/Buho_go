@@ -161,7 +161,7 @@ export function brantaReceiptOf(verification) {
 
 const services = new Map()
 const cache = new Map()
-/** SDK4.3 returns match/unknown/tampered/incomplete; transport errors are ordinary unavailable checks. */
+/** SDK 4.4 returns match/unknown/tampered/incomplete (a verify that times out after 30 s is incomplete); transport errors are ordinary unavailable checks. */
 export async function checkWithBranta({
   qrText, signal, service: injected, environment = BRANTA_ENVIRONMENT, now = Date.now, fresh = false,
 } = {}) {
