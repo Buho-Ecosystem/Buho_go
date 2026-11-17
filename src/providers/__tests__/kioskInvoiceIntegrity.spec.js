@@ -28,14 +28,16 @@ test('successful invoice creation retains the exact signed request hash', async 
   assert.match(result.paymentHash, /^[a-f0-9]{64}$/);
   assert.equal(result.id, result.paymentHash);
 });
-test('a durable creation timestamp finds an exact late payment beyond the legacy scan limit', async () => {
+test('a saved request is read from its creation to an hour past its expiry, beyond the legacy scan limit', async () => {
   const calls = [];
   const unrelated = Array.from({ length: 100 }, (_, i) => ({ id: `other-${i}`, details: { type: 'lightning', htlcDetails: { paymentHash: 'e'.repeat(64) } } }));
   const p = provider({ listPayments: async request => { calls.push(request); return { payments: request.offset < 300 ? unrelated : [paid] }; } });
   const createdAt = 1_700_000_000_000;
-  const result = await p.lookupInvoice(hash, { createdAt, strict: true });
+  const expiresAt = createdAt / 1000 + 3600;
+  const result = await p.lookupInvoice(hash, { createdAt, expiresAt, strict: true });
   assert.equal(calls.length, 4);
   assert.equal(calls[0].fromTimestamp, createdAt / 1000 - 60);
+  assert.equal(calls[0].toTimestamp, expiresAt + 3600, 'receives after the request expired are never read');
   assert.equal(result.paid, true);
   assert.equal(result.paymentHash, hash);
   assert.equal(result.transactionId, paid.id);

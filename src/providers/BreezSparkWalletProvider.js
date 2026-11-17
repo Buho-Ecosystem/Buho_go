@@ -807,22 +807,26 @@ export class BreezSparkWalletProvider extends WalletProvider {
    * invoice can settle over Lightning OR as a native Spark transfer, so both
    * detail arms are checked. Scans newest-first with paging.
    */
-  async _findReceiveByHash(paymentHash, { maxPages = 3, pageSize = 100, createdAt } = {}) {
+  async _findReceiveByHash(paymentHash, { maxPages = 3, pageSize = 100, createdAt, expiresAt } = {}) {
     const record = breezSdk.getInvoiceRecord(paymentHash);
     const savedCreation = Number.isSafeInteger(createdAt) && createdAt > 0 ? Math.floor(createdAt / 1000) : null;
+    const savedExpiry = Number.isSafeInteger(expiresAt) && expiresAt > 0 ? expiresAt : null;
     // Without a record (foreign restart, pre-persistence invoice) bound the
     // scan to the last 24h - the maximum invoice lifetime this engine mints -
     // instead of walking the whole history every poll tick.
     const fromTimestamp = savedCreation || record?.createdAt
       ? Math.max(0, (savedCreation || record.createdAt) - 60)
       : Math.floor(Date.now() / 1000) - 24 * 60 * 60;
-    // Durable register requests may settle after a restart or after newer pages.
-    // Preserve the bounded legacy read when the caller has no creation context.
-    const pages = savedCreation ? Number.MAX_SAFE_INTEGER : maxPages;
+    // A saved register request is read between its creation and an hour past
+    // its expiry: it may settle after a restart or behind newer pages, but
+    // never after it expired. Without both ends the bounded read is kept.
+    const toTimestamp = savedCreation && savedExpiry ? savedExpiry + 60 * 60 : undefined;
+    const pages = toTimestamp ? Number.MAX_SAFE_INTEGER : maxPages;
     for (let page = 0; page < pages; page++) {
       const response = await this.sdk.listPayments({
         typeFilter: ['receive'],
         fromTimestamp,
+        ...(toTimestamp ? { toTimestamp } : {}),
         offset: page * pageSize,
         limit: pageSize,
         sortAscending: false,

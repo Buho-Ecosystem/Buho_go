@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { beforeEach, test } from 'node:test';
 import { createPinia, setActivePinia } from 'pinia';
 import { useKioskMerchantStore } from '../kioskMerchant.js';
-import { buildSaleSnapshot, cloneKiosk, kioskError, LEGACY_KIOSK_PARKED_KEY } from '../../utils/kioskMerchant.js';
+import { buildSaleSnapshot, cloneKiosk, KIOSK_LATE_PAYMENT_GRACE_MS, kioskError, LEGACY_KIOSK_PARKED_KEY } from '../../utils/kioskMerchant.js';
 
 class Repository {
   data = null;
@@ -51,14 +51,29 @@ test('catalog changes cannot rewrite draft, saved basket or immutable sales', as
   await assert.rejects(store.resumeBasket('missing'), { code: 'KIOSK_BASKET_CONFLICT' });
 });
 
-test('issued invoice identity is mandatory; uncertain creation prevents a blind retry', async () => {
+test('a request that never came back closes as not charged; a late return is dropped; settlement needs the exact identity', async () => {
   const { store } = await register(); const sale = await store.createOrder(snapshot()); const attempt = await store.beginAttempt(sale.id);
-  await store.markCreationUncertain(sale.id, attempt.id, 'raw secret error words');
-  assert.equal(store.currentOrder.attempts[0].reason, null);
   await assert.rejects(store.beginAttempt(sale.id), { code: 'KIOSK_PAYMENT_PENDING' });
-  await store.attachInvoice(sale.id, attempt.id, { paymentHash: 'hash', paymentRequest: 'lnbc', amountSats: 101 });
-  for (const proof of [{ walletId: 'other', paymentHash: 'hash' }, { walletId: 'wallet', paymentHash: 'other' }, { walletId: 'wallet', paymentHash: 'hash', settledSats: 100 }]) await assert.rejects(store.settleAttempt(sale.id, attempt.id, proof), { code: 'KIOSK_PAYMENT_MISMATCH' });
+  await store.markAttemptFailed(sale.id, attempt.id, 'raw secret error words');
+  assert.equal(store.currentOrder.attempts[0].reason, null);
+  assert.equal(store.currentOrder.status, 'failed');
+  assert.equal(store.pendingAttempts.length, 0, 'nobody waits for a request that was never shown');
+  assert.equal(await store.attachInvoice(sale.id, attempt.id, { paymentHash: 'hash', paymentRequest: 'lnbc', amountSats: 101 }), null);
+  assert.equal(store.currentOrder.attempts[0].paymentHash, null);
+  const retry = await store.beginAttempt(sale.id);
+  await store.attachInvoice(sale.id, retry.id, { paymentHash: 'hash', paymentRequest: 'lnbc', amountSats: 101 });
+  await assert.rejects(store.markAttemptFailed(sale.id, retry.id), { code: 'KIOSK_PAYMENT_PENDING' }, 'a shown request is never closed as not charged');
+  for (const proof of [{ walletId: 'other', paymentHash: 'hash' }, { walletId: 'wallet', paymentHash: 'other' }, { walletId: 'wallet', paymentHash: 'hash', settledSats: 100 }]) await assert.rejects(store.settleAttempt(sale.id, retry.id, proof), { code: 'KIOSK_PAYMENT_MISMATCH' });
   assert.equal(store.sales.length, 0);
+});
+
+test('a shown request closes as not paid only on a check after its expiry and grace period', async () => {
+  const { store } = await register(); const { sale, attempt } = await request(store);
+  const lastMoment = 200 * 1000 + KIOSK_LATE_PAYMENT_GRACE_MS;
+  await assert.rejects(store.closeUnpaidAttempt(sale.id, attempt.id, { checkedAt: lastMoment - 1 }), { code: 'KIOSK_PAYMENT_PENDING' });
+  await store.closeUnpaidAttempt(sale.id, attempt.id, { checkedAt: lastMoment });
+  assert.equal(store.getOrder(sale.id).status, 'failed');
+  assert.equal(store.pendingAttempts.length, 0);
 });
 
 test('expired and older attempts reconcile, duplicate receipt notifications count the sale once', async () => {

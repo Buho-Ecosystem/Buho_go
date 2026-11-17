@@ -4,7 +4,7 @@ import { createKioskMerchantStorage } from '../services/kioskMerchantStorage.js'
 import {
   cloneKiosk, emptyKioskDraft, emptyKioskMerchant, exportKioskBundle, kioskCount,
   kioskCurrency, kioskDraftHasValue, kioskError, kioskIdentity, kioskSalesCsv,
-  kioskText, LEGACY_KIOSK_PARKED_KEY, migrateLegacyKioskParked, newKioskId,
+  kioskText, KIOSK_LATE_PAYMENT_GRACE_MS, LEGACY_KIOSK_PARKED_KEY, migrateLegacyKioskParked, newKioskId,
   normalizeKioskDraft, normalizeKioskItem, normalizeKioskMerchant, normalizeKioskOrder,
   normalizeKioskProduct, readKioskBundle,
 } from '../utils/kioskMerchant.js';
@@ -18,7 +18,7 @@ const queues = new WeakMap();
 const NO_CHANGE = Symbol('no change');
 const unchanged = value => ({ [NO_CHANGE]: true, value });
 const safeReason = reason => /^[A-Z0-9_-]{1,80}$/i.test(reason || '') ? reason : null;
-const attemptStatus = order => order.attempts.some(a => a.status === 'paid') ? 'paid' : ({ creating: 'preparing', uncertain: 'uncertain', waiting: 'waiting', expired: 'expired', failed: 'failed' }[order.attempts.find(a => a.id === order.activeAttemptId)?.status] || 'preparing');
+const attemptStatus = order => order.attempts.some(a => a.status === 'paid') ? 'paid' : ({ creating: 'preparing', waiting: 'waiting', expired: 'expired', failed: 'failed' }[order.attempts.find(a => a.id === order.activeAttemptId)?.status] || 'preparing');
 
 function requireOrder(data, id) {
   const order = data.orders.find(value => value.id === id);
@@ -57,7 +57,7 @@ export const useKioskMerchantStore = defineStore('kioskMerchant', {
     currentOrder: state => state.data.orders.find(order => order.id === state.data.activeOrderId) || null,
     sales: state => state.data.orders.filter(order => order.status === 'paid').sort((a, b) => (b.paidAt || b.createdAt) - (a.paidAt || a.createdAt)),
     getOrder: state => id => state.data.orders.find(order => order.id === id) || null,
-    pendingAttempts: state => state.data.orders.flatMap(order => order.attempts.filter(attempt => ['creating', 'uncertain', 'waiting', 'expired'].includes(attempt.status)).map(attempt => ({ ...attempt, orderId: order.id, attemptId: attempt.id, invoiceData: attempt.paymentHash ? { walletId: attempt.walletId, paymentHash: attempt.paymentHash, paymentRequest: attempt.paymentRequest, amountSats: attempt.amountSats, expiresAt: attempt.expiresAt, invoiceId: attempt.invoiceId } : null }))),
+    pendingAttempts: state => state.data.orders.flatMap(order => order.attempts.filter(attempt => ['creating', 'waiting', 'expired'].includes(attempt.status)).map(attempt => ({ ...attempt, orderId: order.id, attemptId: attempt.id, invoiceData: attempt.paymentHash ? { walletId: attempt.walletId, paymentHash: attempt.paymentHash, paymentRequest: attempt.paymentRequest, amountSats: attempt.amountSats, expiresAt: attempt.expiresAt, invoiceId: attempt.invoiceId } : null }))),
     canRestore: state => !state.data.products.length && !state.data.orders.length && !state.data.savedBaskets.length && !kioskDraftHasValue(state.data.draft),
   },
   actions: {
@@ -243,7 +243,7 @@ export const useKioskMerchantStore = defineStore('kioskMerchant', {
       return this._change(data => changeOrder(data, orderId, order => {
         if (order.status === 'paid') throw kioskError('KIOSK_ORDER_PAID', 'This sale is already paid.');
         if (walletId && walletId !== order.walletId || amountSats != null && amountSats !== order.totalSats) throw kioskError('KIOSK_PAYMENT_MISMATCH', 'The payment no longer matches this sale.');
-        if (order.attempts.some(attempt => ['creating', 'uncertain', 'waiting'].includes(attempt.status))) throw kioskError('KIOSK_PAYMENT_PENDING', 'Check the existing payment before requesting another.');
+        if (order.attempts.some(attempt => ['creating', 'waiting'].includes(attempt.status))) throw kioskError('KIOSK_PAYMENT_PENDING', 'Check the existing payment before requesting another.');
         const attempt = { id: newKioskId('attempt'), walletId: order.walletId, amountSats: order.totalSats, status: 'creating', createdAt: Date.now(), paymentHash: null, paymentRequest: null, invoiceId: null, transactionId: null, expiresAt: null, paidAt: null, settledSats: null, reason: null };
         order.activeAttemptId = attempt.id;
         order.attempts.push(attempt);
@@ -258,7 +258,9 @@ export const useKioskMerchantStore = defineStore('kioskMerchant', {
         if (!paymentHash || !paymentRequest || details.walletId && details.walletId !== order.walletId || details.amountSats != null && details.amountSats !== order.totalSats) throw kioskError('KIOSK_PAYMENT_MISMATCH', 'The payment request does not match this sale.');
         if (attempt.paymentHash && (attempt.paymentHash !== paymentHash || attempt.paymentRequest !== paymentRequest)) throw kioskError('KIOSK_PAYMENT_MISMATCH', 'This payment already has a different request.');
         if (attempt.status === 'paid') return unchanged(attempt);
-        if (!['creating', 'uncertain', 'waiting'].includes(attempt.status)) throw kioskError('KIOSK_PAYMENT_MISMATCH', 'This payment request is no longer current.');
+        // Closed as not charged before it came back: it was never shown, so it is dropped.
+        if (attempt.status === 'failed') return unchanged(null);
+        if (!['creating', 'waiting'].includes(attempt.status)) throw kioskError('KIOSK_PAYMENT_MISMATCH', 'This payment request is no longer current.');
         if (data.orders.some(other => other.attempts.some(value => value.walletId === order.walletId && value.paymentHash === paymentHash && value.id !== attempt.id))) throw kioskError('KIOSK_PAYMENT_MISMATCH', 'This invoice already belongs to another payment.');
         attempt.paymentHash = paymentHash;
         attempt.paymentRequest = paymentRequest;
@@ -269,11 +271,36 @@ export const useKioskMerchantStore = defineStore('kioskMerchant', {
         return attempt;
       }));
     },
-    async markCreationUncertain(orderId, attemptId, reason = null) {
-      return this._change(data => changeOrder(data, orderId, order => { const attempt = requireAttempt(order, attemptId); if (attempt.status === 'paid' || attempt.paymentHash) return unchanged(attempt); attempt.status = 'uncertain'; attempt.reason = safeReason(reason); return attempt; }));
-    },
+    /**
+     * A request that never came back from the wallet: it was never shown, so
+     * nobody can have paid it. Closed as not charged. One that came back is
+     * never closed here (see closeUnpaidAttempt).
+     */
     async markAttemptFailed(orderId, attemptId, reason = null) {
-      return this._change(data => changeOrder(data, orderId, order => { const attempt = requireAttempt(order, attemptId); if (attempt.paymentHash || attempt.status === 'paid') throw kioskError('KIOSK_PAYMENT_PENDING', 'An issued request must still be checked.'); attempt.status = 'failed'; attempt.reason = safeReason(reason); return attempt; }));
+      return this._change(data => changeOrder(data, orderId, order => {
+        const attempt = requireAttempt(order, attemptId);
+        if (attempt.paymentHash || attempt.status === 'paid') throw kioskError('KIOSK_PAYMENT_PENDING', 'An issued request must still be checked.');
+        if (attempt.status === 'failed') return unchanged(attempt);
+        attempt.status = 'failed';
+        attempt.reason = safeReason(reason);
+        return attempt;
+      }));
+    },
+    /**
+     * A shown request closes as not paid only on the wallet's strict answer
+     * "not paid", given after its expiry plus the grace period for a payment
+     * still on its way. Before that moment it may still be paid.
+     */
+    async closeUnpaidAttempt(orderId, attemptId, { checkedAt } = {}) {
+      return this._change(data => changeOrder(data, orderId, order => {
+        const attempt = requireAttempt(order, attemptId);
+        if (attempt.status === 'paid' || attempt.status === 'failed') return unchanged(attempt);
+        const lastMoment = attempt.expiresAt ? attempt.expiresAt * 1000 + KIOSK_LATE_PAYMENT_GRACE_MS : null;
+        if (!attempt.paymentHash || lastMoment == null || !(checkedAt >= lastMoment)) throw kioskError('KIOSK_PAYMENT_PENDING', 'This request can still be paid.');
+        attempt.status = 'failed';
+        attempt.reason = 'EXPIRED_UNPAID';
+        return attempt;
+      }));
     },
     async markAttemptExpired(orderId, attemptId) {
       return this._change(data => changeOrder(data, orderId, order => { const attempt = requireAttempt(order, attemptId); if (attempt.status === 'paid') return unchanged(attempt); if (!attempt.paymentHash) throw kioskError('KIOSK_PAYMENT_PENDING', 'This request still needs to be checked.'); attempt.status = 'expired'; return attempt; }));

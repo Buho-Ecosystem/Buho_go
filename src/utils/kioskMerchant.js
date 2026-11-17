@@ -6,6 +6,12 @@ export const KIOSK_MERCHANT_KEY = 'buhoGO_kiosk_merchant_v1';
 export const LEGACY_KIOSK_PARKED_KEY = 'buhoGO_kiosk_parked_sales';
 export const KIOSK_BUNDLE_KIND = 'buhogo-kiosk-backup';
 const MAX_TEXT = 160;
+/**
+ * How long a register request is still checked after it expires: a payment
+ * already on its way when the code expired can still arrive. After this one
+ * last strict check decides, and checking stops.
+ */
+export const KIOSK_LATE_PAYMENT_GRACE_MS = 10 * 60 * 1000;
 const MAX_BUNDLE_BYTES = 20 * 1024 * 1024;
 
 export function kioskError(code, message) {
@@ -160,7 +166,7 @@ export function normalizeKioskOrder(value) {
   const quoted = priceBasket(items, { currency, rate: value.rate || 0 });
   if (items.some((item, index) => item.lineSats !== quoted.items[index].lineSats || item.lineMinor !== quoted.items[index].lineMinor)) fail('The saved item prices do not match the quoted sale.');
   if (new Set(items.map(item => item.id)).size !== items.length) fail('The saved sale contains duplicate items.');
-  const result = { id: kioskIdentity(value.id), createdAt: timestamp(value.createdAt), paidAt: value.paidAt == null ? null : timestamp(value.paidAt), currency, rate: value.rate > 0 ? Number(value.rate) : null, items, baseSats, tipSats, roundUpSats, totalSats, walletId: kioskIdentity(value.walletId), walletName: kioskText(value.walletName), method: kioskText(value.method), label: kioskText(value.label), tipPercent: Number.isFinite(value.tipPercent) ? value.tipPercent : null, status: ['preparing', 'waiting', 'uncertain', 'expired', 'failed', 'paid'].includes(value.status) ? value.status : 'preparing', activeAttemptId: kioskIdentity(value.activeAttemptId), duplicatePayment: !!value.duplicatePayment, legacy: !!value.legacy, attempts: [] };
+  const result = { id: kioskIdentity(value.id), createdAt: timestamp(value.createdAt), paidAt: value.paidAt == null ? null : timestamp(value.paidAt), currency, rate: value.rate > 0 ? Number(value.rate) : null, items, baseSats, tipSats, roundUpSats, totalSats, walletId: kioskIdentity(value.walletId), walletName: kioskText(value.walletName), method: kioskText(value.method), label: kioskText(value.label), tipPercent: Number.isFinite(value.tipPercent) ? value.tipPercent : null, status: value.status === 'uncertain' ? 'failed' : ['preparing', 'waiting', 'expired', 'failed', 'paid'].includes(value.status) ? value.status : 'preparing', activeAttemptId: kioskIdentity(value.activeAttemptId), duplicatePayment: !!value.duplicatePayment, legacy: !!value.legacy, attempts: [] };
   for (const key of ['subtotalMinor', 'tipMinor', 'roundUpMinor', 'totalMinor']) result[key] = value[key] == null ? null : kioskCount(value[key]);
   if (result.totalMinor != null && ([result.subtotalMinor, result.tipMinor, result.roundUpMinor].some(value => value == null) || result.subtotalMinor + result.tipMinor + result.roundUpMinor !== result.totalMinor)) fail('The receipt amounts do not add up.');
   if (result.subtotalMinor !== quoted.subtotalMinor || result.tipMinor !== minorForSats(tipSats, result.rate) || result.roundUpMinor !== minorForSats(roundUpSats, result.rate)) fail('The receipt prices do not match the frozen quote.');
@@ -169,7 +175,9 @@ export function normalizeKioskOrder(value) {
     if (!raw || !kioskIdentity(raw.id) || ids.has(raw.id) || !ATTEMPT_STATES.has(raw.status)) fail('The saved payment attempt is invalid.');
     if (raw.walletId !== result.walletId || raw.amountSats !== totalSats) fail('The payment attempt belongs to a different sale.');
     ids.add(raw.id);
-    const attempt = { id: kioskIdentity(raw.id), walletId: result.walletId, amountSats: totalSats, status: raw.status, createdAt: timestamp(raw.createdAt), paymentHash: kioskIdentity(raw.paymentHash), paymentRequest: kioskIdentity(raw.paymentRequest, 8192), invoiceId: kioskIdentity(raw.invoiceId), transactionId: kioskIdentity(raw.transactionId), expiresAt: raw.expiresAt == null ? null : timestamp(raw.expiresAt), paidAt: raw.paidAt == null ? null : timestamp(raw.paidAt), settledSats: raw.settledSats == null ? null : kioskCount(raw.settledSats, { positive: true }), reason: /^[A-Z0-9_-]{1,80}$/i.test(raw.reason || '') ? raw.reason : null };
+    // An older version kept a request that never came back as 'uncertain'. It
+    // was never shown, so nobody can have paid it: it reads as not charged.
+    const attempt = { id: kioskIdentity(raw.id), walletId: result.walletId, amountSats: totalSats, status: raw.status === 'uncertain' ? 'failed' : raw.status, createdAt: timestamp(raw.createdAt), paymentHash: kioskIdentity(raw.paymentHash), paymentRequest: kioskIdentity(raw.paymentRequest, 8192), invoiceId: kioskIdentity(raw.invoiceId), transactionId: kioskIdentity(raw.transactionId), expiresAt: raw.expiresAt == null ? null : timestamp(raw.expiresAt), paidAt: raw.paidAt == null ? null : timestamp(raw.paidAt), settledSats: raw.settledSats == null ? null : kioskCount(raw.settledSats, { positive: true }), reason: /^[A-Z0-9_-]{1,80}$/i.test(raw.reason || '') ? raw.reason : null };
     if (['waiting', 'expired', 'paid'].includes(attempt.status) && (!attempt.paymentHash || !attempt.paymentRequest)) fail('The saved invoice is incomplete.');
     if (attempt.status === 'paid' && attempt.settledSats != null && attempt.settledSats !== totalSats) fail('The settled amount does not match.');
     result.attempts.push(attempt);
@@ -227,8 +235,21 @@ export function migrateLegacyKioskParked(saved, currency = 'USD') {
 }
 
 export function formatKioskMoney(minor, currency, locale = 'en-US') {
-  if (minor == null) return '—';
+  if (minor == null) return '';
   return new Intl.NumberFormat(locale, { style: 'currency', currency: kioskCurrency(currency), minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(minor / 100);
+}
+
+/**
+ * What a sale is called in lists: its label, else its items. One line reads
+ * "Latte" or "3 × Latte"; more lines read "Latte and 11 more", so a basket of
+ * twelve is not taken for one coffee.
+ */
+export function kioskSaleTitle(sale, t) {
+  if (sale?.label) return sale.label;
+  const [first, ...rest] = sale?.items || [];
+  if (!first) return t('Sale');
+  if (rest.length) return t('{name} and {n} more', { name: first.name, n: rest.length });
+  return first.qty > 1 ? `${first.qty} × ${first.name}` : first.name;
 }
 
 /**

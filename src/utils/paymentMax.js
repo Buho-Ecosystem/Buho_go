@@ -6,7 +6,8 @@ import { unquotedFeeLimitSats } from './payingWallets.js'
  */
 export function boundedPaymentMax(balanceSats, { walletType, destinationType, recipientMax = Infinity } = {}) {
   if (!Number.isSafeInteger(balanceSats) || balanceSats <= 0 || walletType !== 'spark') return null
-  if (!['lightning_address', 'lnurl', 'spark_address'].includes(destinationType)) return null
+  // The send sheet's destination vocabulary (Wallet.vue pendingDestinationType): a Spark address is 'spark'.
+  if (!['lightning_address', 'lnurl', 'spark'].includes(destinationType)) return null
   let low = 0, high = Math.min(balanceSats, Number.isSafeInteger(recipientMax) ? recipientMax : balanceSats)
   while (low < high) {
     const candidate = low + Math.ceil((high - low) / 2)
