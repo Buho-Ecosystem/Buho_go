@@ -23,19 +23,15 @@ import { useRouter } from 'vue-router';
 import { i18n } from '../boot/i18n';
 import { useWalletStore } from '../stores/wallet';
 import { useIdentityStore } from '../stores/identity';
-import { walletBackupGroups } from '../utils/backupStatus.js';
+import { walletBackupGroups, pendingBackupLabel } from '../utils/backupStatus.js';
 import BackupKeyring from './BackupKeyring.vue';
 
 const router = useRouter();
 const wallet = useWalletStore();
 const identity = useIdentityStore();
-// Same source as the Security rows, so the reminder and the page never disagree.
-const walletNeedsBackup = computed(() => walletBackupGroups(wallet.wallets, wallet.hasBackedUp).some(group => !group.saved));
-const identityNeedsBackup = computed(() => identity.bootstrapped && !identity.backupConfirmed);
-const needsBackup = computed(() => walletNeedsBackup.value || identityNeedsBackup.value);
-const pendingLabel = computed(() => walletNeedsBackup.value
-  ? (identityNeedsBackup.value ? i18n.global.t('Bitcoin & identity') : i18n.global.t('Bitcoin'))
-  : i18n.global.t('Identity'));
+// Same source and the same words as the Security tab, so the reminder and the page never disagree.
+const pendingLabel = computed(() => pendingBackupLabel(walletBackupGroups(wallet.wallets, wallet.hasBackedUp), identity, (key) => i18n.global.t(key)));
+const needsBackup = computed(() => !!pendingLabel.value);
 </script>
 
 <style scoped>

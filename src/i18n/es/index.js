@@ -920,7 +920,7 @@ export default {
   "Enable": "Activar",
   // Quick-toggle fixed labels.
   "Theme": "Tema",
-  "Display": "Mostrar",
+  "Display": "Pantalla",
   "Format": "Formato",
   "N/A": "N/D",
   // Auto-Transfer dialog explainer.

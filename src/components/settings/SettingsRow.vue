@@ -62,22 +62,25 @@
       </span>
     </span>
 
-    <span v-if="badge" class="settings-row-badge" :class="`settings-row-badge--${badgeVariant}`">
-      {{ badge }}
-    </span>
+    <!-- Badge, value and chevron move as one: under the label when they do not fit beside it. -->
+    <span class="settings-row-trail">
+      <span v-if="badge" class="settings-row-badge" :class="`settings-row-badge--${badgeVariant}`">
+        {{ badge }}
+      </span>
 
-    <span v-if="inlineValue" class="settings-row-inline-value">{{ inlineValue }}</span>
+      <span v-if="inlineValue" class="settings-row-inline-value">{{ inlineValue }}</span>
 
-    <span class="settings-row-right">
-      <slot name="right">
-        <Icon
-          v-if="interactive && showChevron && !destructive && !accent"
-          icon="tabler:chevron-right"
-          width="16"
-          height="16"
-          class="settings-row-chevron"
-        />
-      </slot>
+      <span class="settings-row-right">
+        <slot name="right">
+          <Icon
+            v-if="interactive && showChevron && !destructive && !accent"
+            icon="tabler:chevron-right"
+            width="16"
+            height="16"
+            class="settings-row-chevron"
+          />
+        </slot>
+      </span>
     </span>
   </component>
 </template>
@@ -133,8 +136,11 @@ export default {
      under the text, past the icon, the way grouped lists inset it. */
   --settings-row-inset: 16px;
   display: flex;
+  /* When the label's longest word and the value do not fit side by side
+     (German on a small phone), the value moves under the label. */
+  flex-wrap: wrap;
   align-items: center;
-  gap: 14px;
+  gap: 2px 14px;
   width: 100%;
   min-height: 56px;
   padding: 12px 16px;
@@ -186,7 +192,8 @@ export default {
 
 .settings-row-body {
   flex: 1;
-  min-width: 0;
+  /* Never narrower than its longest word, so a label is not split mid-word. */
+  min-width: min-content;
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -199,6 +206,7 @@ export default {
   color: var(--text-primary);
   letter-spacing: -0.01em;
   line-height: 1.25;
+  overflow-wrap: break-word;
 }
 
 .settings-row-caption {
@@ -223,6 +231,14 @@ export default {
   color: var(--text-secondary);
   margin-left: auto;
   letter-spacing: -0.005em;
+}
+
+.settings-row-trail {
+  flex-shrink: 0;
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 14px;
 }
 
 .settings-row-right {

@@ -68,7 +68,8 @@ const t = (key, params) => proxy.$t(key, params);
 const store = useWalletStore();
 
 const capabilities = computed(() => capabilitiesOf(props.wallet));
-const address = computed(() => props.wallet.metadata?.lud16 || '');
+// The store's one reading: cleans a stored value and falls back to the connection's lud16.
+const address = computed(() => store.lightningAddressOf(props.wallet) || '');
 const relay = computed(() => relayHost(props.wallet.nwcUrl));
 
 const statusText = computed(() => ({

@@ -1,14 +1,15 @@
 <template>
   <q-page class="settings-page" :class="$q.dark.isActive ? 'bg-dark' : 'bg-light'">
-    <!-- The bar carries the small title only once the large one has scrolled away. -->
-    <SettingsHubHeader :title="titleTucked ? $t('Settings') : ''" />
+    <!-- The large title below names the page; the bar keeps only the way Home.
+         (Hub headers scroll with the page: overflow-x on html/body.) -->
+    <SettingsHubHeader title="" />
 
     <!-- Settings Content: one grouped list, the way the phone's own Settings
          reads. Each group says what it holds in a short footer; a row shows
          where its setting stands, and a row with a chevron opens its own page
          or sheet. -->
     <div class="settings-content">
-      <h1 ref="largeTitle" class="settings-large-title">{{ $t('Settings') }}</h1>
+      <h1 class="settings-large-title">{{ $t('Settings') }}</h1>
 
       <!-- ─────────────── WALLETS ───────────────
            Every wallet on this phone, with its logo and balance; a row opens
@@ -36,6 +37,7 @@
         <SettingsRow
           v-for="wallet in sortedWallets"
           :key="wallet.id"
+          class="wallet-list-row"
           tiled
           :label="wallet.name"
           :data-wallet-id="wallet.id"
@@ -50,7 +52,8 @@
             <!-- What it received since the user last looked at it (stores/unseenReceipts). -->
             <span v-else-if="unseenReceipts.forWallet(wallet.id)" class="wallet-row-state wallet-row-state--unseen"> · <HiddenAmount aria-hidden="true">+ {{ formatBalance(unseenReceipts.forWallet(wallet.id).sats) }}</HiddenAmount><span class="sr-only">{{ $t('Received {amount} since you last looked', { amount: formatBalance(unseenReceipts.forWallet(wallet.id).sats) }) }}</span></span>
             <span v-else-if="walletStore.connectionEnded[wallet.id]" class="wallet-row-state wallet-row-state--off"> · {{ $t('Connection ended') }}</span>
-            <span v-else-if="!connectionStates[wallet.id]?.connected" class="wallet-row-state wallet-row-state--off"> · {{ $t('Offline') }}</span>
+            <!-- The wallet page's own test (isWalletLive), so the row, the total and the page agree. -->
+            <span v-else-if="!isWalletLive(wallet)" class="wallet-row-state wallet-row-state--off"> · {{ $t('Offline') }}</span>
           </template>
           <template #right>
             <span class="wallet-row-amount">
@@ -75,7 +78,7 @@
 
         <SettingsRow accent :label="$t('Add wallet')" data-audit="settings-add-wallet" @click="showAddWalletDialog = true" />
         <template #footer>
-          {{ $t('Spark and Arkade wallets live on this phone, and their recovery words bring them back. Connected wallets live with their provider.') }}
+          {{ $t('Spark and Arkade wallets live on this phone, and their recovery words bring them back. NWC and LNbits wallets are connected: they live with their provider.') }}
         </template>
       </SettingsSection>
 
@@ -115,7 +118,7 @@
           @click="$router.push('/kiosk-mode')"
         />
         <template #footer>
-          {{ $t('Auto-Transfer moves money to another wallet once one holds more than you choose. Kiosk Mode turns this phone into a register for your shop.') }}
+          {{ $t('Auto-Transfer moves money to another wallet or an address once a wallet holds more than you choose. Kiosk Mode turns this phone into a register for your shop.') }}
         </template>
       </SettingsSection>
 
@@ -411,7 +414,7 @@
               :caption="action.blockedReason || action.covers"
               @click="action.run"
             />
-            <template #footer>{{ $t('A single wallet can be removed on its own page.') }}</template>
+            <template #footer>{{ $t('A single wallet can be removed or disconnected on its own page.') }}</template>
           </SettingsSection>
         </div>
       </q-card>
@@ -1065,8 +1068,6 @@ export default {
       showWalletsDialog: false,
       showDisplaySheet: false,
       showAdvancedSheet: false,
-      // The large title scrolled away: the bar shows the small one.
-      titleTucked: false,
       TILE: SETTINGS_TILE,
       showPaymentWalletSheet: false,
       showSparkLnAddressSheet: false,
@@ -1214,16 +1215,6 @@ export default {
       return this.$t('I understand');
     },
 
-    /** Manage Wallets: wallets whose phrase is on this phone, then connected ones. */
-    walletGroups() {
-      const groups = [
-        { kind: WALLET_KIND.ON_PHONE, title: this.$t('On this phone'), wallets: [] },
-        { kind: WALLET_KIND.CONNECTED, title: this.$t('Connected'), wallets: [] },
-      ];
-      for (const wallet of this.sortedWallets) groups.find((g) => g.kind === walletKind(wallet)).wallets.push(wallet);
-      return groups.filter((g) => g.wallets.length);
-    },
-
     /** Danger Zone: what each row covers, and why it cannot run yet ('' when it can). */
     dangerActions() {
       const t = this.$t.bind(this);
@@ -1350,10 +1341,10 @@ export default {
       return any ? this.$t('On') : this.$t('Off');
     },
 
-    /** Under the total: how many wallets, and how many of them answer right now. */
+    /** Under the total: how many wallets, and how many of them answer right now (isWalletLive, as each row and page). */
     walletsOnlineSummary() {
       const count = this.wallets.length;
-      const online = this.connectedWallets.length;
+      const online = this.wallets.filter((wallet) => this.isWalletLive(wallet)).length;
       return online >= count
         ? this.$t('{count} wallets, all online', { count })
         : this.$t('{count} wallets, {online} online', { count, online });
@@ -1433,6 +1424,7 @@ export default {
     // server about Pay Links once, so the address row knows what it can offer.
     detailWallet(wallet) {
       if (!wallet && this.detailWalletId) {
+        this.lastDetailWalletId = this.detailWalletId;
         this.detailWalletId = null;
         this.showWalletsDialog = false;
         return;
@@ -1442,7 +1434,7 @@ export default {
     showWalletsDialog(open) {
       // Remember which row to focus once the sheet has gone.
       if (!open) {
-        this.lastDetailWalletId = this.detailWalletId;
+        this.lastDetailWalletId = this.detailWalletId || this.lastDetailWalletId;
         this.detailWalletId = null;
       }
     },
@@ -1497,18 +1489,13 @@ export default {
     this.refreshSparkLightningAddress();
 
     // ?section=wallets (the home switcher's Manage button) needs nothing
-    // more: the wallets head this page. ?section=advanced opens Advanced.
+    // more: the wallets head this page. ?section=advanced opens Advanced once.
     if (this.$route.query.section === 'advanced') {
-      this.$nextTick(() => { this.showAdvancedSheet = true; });
+      // Opened once: Back from here must not open it again.
+      const { section, ...query } = this.$route.query;
+      this.$router.replace({ query }).catch(() => {}).then(() => { this.showAdvancedSheet = true; });
     }
 
-    // Large title: once it scrolls under the bar, the bar shows the title.
-    if (typeof IntersectionObserver === 'function' && this.$refs.largeTitle) {
-      this.titleObserver = new IntersectionObserver(([entry]) => {
-        this.titleTucked = !entry.isIntersecting;
-      }, { rootMargin: '-64px 0px 0px 0px' });
-      this.titleObserver.observe(this.$refs.largeTitle);
-    }
 
     // Long-pressing a BuhoGO tile in Quick Settings (#445).
     if (this.$route.query.section === 'quick-access') {
@@ -1528,7 +1515,6 @@ export default {
     if (this.exchangeRateInterval) {
       clearInterval(this.exchangeRateInterval);
     }
-    this.titleObserver?.disconnect();
   },
   methods: {
     /**
@@ -1683,6 +1669,8 @@ export default {
         defaultUsername: wallet.name || '',
       };
       if (status === 'available') await this._loadLnbitsAddresses();
+      // The person closed this wallet's page, or asked for another wallet's address, meanwhile.
+      if (this.detailWalletId !== wallet.id || this.lnAddressSheet.walletId !== wallet.id) return;
       this.lnAddressSheet.visible = true;
     },
 
@@ -2407,13 +2395,14 @@ export default {
       const walletId = this.lastDetailWalletId;
       this.lastDetailWalletId = null;
       if (!walletId) return;
-      document.querySelector(`.settings-content [data-wallet-id="${CSS.escape(walletId)}"]`)?.focus({ preventScroll: true });
+      // A wallet that just left this phone has no row: Add wallet takes the focus.
+      const row = document.querySelector(`.settings-content [data-wallet-id="${CSS.escape(walletId)}"]`);
+      (row || document.querySelector('.settings-content [data-audit="settings-add-wallet"]'))?.focus({ preventScroll: true });
     },
 
-    /** A wallet row's caption: where the wallet lives and what kind it is ("Connected · NWC"). */
+    /** A wallet row's caption starts with its kind ("NWC"); the group's footer says where each kind lives. */
     walletRowKind(wallet) {
-      const type = this.getWalletTypeLabel(wallet);
-      return walletKind(wallet) === WALLET_KIND.CONNECTED ? `${this.$t('Connected')} · ${type}` : type;
+      return this.getWalletTypeLabel(wallet);
     },
 
     openAddSparkWallet() {
@@ -3970,6 +3959,11 @@ export default {
 .wallet-row-state--off { color: var(--text-secondary); }
 
 /* A slot icon lives in this page's scope, so the chevron is styled here. */
+/* A wallet's name is typed by its owner and can be one long word: the
+   balance moves under it early, and only such a word breaks. */
+.wallet-list-row :deep(.settings-row-body) { flex: 1 1 8rem; min-width: 0; }
+.wallet-list-row :deep(.settings-row-label) { overflow-wrap: anywhere; }
+
 .settings-row-chevron { flex-shrink: 0; color: var(--text-muted); opacity: 0.7; }
 
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }

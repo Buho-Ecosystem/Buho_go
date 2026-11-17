@@ -77,14 +77,16 @@ try {
     assert.match(total, /Total/);
     assert.match(total, /5 wallets, 4 online/, 'the total says how many answer');
     assert.match(await page.locator('[data-wallet-id="main"]').innerText(), /Active/);
-    assert.match(await page.locator('[data-wallet-id="hub"]').innerText(), /Connected · .*Offline/s);
+    // One test for online (the wallet page's): the row, the total and the page agree.
+    assert.match(await page.locator('[data-wallet-id="hub"]').innerText(), /NWC · Offline/);
     assert.equal(await page.locator('[data-audit="settings-add-wallet"]').count(), 1);
     // App lock says what it falls back to.
     assert.match(await page.locator('.settings-content').innerText(), /phone's PIN, pattern or password/);
     await shot(page, `01-settings-${theme}`);
     await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
     await page.waitForTimeout(300);
-    assert.equal(await page.locator('.hub-header-title').textContent().then(t => t.trim()), 'Settings', 'the bar takes the title once it scrolls away');
+    // Hub headers scroll with the page, so the bar never takes the title: it stays empty.
+    assert.equal(await page.locator('.hub-header-title').textContent().then(t => t.trim()), '', 'the bar keeps no title');
     await shot(page, `02-settings-lower-${theme}`);
     await page.evaluate(() => window.scrollTo(0, 0));
 
@@ -153,6 +155,16 @@ try {
     await page.evaluate(() => { location.hash = '#/settings?section=wallets'; });
     await page.locator('#settings-wallets').waitFor();
     assert.equal(await page.locator('.wallet-detail-panel').count(), 0, 'no sheet opens on its own');
+
+    // 7 · ?section=advanced opens Advanced once and leaves the address, so Back cannot reopen it.
+    // The link arrives from another page (Settings mounts afresh), as it does from the docs.
+    await page.evaluate(() => window.__audit.app.config.globalProperties.$router.push('/security'));
+    await page.locator('.backup-choices').waitFor();
+    await page.evaluate(() => window.__audit.app.config.globalProperties.$router.push('/settings?section=advanced'));
+    await page.locator('[data-audit="settings-advanced-sheet"]').waitFor();
+    assert.equal(await page.evaluate(() => location.hash.includes('section=')), false, 'the section leaves the address');
+    await sheet(page).getByRole('button', { name: 'Done' }).click();
+    await page.locator('[data-audit="settings-advanced-sheet"]').waitFor({ state: 'detached' });
 
     await context.close();
   }

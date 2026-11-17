@@ -1,5 +1,6 @@
 /** Browser check for taking wallets off this phone (utils/walletRemoval.js):
- * the wallet rows on Settings (a connected wallet says so in its caption),
+ * the wallet rows on Settings (each caption names its kind; the footer says
+ * which kinds are connected),
  * each wallet's own page, the Danger Zone in Advanced, every alert, and what
  * is left afterwards. BuhoGO never deletes a wallet:
  * Spark and Arkade are "removed from this phone", NWC and LNbits are
@@ -77,15 +78,15 @@ for (const theme of ['light', 'dark']) {
   const { page, context, errors } = await open({ theme });
   await page.waitForSelector('#settings-wallets [data-wallet-id]');
   await pause(600);
-  // One list, no groups: where a wallet lives is in its row's caption. Only
-  // a connected wallet says "Connected"; one whose phrase is here names its
-  // kind. The state after it (Active, Offline) is left out here.
+  // One list, no groups: each caption names the wallet's kind, and the
+  // group's footer says which kinds are connected. The state after it
+  // (Active, Offline) is left out here.
   const captions = await page.$$eval('#settings-wallets [data-wallet-id]', (rows) => Object.fromEntries(rows.map((r) => {
     const caption = r.querySelector('.settings-row-caption').cloneNode(true);
     caption.querySelectorAll('.wallet-row-state').forEach((state) => state.remove());
     return [r.dataset.walletId, caption.textContent.replace(/\s+/g, ' ').trim()];
   })));
-  assert.deepEqual(captions, { main: 'Spark', savings: 'Spark', ark: 'Arkade', hub: 'Connected · NWC', kitty: 'Connected · LNbits' });
+  assert.deepEqual(captions, { main: 'Spark', savings: 'Spark', ark: 'Arkade', hub: 'NWC', kitty: 'LNbits' });
   await shot(page, `${theme}-settings-wallets`);
   if (theme === 'light') {
     for (const [id, name] of [['savings', 'spark'], ['ark', 'arkade'], ['hub', 'nwc']]) {
@@ -111,7 +112,7 @@ for (const theme of ['light', 'dark']) {
   assert.deepEqual(errors, []);
   await context.close();
 }
-console.log('✓ Settings: only connected wallets say "Connected"; each wallet\'s page says Remove from this phone or Disconnect, never delete');
+console.log('✓ Settings: each row names its kind; each wallet\'s page says Remove from this phone or Disconnect, never delete');
 
 // 2 · The Danger Zone (in Advanced) and its alerts.
 {

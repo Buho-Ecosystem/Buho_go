@@ -1,5 +1,5 @@
 import { strict as assert } from 'node:assert';
-import { isWalletBackedUp, walletBackupGroups } from '../backupStatus.js';
+import { isWalletBackedUp, walletBackupGroups, pendingBackupLabel } from '../backupStatus.js';
 
 const personal = { id: 'personal', name: 'Personal', type: 'spark' };
 const business = { id: 'business', name: 'Business', type: 'spark', metadata: { hasBackedUp: false } };
@@ -31,4 +31,14 @@ arkade.metadata = { hasBackedUp: true };
 assert.equal(walletBackupGroups([arkade])[0].saved, true);
 assert.deepEqual(walletBackupGroups([]), []);
 assert.deepEqual(walletBackupGroups([{ type: 'nwc' }, { type: 'lnbits' }]), []);
+
+// One label for the Home reminder and the Security tab: what is still open, or ''.
+const t = (key) => key;
+const open = [{ saved: false }];
+const done = [{ saved: true }];
+assert.equal(pendingBackupLabel(open, { bootstrapped: true, backupConfirmed: false }, t), 'Bitcoin & identity');
+assert.equal(pendingBackupLabel(open, { bootstrapped: false }, t), 'Bitcoin');
+assert.equal(pendingBackupLabel(done, { bootstrapped: true, backupConfirmed: false }, t), 'Identity');
+assert.equal(pendingBackupLabel(done, { bootstrapped: true, backupConfirmed: true }, t), '');
+assert.equal(pendingBackupLabel([], { bootstrapped: false }, t), '');
 console.log('backupStatus: all checks passed');

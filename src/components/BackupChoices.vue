@@ -8,7 +8,7 @@
       <h1 class="backup-hero-title">{{ $t('Backup') }}</h1>
       <p class="backup-hero-status" :class="pendingLabel ? 'is-open' : 'is-done'" data-audit="backup-status" role="status">
         <template v-if="pendingLabel">{{ $t('{what} not checked yet', { what: pendingLabel }) }}</template>
-        <template v-else-if="choices.length"><Icon icon="tabler:check" width="16" height="16" />{{ $t('Every backup is checked') }}</template>
+        <template v-else-if="choices.length"><Icon icon="tabler:check" width="16" height="16" class="backup-hero-check" />{{ $t('All recovery words are checked') }}</template>
         <template v-else>{{ $t('Nothing on this phone needs recovery words') }}</template>
       </p>
     </div>
@@ -103,7 +103,7 @@ import { Icon } from '@iconify/vue';
 import { useWalletStore } from '../stores/wallet';
 import { useIdentityStore } from '../stores/identity';
 import { useCloudBackupStore } from '../stores/cloudBackup.js';
-import { walletBackupGroups } from '../utils/backupStatus.js';
+import { walletBackupGroups, pendingBackupLabel } from '../utils/backupStatus.js';
 import { isCloudBackupPlatform } from '../services/cloudStorage.js';
 import { useExitKitStore } from '../stores/exitKit';
 import { kitState, isSameDay } from '../utils/exitKit.js';
@@ -177,20 +177,16 @@ const choices = computed(() => [
     mode: identity.backupConfirmed ? 'view' : 'backup', title: t('Identity'), detail: t('Name, photo and contacts'),
   }] : []),
 ]);
-// The Home reminder's words (BackupShortcut): what is still open.
-const pendingLabel = computed(() => {
-  const walletOpen = groups.value.some(group => !group.saved);
-  const identityOpen = identity.bootstrapped && !identity.backupConfirmed;
-  if (walletOpen && identityOpen) return t('Bitcoin & identity');
-  if (walletOpen) return t('Bitcoin');
-  return identityOpen ? t('Identity') : '';
-});
+// The Home reminder's words: what is still open (one owner, utils/backupStatus.js).
+const pendingLabel = computed(() => pendingBackupLabel(groups.value, identity, t));
 </script>
 
 <style scoped>
 .backup-hero { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 4px 16px 22px; text-align: center; }
 .backup-hero-title { margin: 8px 0 0; font-family: 'Manrope', sans-serif; font-size: 26px; font-weight: 800; letter-spacing: -0.02em; line-height: 1.2; color: var(--text-primary); }
-.backup-hero-status { display: inline-flex; align-items: center; gap: 5px; margin: 0; font-size: 14px; font-weight: 650; line-height: 1.4; color: var(--text-secondary); text-wrap: balance; }
+/* Inline, so the check stays with the first word when the line wraps. */
+.backup-hero-status { display: block; margin: 0; font-size: 14px; font-weight: 650; line-height: 1.4; color: var(--text-secondary); text-wrap: balance; }
+.backup-hero-check { display: inline; vertical-align: -0.15em; margin-right: 5px; }
 .backup-hero-status.is-open { color: var(--color-warn); }
 .backup-hero-status.is-done { color: var(--brand-accent-text); }
 .backup-identity-tile { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; border-radius: 7px; background: #8E5BA8; color: #fff; }
