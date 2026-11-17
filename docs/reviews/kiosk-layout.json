@@ -1,0 +1,60 @@
+{
+  "evidence": "Actual Vue UI with seeded local merchant records. This is layout and interaction evidence, not payment settlement verification.",
+  "products": 1000,
+  "orders": 10000,
+  "layouts": [
+    {
+      "label": "compact sales",
+      "width": 320,
+      "height": 568,
+      "headerHeight": 52,
+      "listHeight": 460,
+      "mountedSaleRows": 21,
+      "horizontalOverflow": false,
+      "outerScroll": false
+    },
+    {
+      "label": "light sales contrast",
+      "secondaryTextContrast": 6.32
+    },
+    {
+      "label": "dark sales contrast",
+      "secondaryTextContrast": 9.02
+    },
+    {
+      "label": "compact welcome",
+      "width": 320,
+      "height": 568,
+      "horizontalOverflow": false,
+      "outerScroll": false
+    },
+    {
+      "label": "en-US compact welcome",
+      "internalScroll": false,
+      "minimumTouchHeight": 44,
+      "actionsVisible": true
+    },
+    {
+      "label": "de compact welcome",
+      "internalScroll": false,
+      "minimumTouchHeight": 44,
+      "actionsVisible": true
+    },
+    {
+      "label": "es compact welcome",
+      "internalScroll": false,
+      "minimumTouchHeight": 44,
+      "actionsVisible": true
+    }
+  ],
+  "mountedProductRows": 21,
+  "mountedSaleRows": 30,
+  "moreCloseClickable": true,
+  "editorSaveClickable": true,
+  "detailsCloseClickable": true,
+  "receiptBackRestored": true,
+  "searchCancelRestored": true,
+  "keyboardDismissedOnSubmit": true,
+  "welcomeActionsVisible": true,
+  "pageErrors": []
+}

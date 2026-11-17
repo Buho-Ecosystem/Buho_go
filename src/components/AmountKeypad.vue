@@ -13,10 +13,23 @@
   utils/amountKeypad.js.
 -->
 <template>
-  <div class="amount-keypad">
+  <div class="amount-keypad" :class="{ 'amount-keypad--kiosk': presentation === 'kiosk' }">
     <div class="amount-keypad__content" :class="{ 'amount-keypad__content--scroll': scrollContent }">
     <div class="amount-keypad__amount">
+      <button
+        v-if="presentation === 'kiosk'"
+        type="button"
+        class="amount-keypad__kiosk-value"
+        :disabled="disabled"
+        :aria-label="`${kioskNumber} ${fiat ? fiatLabel : 'sats'}. ${$t('Enter the amount in {unit}', { unit: otherUnit })}`"
+        @click="swap"
+      >
+        <span class="amount-keypad__currency">{{ kioskPrefix }}</span>
+        <span class="amount-keypad__number" aria-live="polite" aria-atomic="true" :style="{ '--amount-size': kioskFontSize }">{{ kioskNumber }}</span>
+        <span v-if="!fiat && !bip177" class="amount-keypad__suffix">sats</span>
+      </button>
       <div
+        v-else
         class="amount-keypad__primary"
         :class="{ 'amount-keypad__primary--empty': sats === 0 }"
         :style="{ fontSize: primaryFontSize }"
@@ -25,6 +38,7 @@
         {{ primary }}<span v-if="!fiat" class="amount-keypad__suffix">sats</span>
       </div>
       <button
+        v-if="presentation !== 'kiosk'"
         type="button"
         class="amount-keypad__secondary"
         :disabled="disabled || !fiatRate"
@@ -53,6 +67,7 @@
         <template v-else>{{ key === '.' ? decimalSeparator : key }}</template>
       </button>
     </div>
+    <div v-if="$slots.actions" class="amount-keypad__actions"><slot name="actions" /></div>
   </div>
 </template>
 
@@ -77,8 +92,11 @@ const props = defineProps({
   locale: { type: String, default: '' },
   /** Optional canonical amount: display rounding must not change an assigned share. */
   exactSats: { type: Number, default: null },
+  /** The register shares input rules while retaining its established layout. */
+  presentation: { type: String, default: 'default' },
+  bip177: { type: Boolean, default: false },
 });
-const emit = defineEmits(['update:modelValue', 'update:fiat', 'edit', 'swap-unit']);
+const emit = defineEmits(['update:modelValue', 'update:fiat', 'edit', 'swap-unit', 'swap-unavailable']);
 
 const sats = computed(() => props.exactSats ?? keypadSats(props.modelValue, { fiat: props.fiat, rate: props.fiatRate }));
 const keys = computed(() => ['1', '2', '3', '4', '5', '6', '7', '8', '9', props.fiat ? '.' : '000', '0', 'del']);
@@ -108,19 +126,32 @@ const primaryFontSize = computed(() => {
   const chars = primary.value.length + (props.fiat ? 0 : 3);
   return chars <= 11 ? '44px' : `${Math.max(22, Math.floor((44 * 11) / chars))}px`;
 });
+const kioskPrefix = computed(() => props.fiat ? fiatSymbolFor(props.fiatCode).trim() : props.bip177 ? '₿' : '');
+const kioskNumber = computed(() => {
+  if (props.fiat) {
+    if (props.exactSats > 0 && satsToFiat(props.exactSats, props.fiatRate) < 0.01) return `<${groupFiatInput('0.01', numberLocale.value)}`;
+    return groupFiatInput(props.modelValue, numberLocale.value);
+  }
+  return (props.exactSats ?? (Number(props.modelValue) || 0)).toLocaleString(numberLocale.value);
+});
+const kioskFontSize = computed(() => {
+  const chars = kioskNumber.value.length + (props.fiat || props.bip177 ? 1 : 3);
+  return `${chars > 10 ? Math.max(24, (48 * 10) / chars) : chars > 8 ? 48 : 64}px`;
+});
 
 function tap(key) {
   if (props.disabled) return;
+  const next = applyKeypadKey(props.modelValue, key, { fiat: props.fiat });
+  if (next === props.modelValue) return;
   emit('edit');
-  emit('update:modelValue', applyKeypadKey(props.modelValue, key, { fiat: props.fiat }));
+  emit('update:modelValue', next);
 }
 
 function swap() {
   if (props.disabled) return;
-  const swapped = swapKeypadUnit(props.modelValue, { fiat: props.fiat, rate: props.fiatRate });
-  if (!swapped) return;
-  if (props.exactSats !== null) swapped.value = swapped.fiat ? satsToFiat(sats.value, props.fiatRate).toFixed(2) : String(sats.value);
-  emit('swap-unit');
+  const swapped = swapKeypadUnit(props.modelValue, { fiat: props.fiat, rate: props.fiatRate, exactSats: props.exactSats });
+  if (!swapped) { emit('swap-unavailable'); return; }
+  emit('swap-unit', { ...swapped, sats: sats.value });
   emit('update:modelValue', swapped.value);
   emit('update:fiat', swapped.fiat);
 }
@@ -240,6 +271,60 @@ body.body--dark .amount-keypad__key { background: rgba(255, 255, 255, 0.06); col
 body.body--dark .amount-keypad__key:active { background: rgba(255, 255, 255, 0.12); }
 
 button:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
+
+/* The register retains its established amount and keycaps. Size against
+   the space left by the register header, including in short preview frames. */
+.amount-keypad--kiosk {
+  container: kiosk-entry / size;
+  align-self: stretch;
+  gap: 0;
+  padding: 0;
+}
+.amount-keypad--kiosk .amount-keypad__content {
+  flex: 1;
+  min-height: 86px;
+  justify-content: center;
+  gap: 0;
+}
+.amount-keypad--kiosk .amount-keypad__amount { padding: 12px 0; overflow: visible; }
+.amount-keypad__kiosk-value {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 4px;
+  max-width: 100%;
+  min-height: 72px;
+  padding: 4px;
+  border: 0;
+  background: transparent;
+  color: var(--text-primary);
+  cursor: pointer;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.amount-keypad__currency { font: 600 32px/1 'Manrope', sans-serif; }
+.amount-keypad__number { font: 800 var(--amount-size, 64px)/1 'Manrope', sans-serif; letter-spacing: -.03em; }
+.amount-keypad--kiosk .amount-keypad__keys { max-width: none; flex-shrink: 0; margin: 0; gap: 10px; padding: 0 0 12px; }
+.amount-keypad--kiosk .amount-keypad__key {
+  height: 56px;
+  border: 1px solid var(--border-card);
+  background: var(--bg-input);
+  color: var(--text-primary);
+  font: 700 22px 'Manrope', sans-serif;
+}
+.amount-keypad--kiosk .amount-keypad__key:last-child { border-color: transparent; background: transparent; color: var(--text-secondary); }
+.amount-keypad__actions { width: 100%; flex-shrink: 0; }
+@container kiosk-entry (max-height: 466px) {
+  .amount-keypad--kiosk .amount-keypad__keys { gap: 8px; }
+  .amount-keypad--kiosk .amount-keypad__key { height: 48px; }
+}
+@container kiosk-entry (max-height: 410px) {
+  .amount-keypad--kiosk .amount-keypad__keys { gap: 6px; padding-bottom: 8px; }
+  .amount-keypad--kiosk .amount-keypad__key { height: 44px; }
+  .amount-keypad--kiosk .amount-keypad__amount { padding: 4px 0; }
+}
+
+@media (prefers-reduced-motion: reduce) { .amount-keypad__key,.amount-keypad__primary { transition:none; } }
 
 @media (max-width: 360px) {
   .amount-keypad__suffix { font-size: 15px; }

@@ -1,0 +1,90 @@
+{
+  "passed": true,
+  "cases": [
+    {
+      "name": "fixed invoice retains the register source and exact amount",
+      "passed": true,
+      "source": "register-lnbits",
+      "amountSats": 5000,
+      "amountReadonly": true,
+      "layout": {
+        "sheetTop": 379,
+        "sheetBottom": 844,
+        "sheetHeight": 465,
+        "primaryBottom": 828,
+        "fitsViewport": true
+      }
+    },
+    {
+      "name": "Spark Lightning address Max budgets the entire enforced fee allowance",
+      "passed": true,
+      "source": "register-spark",
+      "amountSats": 99009,
+      "maximumFeeSats": 991,
+      "maximumDebitSats": 100000,
+      "balanceSats": 100000,
+      "layout": {
+        "sheetTop": 175,
+        "sheetBottom": 844,
+        "sheetHeight": 669,
+        "primaryBottom": 828,
+        "fitsViewport": true
+      }
+    },
+    {
+      "name": "register-lnbits does not invent a variable-amount full-balance Max",
+      "passed": true,
+      "source": "register-lnbits",
+      "boundedMaxAvailable": false
+    },
+    {
+      "name": "register-nwc does not invent a variable-amount full-balance Max",
+      "passed": true,
+      "source": "register-nwc",
+      "boundedMaxAvailable": false
+    },
+    {
+      "name": "Spark Bitcoin keeps the shared on-chain fee panel and native quote tiers",
+      "passed": true,
+      "source": "register-spark",
+      "selectedFeeSats": 400,
+      "nativeQuoteTiers": 3,
+      "layout": {
+        "sheetTop": 101,
+        "sheetBottom": 844,
+        "sheetHeight": 744,
+        "primaryBottom": 828,
+        "fitsViewport": true
+      }
+    },
+    {
+      "name": "Auto-Transfer Bitcoin destination keeps arrival choices without enabling a rule",
+      "passed": true,
+      "source": "register-spark",
+      "arrivalChoices": [
+        "Within an hour",
+        "About 30 minutes",
+        "Next block"
+      ],
+      "ruleEnabled": false
+    }
+  ],
+  "viewport": {
+    "width": 390,
+    "height": 844
+  },
+  "externalNetworkBlocked": true,
+  "viteHmrDisabled": true,
+  "outgoingSubmissions": 0,
+  "pageErrors": [],
+  "blockedExternalOrigins": [
+    "https://fonts.googleapis.com",
+    "https://getalby.com",
+    "https://mempool.emzy.de",
+    "https://mempool.space"
+  ],
+  "limitations": [
+    "Providers, balance and remote address responses are scripted.",
+    "No confirmation/send performed; native credentials, SDK settlement and real funds remain unverified."
+  ]
+}

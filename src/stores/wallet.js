@@ -1,3 +1,4 @@
+import { verifyKioskOwner } from '../utils/kioskOwnerRecovery.js';
 import { preferredProfileLightningAddress as preferredProfileAddress } from '../utils/profilePaymentAddress.js';
 import { walletLightningAddress } from '../utils/walletLightningAddress.js';
 /**
@@ -8,6 +9,7 @@ import { walletLightningAddress } from '../utils/walletLightningAddress.js';
  */
 
 import { defineStore } from 'pinia';
+import { toRaw } from 'vue';
 import { createNwcProvider } from '../services/nwcClient.js';
 import { parseNwcConnection } from '../utils/nwcConnection.js';
 import { capabilitiesOf, cleanWalletText, nip47Methods, spendingLimitFrom, suggestedWalletName, walletAddressOf, walletKeyOf } from '../utils/nwcWallet.js';
@@ -69,6 +71,7 @@ export function depositClaimKey(txId, outputIndex) {
 }
 
 /** walletId → the last balance noticeIncomingPayment saw for it this session. */
+const kioskPreferenceSaves = new WeakMap();
 const observedBalance = new Map();
 // Shared by page ticks and store refreshes; the newest request owns its result.
 const balanceReads = new Map();
@@ -461,6 +464,7 @@ export const useWalletStore = defineStore('wallet', {
     kioskEnabled: false,
     kioskPinHash: '', // utils/kioskPin.js: salted hash, never the PIN itself
     kioskOwnerAccess: false, // true = merchant unlocked, false = locked to POS
+    kioskAuthRevision: 0, // volatile: invalidates a device prompt when the register relocks
     kioskWalletId: null, // which wallet receives kiosk payments
 
     // Kiosk — Tipping
@@ -4352,14 +4356,14 @@ export const useWalletStore = defineStore('wallet', {
      * @param {string} walletId
      * @param {string} paymentHash
      */
-    async lookupInvoiceOnWallet(walletId, paymentHash) {
+    async lookupInvoiceOnWallet(walletId, paymentHash, options = {}) {
       const wallet = this.wallets.find(w => w.id === walletId);
       if (!wallet) throw new Error('Wallet not found');
       const provider = await this.ensureWalletConnectedForTransfer(walletId);
       if ((wallet.type || WALLET_TYPES.NWC) === WALLET_TYPES.NWC) {
         return lookupNwcInvoice(provider, paymentHash, { methods: wallet.metadata?.methods });
       }
-      return provider.lookupInvoice(paymentHash);
+      return provider.lookupInvoice(paymentHash, options);
     },
 
     /**
@@ -4979,24 +4983,37 @@ export const useWalletStore = defineStore('wallet', {
 
     // ─── Kiosk Mode ───────────────────────────────────────────
 
-    async enableKiosk(pin, walletId) {
-      this.kioskEnabled = true;
-      this.kioskPinHash = hashKioskPin(pin);
-      this.kioskWalletId = walletId || null;
-      this.kioskOwnerAccess = true; // merchant keeps full access after setup
-      await this.persistState();
+    /** Kiosk settings report success only after the canonical wallet record is durable. */
+    async _saveKioskPreferences(changes, { ownerAccess, clearPayment = false, invalidateAuth = false } = {}) {
+      // Pinia devtools can supply a fresh action proxy; its underlying state remains stable.
+      const key = this.$state ? toRaw(this.$state) : this;
+      const queued = (kioskPreferenceSaves.get(key) || Promise.resolve()).catch(() => {}).then(async () => {
+        const previous = Object.fromEntries(Object.keys(changes).map(key => [key, this[key]]));
+        const revision = this.kioskAuthRevision;
+        Object.assign(this, changes);
+        try {
+          await this.persistState({ requireDurable: true });
+        } catch (error) {
+          // Preserve a later explicit change, such as clearing the app, while undoing our failed save.
+          for (const [key, value] of Object.entries(previous)) if (this[key] === changes[key]) this[key] = value;
+          throw error;
+        }
+        if (invalidateAuth) this.kioskAuthRevision = (this.kioskAuthRevision || 0) + 1;
+        if (clearPayment) this.pendingDeepLink = null;
+        // An explicit relock while a save was running always takes precedence over granting access.
+        if (ownerAccess !== undefined && (ownerAccess === false || revision === this.kioskAuthRevision)) this.kioskOwnerAccess = ownerAccess;
+      });
+      kioskPreferenceSaves.set(key, queued);
+      return queued;
     },
 
-    /**
-     * Turns kiosk off. Only the PIN goes: the wallet, tips, round-up and
-     * display stay for the next time it is turned on (issue #449).
-     */
+    async enableKiosk(pin, walletId) {
+      await this._saveKioskPreferences({ kioskEnabled: true, kioskPinHash: hashKioskPin(pin), kioskWalletId: walletId || null }, { ownerAccess: true });
+    },
+
+    /** Turns kiosk off while keeping its receiving wallet, tips and display preferences. */
     async disableKiosk() {
-      this.pendingDeepLink = null;
-      this.kioskEnabled = false;
-      this.kioskPinHash = '';
-      this.kioskOwnerAccess = false;
-      await this.persistState();
+      await this._saveKioskPreferences({ kioskEnabled: false, kioskPinHash: '' }, { ownerAccess: false, clearPayment: true, invalidateAuth: true });
     },
 
     unlockToOwnerMode(pin) {
@@ -5008,50 +5025,49 @@ export const useWalletStore = defineStore('wallet', {
       return false;
     },
 
-    forceUnlockKiosk() {
+    async recoverKioskOwnerAccess() {
+      const revision = this.kioskAuthRevision = (this.kioskAuthRevision || 0) + 1;
+      const context = { enabled: this.kioskEnabled, pinHash: this.kioskPinHash, walletId: this.kioskWalletId };
+      if (!context.enabled || !await verifyKioskOwner()) return false;
+      // A delayed system prompt may not grant access to a changed register session.
+      if (this.kioskAuthRevision !== revision || !this.kioskEnabled || this.kioskPinHash !== context.pinHash || this.kioskWalletId !== context.walletId) return false;
       this.pendingDeepLink = null;
       this.kioskOwnerAccess = true;
+      return true;
     },
 
     lockToKioskMode() {
+      this.kioskAuthRevision = (this.kioskAuthRevision || 0) + 1;
       this.pendingDeepLink = null;
       this.kioskOwnerAccess = false;
     },
 
     async changeKioskPin(newPin) {
-      this.kioskPinHash = hashKioskPin(newPin);
-      await this.persistState();
+      await this._saveKioskPreferences({ kioskPinHash: hashKioskPin(newPin) });
     },
 
     async activateKioskMode() {
-      this.pendingDeepLink = null;
-      this.kioskOwnerAccess = false;
-      await this.persistState();
+      await this._saveKioskPreferences({}, { ownerAccess: false, clearPayment: true, invalidateAuth: true });
     },
 
     async setKioskWallet(walletId) {
-      this.kioskWalletId = walletId;
-      await this.persistState();
+      await this._saveKioskPreferences({ kioskWalletId: walletId });
     },
 
     async setKioskTipEnabled(val) {
-      this.kioskTipEnabled = val;
-      await this.persistState();
+      await this._saveKioskPreferences({ kioskTipEnabled: val });
     },
 
     async setKioskTipValues(arr) {
-      this.kioskTipValues = arr;
-      await this.persistState();
+      await this._saveKioskPreferences({ kioskTipValues: [...arr] });
     },
 
     async setKioskRoundUpEnabled(val) {
-      this.kioskRoundUpEnabled = val;
-      await this.persistState();
+      await this._saveKioskPreferences({ kioskRoundUpEnabled: val });
     },
 
     async setKioskDisplayCurrency(val) {
-      this.kioskDisplayCurrency = val;
-      await this.persistState();
+      await this._saveKioskPreferences({ kioskDisplayCurrency: val });
     },
   },
 });

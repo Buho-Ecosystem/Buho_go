@@ -34,6 +34,7 @@ export default defineConfig((ctx) => {
       // first screen); until it has, the store refuses to save.
       'wallet-store',
       'kiosk',
+      'kiosk-payments',
       // 'secure-screen' reconciles the Pinia screen-privacy field
       // with the native SharedPreferences value applied by
       // MainActivity.onCreate, and installs the router-meta

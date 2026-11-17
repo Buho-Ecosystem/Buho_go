@@ -244,3 +244,16 @@ test('the most an invoice can cost is the server\'s own figure, rounded up, or n
   }
 });
 
+
+test('strict invoice lookup exposes an unavailable connection without claiming an unpaid invoice', async () => {
+  server({ ['GET /api/v1/payments/' + HASH]: { status: 503 } });
+  await assert.rejects(() => provider().lookupInvoice(HASH, { strict: true }), /API error/);
+});
+test('invoice proof carries its actual history identity and keeps gross and net separate', async () => {
+  server({ ['GET /api/v1/payments/' + HASH]: { paid: true, details: { payment_hash: HASH, amount: 1000000, fee: -5000 } } });
+  const result = await provider().lookupInvoice(HASH, { strict: true });
+  assert.equal(result.transactionId, HASH);
+  assert.equal(result.paymentHash, HASH);
+  assert.equal(result.amount, 1000);
+  assert.equal(result.receivedSats, 995);
+});

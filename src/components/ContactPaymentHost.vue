@@ -53,12 +53,12 @@ const Wallet = defineAsyncComponent({
 // and must finish through the existing confirmation/success lifecycle.
 watch(() => route.fullPath, invalidateContext, { flush: 'sync' })
 watch(() => identity.nostrPubkeyHex, invalidateContext, { flush: 'sync' })
-watch(() => props.suspended || wallets.kioskEnabled, blocked => {
+watch(() => props.suspended || (wallets.kioskEnabled && !wallets.kioskOwnerAccess), blocked => {
   if (blocked) invalidateContext()
 }, { immediate: true, flush: 'sync' })
 watch(() => flow.intent?.id, (id, previousId) => {
   if (id !== previousId) invalidatedIntentId = null
-  if (props.suspended || wallets.kioskEnabled) invalidateContext()
+  if (props.suspended || (wallets.kioskEnabled && !wallets.kioskOwnerAccess)) invalidateContext()
 }, { flush: 'sync' })
 // A committed debit must settle. If it fails and becomes editable again,
 // discard the old context instead of offering a retry under a new identity,

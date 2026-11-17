@@ -1,47 +1,40 @@
 # Kiosk Mode
 
-Kiosk Mode turns the phone into a register for staff: they can take payments and nothing else. The settings page follows Apple's Guided Access in iOS Settings (issue #449): one switch, with everything that belongs to the register under it.
+Kiosk Mode turns BuhoGO into a local register. Staff can build baskets, accept payments and open the current receipt. The owner PIN protects wallet administration, reports, exports and transfers.
 
-[← Feature records](README.md)
+[Feature records](README.md) · [Approved behavior](KIOSK_POS_PLAN.md)
 
-## Where it lives
+## Entry points
 
-- **Settings:** in the Wallet group, the Kiosk Mode row shows On or Off and opens `/kiosk-mode` (`pages/KioskModePage.vue`).
-- **The register:** `/kiosk` (`pages/KioskDashboard.vue`).
-- **Guard:** while the register runs, `boot/kiosk.js` sends every route to `/kiosk`, the settings page included.
+- Settings → Kiosk Mode opens `/kiosk-mode` for setup and owner tools. Its query views share the native toolbar and sheets.
+- `/kiosk` is the locked register. Every other route redirects here while `kioskEnabled && !kioskOwnerAccess`.
+- Setup preselects an eligible receiving wallet and currency, asks for the owner PIN twice, then opens the register. The illustrated tour is optional. Products and transfers can be configured later.
+- Existing receiving wallets, entry units, tip percentages and independent round-up preferences are retained. Tips remain off by default.
 
-## States
+## Checkout and recovery
 
-| `kioskEnabled` | `kioskOwnerAccess` | Means |
-|---|---|---|
-| false | false | Off. The settings from last time are kept. |
-| true | false | The register runs. |
-| true | true | The owner is inside the app: after turning kiosk on, after the PIN, or after the forgotten-PIN taps. This state is not saved, so every app start opens the register. |
+`KioskDashboard.vue` reuses `AmountKeypad.vue` for exact sats or fiat entry, retaining the register's large amount and keypad. Tapping the amount changes its input unit. Products, quantities and saved baskets use the same durable draft. Catalog currency cannot silently reprice existing products.
 
-## Turning it on and off
+`stores/kioskMerchant.js` owns the catalog, drafts, saved baskets, immutable sale snapshots and linked payment attempts. `services/kioskMerchantStorage.js` commits them to IndexedDB with revision checks and strict durability where supported. Updating a draft does not rewrite historical order records. A competing window's changes cause a conflict instead of an overwrite; recovery retains the local draft as a saved basket before loading the newer state.
 
-- **First visit:** `KioskIntroDialog` explains Kiosk Mode once. Continue sets `buhoGO_kiosk_intro_seen` in localStorage; Cancel goes back to Settings and the dialog shows again next time.
-- **Switch on:** `KioskPinSheet` asks for a new PIN twice. Cancel leaves the switch off.
-  - Payments go to the wallet chosen before, else the active wallet, else the first wallet that can take kiosk payments (`kioskWalletBlocker` in `utils/walletCapabilities.js`).
-  - With no such wallet, a toast says so and the switch stays off.
-- **Switch off:** no PIN is asked. Only the PIN is removed; the wallet, tips, round-up and display currency stay (`disableKiosk`).
-  - Because the wallet is kept, wallet removal says "The kiosk stops taking payments" only while kiosk is on.
-- **Open Register:** checks that the wallet can still take payments (otherwise the wallet sheet opens), then calls `activateKioskMode()` and goes to `/kiosk`.
+`composables/useKioskPayments.js` is one detached receiving runtime per merchant store, initialized by `boot/kiosk-payments.js`. It survives leaving the register. The durable order and returned request must be saved before displaying a QR. Unknown creation outcomes remain uncertain and cannot be blindly resubmitted. Expired replacements use the same order and require fresh status checks of earlier requests. Late payments remain watched. Multiple paid attempts are retained as an exception while sales totals count the order once.
 
-## The PIN
+Success requires the selected wallet's exact invoice/hash confirmation. A card service accepting a withdrawal is not proof of payment. Card and QR share the receiving request, so receipts name the payment method as Lightning without claiming an unverified payer source. Browser payments use QR; supported Android hardware can additionally read Lightning cards through the existing NFC bridge.
 
-- **Storage:** saved as `kioskPinHash`, `<salt>:<sha256(salt:pin)>` (`utils/kioskPin.js`). It is never shown.
-- **Old plain PINs:** a PIN that an earlier version saved in plain text (`kioskPin`) is hashed on the next start, and the plain copy leaves storage.
-- **Limits:** a four-digit PIN can still be found from the hash by trying all 10 000. The hash keeps it off screens and out of readable storage, nothing more.
-- **When it is asked:** only to leave the register. Inside the app, Change PIN sets a new PIN without the old one, the way a new Guided Access passcode is set in Settings.
-- **Forgotten PIN:** 13 taps on the logo in the register, each within 5 seconds of the last (`handleScreenTap`), open the app without the PIN. This is kept on purpose. The owner then sets a new PIN on the page. Anyone standing at the register can do this too.
+Only exact transaction IDs from verified lookup results receive transaction annotations. There is no amount/time-based attribution. The local register receipt remains authoritative if no transaction ID is available.
 
-## Leaving the register
+## Owner access and transfers
 
-The lock goes straight to the PIN pad. The right PIN opens the app; Resume goes back to the register.
+Owner access is session-only; restart locks the register. The existing salted PIN hash is retained. The logo has no unlock gesture. Forgotten-PIN recovery requires the existing verified native device authentication; the browser has no such recovery capability and remains locked without the PIN. This is an application UI restriction, not operating-system device management or protection against someone modifying browser storage.
 
-## Checks
+Owner withdrawals use the shared destination chooser, payment host, fee preparation and confirmation lifecycle. The Max action refreshes balance and budgets the full enforced fee allowance where available. Unbounded-fee connections do not get a guaranteed full-balance Max. Native Bitcoin withdrawals retain the existing fee panel. Auto-Transfer uses the existing rule engine, including Bitcoin-address destinations from Spark; automatic Bitcoin transfers from Arkade remain unavailable. Rules run while the app is open and connected.
 
-- `src/utils/__tests__/kioskPin.spec.js`: the hash, matching, and reading an old plain PIN.
-- `src/stores/__tests__/sparkWallets.spec.js`: a plain PIN leaves storage on the next start and still opens the register.
-- `scripts/check-wallet-persistence.mjs`: a kiosk device reloads into the register with only the hash saved.
+## Records and backup
+
+Sales, labels, itemized CSV and register backup contain records available on this device. Historical prices and exchange rates do not change with the catalog. Summaries separate original fiat currencies and base sales from tips/round-up. Pending payments are not sales.
+
+A register JSON backup includes products, baskets, order snapshots and payment request identities. Wallet credentials and the owner PIN are excluded. Restore is available only in an empty register; pending payments need their original wallet connection. Wallet recovery phrases and the app's existing wallet backups do not restore this separate merchant dataset. CSV is a report, not a restorable register backup.
+
+## Verification
+
+`npm test` includes domain, storage, mounted checkout, card, owner access, provider and lifecycle regressions. `npm run check:kiosk-storage` exercises actual browser IndexedDB, reload, competing writes and 10,000 orders. `npm run check:kiosk` runs the real app against explicitly scripted wallet responses; it requires a dev server. Actual screenshots and remaining physical-device/funded-wallet checks are recorded in the implementation review.
