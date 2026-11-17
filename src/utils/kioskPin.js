@@ -31,3 +31,13 @@ export function savedKioskPinHash({ kioskPinHash, kioskPin } = {}) {
   if (typeof kioskPin === 'string' && kioskPin) return hashKioskPin(kioskPin);
   return '';
 }
+
+/** Wrong PINs in a row that are free; each one after that waits longer. */
+export const KIOSK_PIN_FREE_TRIES = 5;
+const WAITS_MS = [1, 5, 15, 60].map((minutes) => minutes * 60_000);
+
+/** How long the next try has to wait after `failures` wrong PINs in a row. */
+export function kioskPinWaitMs(failures) {
+  if (!(failures >= KIOSK_PIN_FREE_TRIES)) return 0;
+  return WAITS_MS[Math.min(failures - KIOSK_PIN_FREE_TRIES, WAITS_MS.length - 1)];
+}

@@ -1017,6 +1017,22 @@ test('a kiosk PIN saved in plain text leaves storage on the next start and still
   assert.equal(h.store.unlockToOwnerMode('2468'), true);
 });
 
+test('after five wrong owner PINs even the right one waits, and a restart does not lift the wait', async () => {
+  const h = reloaded([await savedSpark('B', 1, { group: null })]);
+  await h.store.initialize();
+  await h.store.enableKiosk('2468', 'B');
+  h.store.kioskOwnerAccess = false;
+  const now = Date.now();
+  for (let i = 0; i < 5; i += 1) assert.equal(h.store.unlockToOwnerMode('1111', now), false);
+  assert.equal(h.store.unlockToOwnerMode('2468', now + 1000), false, 'refused while waiting');
+  await tick();
+  const again = reloaded(h.saved().wallets, { state: h.saved() });
+  await again.store.initialize();
+  assert.equal(again.store.kioskPinRetryIn(now), 60_000);
+  assert.equal(again.store.unlockToOwnerMode('2468', now + 60_000), true);
+  assert.equal(again.store.kioskPinFailures, 0);
+});
+
 test('turning kiosk off removes only the PIN; its wallet, tips and display stay for next time', async () => {
   const h = reloaded([await savedSpark('B', 1, { group: null })]);
   await h.store.initialize();

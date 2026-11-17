@@ -238,7 +238,7 @@ import { createNwcAtRest } from '../utils/nwcAtRest.js';
 import { clearCachedTransactions } from '../utils/txCache.js';
 import { i18n } from '../boot/i18n';
 import { canWalletPay, canWalletReceiveLightning } from '../utils/walletCapabilities.js';
-import { hashKioskPin, kioskPinMatches, savedKioskPinHash } from '../utils/kioskPin.js';
+import { hashKioskPin, kioskPinMatches, kioskPinWaitMs, savedKioskPinHash } from '../utils/kioskPin.js';
 import {
   setScreenPrivacyEnabled as nativeSetScreenPrivacyEnabled,
   isScreenPrivacyEnabled as nativeIsScreenPrivacyEnabled,
@@ -463,6 +463,8 @@ export const useWalletStore = defineStore('wallet', {
     // Kiosk Mode
     kioskEnabled: false,
     kioskPinHash: '', // utils/kioskPin.js: salted hash, never the PIN itself
+    kioskPinFailures: 0, // wrong PINs in a row; saved, so a restart does not reset them
+    kioskPinRetryAt: 0, // when the next PIN may be tried (ms), 0 = now
     kioskOwnerAccess: false, // true = merchant unlocked, false = locked to POS
     kioskAuthRevision: 0, // volatile: invalidates a device prompt when the register relocks
     kioskWalletId: null, // which wallet receives kiosk payments
@@ -1475,6 +1477,8 @@ export const useWalletStore = defineStore('wallet', {
               // here and saved again below, so the plain copy leaves storage.
               kioskEnabled: parsed.kioskEnabled || false,
               kioskPinHash: savedKioskPinHash(parsed),
+              kioskPinFailures: Number.isSafeInteger(parsed.kioskPinFailures) && parsed.kioskPinFailures > 0 ? parsed.kioskPinFailures : 0,
+              kioskPinRetryAt: Number(parsed.kioskPinRetryAt) > 0 ? Number(parsed.kioskPinRetryAt) : 0,
               kioskOwnerAccess: this.kioskOwnerAccess || false, // preserve if already unlocked this session
               kioskWalletId: parsed.kioskWalletId || null,
               kioskTipEnabled: parsed.kioskTipEnabled || false,
@@ -4852,6 +4856,8 @@ export const useWalletStore = defineStore('wallet', {
           // Kiosk
           kioskEnabled: this.kioskEnabled,
           kioskPinHash: this.kioskPinHash,
+          kioskPinFailures: this.kioskPinFailures,
+          kioskPinRetryAt: this.kioskPinRetryAt,
           kioskWalletId: this.kioskWalletId,
           kioskTipEnabled: this.kioskTipEnabled,
           kioskTipValues: this.kioskTipValues,
@@ -5008,7 +5014,7 @@ export const useWalletStore = defineStore('wallet', {
     },
 
     async enableKiosk(pin, walletId) {
-      await this._saveKioskPreferences({ kioskEnabled: true, kioskPinHash: hashKioskPin(pin), kioskWalletId: walletId || null }, { ownerAccess: true });
+      await this._saveKioskPreferences({ kioskEnabled: true, kioskPinHash: hashKioskPin(pin), kioskPinFailures: 0, kioskPinRetryAt: 0, kioskWalletId: walletId || null }, { ownerAccess: true });
     },
 
     /** Turns kiosk off while keeping its receiving wallet, tips and display preferences. */
@@ -5016,14 +5022,30 @@ export const useWalletStore = defineStore('wallet', {
       await this._saveKioskPreferences({ kioskEnabled: false, kioskPinHash: '' }, { ownerAccess: false, clearPayment: true, invalidateAuth: true });
     },
 
-    unlockToOwnerMode(pin) {
+    /** How long until the owner PIN may be tried again, in ms; 0 = now. */
+    kioskPinRetryIn(now = Date.now()) {
+      return Math.max(0, (this.kioskPinRetryAt || 0) - now);
+    },
+
+    /**
+     * The owner PIN. After a few wrong tries in a row each next one waits
+     * longer, and a try while waiting is not checked at all.
+     */
+    unlockToOwnerMode(pin, now = Date.now()) {
+      if (this.kioskPinRetryIn(now) > 0) return false;
       if (kioskPinMatches(pin, this.kioskPinHash)) {
         if (this.pendingDeepLink?.target === 'kiosk') this.pendingDeepLink = null;
         this.kioskOwnerAccess = true;
+        this._clearKioskPinFailures();
         return true;
       }
+      this.kioskPinFailures = (this.kioskPinFailures || 0) + 1;
+      const wait = kioskPinWaitMs(this.kioskPinFailures);
+      this.kioskPinRetryAt = wait ? now + wait : 0;
+      void this.persistState().catch(() => {});
       return false;
     },
+
 
     async recoverKioskOwnerAccess() {
       const revision = this.kioskAuthRevision = (this.kioskAuthRevision || 0) + 1;
@@ -5033,6 +5055,7 @@ export const useWalletStore = defineStore('wallet', {
       if (this.kioskAuthRevision !== revision || !this.kioskEnabled || this.kioskPinHash !== context.pinHash || this.kioskWalletId !== context.walletId) return false;
       this.pendingDeepLink = null;
       this.kioskOwnerAccess = true;
+      this._clearKioskPinFailures();
       return true;
     },
 
@@ -5042,8 +5065,15 @@ export const useWalletStore = defineStore('wallet', {
       this.kioskOwnerAccess = false;
     },
 
+    _clearKioskPinFailures() {
+      if (!this.kioskPinFailures && !this.kioskPinRetryAt) return;
+      this.kioskPinFailures = 0;
+      this.kioskPinRetryAt = 0;
+      void this.persistState().catch(() => {});
+    },
+
     async changeKioskPin(newPin) {
-      await this._saveKioskPreferences({ kioskPinHash: hashKioskPin(newPin) });
+      await this._saveKioskPreferences({ kioskPinHash: hashKioskPin(newPin), kioskPinFailures: 0, kioskPinRetryAt: 0 });
     },
 
     async activateKioskMode() {

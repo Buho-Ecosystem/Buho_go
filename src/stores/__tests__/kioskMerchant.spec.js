@@ -152,3 +152,27 @@ test('repository and write queue survive Pinia action wrapper proxies', async ()
   await Promise.all([new Proxy(store, {}).updateDraft({ amountRaw: '101' }), new Proxy(store, {}).updateDraft({ exactSats: 101 })]);
   assert.equal(store.setupCompleted, true); assert.equal(store.draft.amountRaw, '101'); assert.equal(store.draft.exactSats, 101); assert.equal(repository.data.revision, 3);
 });
+
+test('one record that no longer reads is set aside and kept; the register still opens', async () => {
+  const { store, repository } = await register(); await request(store); await store.startNextSale();
+  repository.data.orders.push({ ...cloneKiosk(repository.data.orders[0]), id: 'broken', totalSats: -1 });
+  repository.data.activeOrderId = 'broken';
+  const { store: loaded } = await register(repository);
+  assert.equal(loaded.orders.length, 1);
+  assert.equal(loaded.setAsideCount, 1);
+  assert.equal(loaded.activeOrderId, null);
+  assert.equal(JSON.parse(await loaded.exportBundle()).setAside[0].id, 'broken', 'the backup keeps it');
+});
+
+test('a save in another window brings this one up to date, so its next change is not refused', async () => {
+  const windows = [];
+  const channel = () => { const c = { onmessage: null, postMessage(data) { windows.filter(other => other !== c).forEach(other => other.onmessage?.({ data })); } }; windows.push(c); return c; };
+  const repository = new Repository();
+  setActivePinia(createPinia()); const first = useKioskMerchantStore(); await first.initialize({ storage: repository, legacyStorage, windows: channel() });
+  setActivePinia(createPinia()); const second = useKioskMerchantStore(); await second.initialize({ storage: repository, legacyStorage, windows: channel() });
+  await first.saveProduct({ name: 'Coffee', priceMinor: 250, currency: 'USD' });
+  await second.flush(); await new Promise(resolve => setTimeout(resolve, 0)); await second.flush();
+  await second.saveProduct({ name: 'Tea', priceMinor: 300, currency: 'USD' });
+  assert.deepEqual(second.products.map(product => product.name), ['Coffee', 'Tea']);
+  assert.equal(second.storageError, null);
+});

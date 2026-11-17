@@ -115,7 +115,7 @@ export function priceBasket(values, { currency = 'USD', rate = 0 } = {}) {
   return { items, currency, rate: rate || null, baseSats, subtotalMinor };
 }
 
-export function buildSaleSnapshot({ items = [], currency = 'USD', rate = 0, walletId, walletName = '', tipSats = 0, roundUpSats = 0, tipPercent = null, method = 'Lightning', label = '' }) {
+export function buildSaleSnapshot({ items = [], currency = 'USD', rate = 0, walletId, walletName = '', tipSats = 0, roundUpSats = 0, tipPercent = null, method = '', label = '' }) {
   if (!kioskIdentity(walletId)) fail('Choose the receiving wallet.');
   const priced = priceBasket(items, { currency, rate });
   if (!priced.items.length) fail('Add an item or amount first.');
@@ -189,32 +189,57 @@ export function normalizeKioskOrder(value) {
   return result;
 }
 
-export function normalizeKioskMerchant(value, currency = 'USD') {
+/**
+ * The register as saved. With `setAside`, a record that no longer reads (an
+ * order, basket or product) is set aside instead of closing the whole
+ * register: it stays in storage and in the backup, and `setAside` counts it.
+ */
+export function normalizeKioskMerchant(value, currency = 'USD', { setAside = false } = {}) {
   if (!value || typeof value !== 'object' || value.version !== KIOSK_MERCHANT_VERSION) throw kioskError('KIOSK_STORAGE_UNREADABLE', 'These register records could not be read. Keep a backup before replacing them.');
   const state = emptyKioskMerchant(value.catalogCurrency || currency);
+  const aside = [];
+  // One unreadable record must not lock the register, nor one twin of a record that read.
+  const readable = (list, read, identity = item => item.id) => {
+    const seen = new Set();
+    return list.flatMap(raw => {
+      try {
+        const item = read(raw);
+        if (seen.has(identity(item))) fail('The saved register contains duplicate entries.');
+        seen.add(identity(item));
+        return [item];
+      } catch (error) {
+        if (!setAside) throw error;
+        aside.push(raw);
+        return [];
+      }
+    });
+  };
   state.revision = kioskCount(value.revision || 0);
   state.setupCompleted = !!value.setupCompleted;
   state.entryMode = value.entryMode === 'products' ? 'products' : 'amount';
   for (const key of ['products', 'categories', 'savedBaskets', 'orders']) if (!Array.isArray(value[key])) fail('The saved register is incomplete.');
-  state.products = value.products.map(product => normalizeKioskProduct(product, state.catalogCurrency));
+  state.products = readable(value.products, product => normalizeKioskProduct(product, state.catalogCurrency));
   state.categories = value.categories.map(category => kioskText(category)).filter(Boolean);
-  if (new Set(state.categories).size !== state.categories.length || new Set(state.products.map(p => p.id)).size !== state.products.length) fail('The saved catalog contains duplicate entries.');
+  if (new Set(state.categories).size !== state.categories.length) fail('The saved catalog contains duplicate entries.');
   state.draft = normalizeKioskDraft(value.draft, state.catalogCurrency);
-  state.savedBaskets = value.savedBaskets.map(basket => {
+  state.savedBaskets = readable(value.savedBaskets, basket => {
     if (!kioskText(basket.id) || !kioskText(basket.name)) fail('A saved basket is incomplete.');
     return { id: kioskIdentity(basket.id), name: kioskText(basket.name), createdAt: kioskCount(basket.createdAt), draft: normalizeKioskDraft(basket.draft, state.catalogCurrency) };
   });
-  if (new Set(state.savedBaskets.map(b => b.id)).size !== state.savedBaskets.length) fail('The saved baskets contain duplicate entries.');
-  state.orders = value.orders.map(normalizeKioskOrder);
-  if (new Set(state.orders.map(o => o.id)).size !== state.orders.length) fail('The saved register has duplicate orders.');
   const proofs = new Set();
-  for (const order of state.orders) for (const attempt of order.attempts) if (attempt.paymentHash) {
-    const key = JSON.stringify([attempt.walletId, attempt.paymentHash]);
-    if (proofs.has(key)) fail('An invoice is assigned to more than one sale.');
-    proofs.add(key);
-  }
+  state.orders = readable(value.orders, raw => {
+    const order = normalizeKioskOrder(raw);
+    const keys = order.attempts.filter(attempt => attempt.paymentHash).map(attempt => JSON.stringify([attempt.walletId, attempt.paymentHash]));
+    if (keys.some(key => proofs.has(key)) || new Set(keys).size !== keys.length) fail('An invoice is assigned to more than one sale.');
+    keys.forEach(key => proofs.add(key));
+    return order;
+  });
   state.activeOrderId = kioskIdentity(value.activeOrderId);
-  if (state.activeOrderId && !state.orders.some(order => order.id === state.activeOrderId)) fail('The active sale could not be found.');
+  if (state.activeOrderId && !state.orders.some(order => order.id === state.activeOrderId)) {
+    if (!setAside) fail('The active sale could not be found.');
+    state.activeOrderId = null;
+  }
+  if (setAside) state.setAside = aside;
   return state;
 }
 
@@ -230,7 +255,7 @@ export function migrateLegacyKioskParked(saved, currency = 'USD') {
     const extras = totalSats - baseSats;
     const createdAt = Number.isSafeInteger(sale.parkedAt) ? sale.parkedAt : Date.now();
     const id = kioskText(sale.id) || `legacy-${index}-${invoice.paymentHash}`;
-    return normalizeKioskOrder({ id, createdAt, currency, walletId: invoice.walletId, walletName: '', method: 'Lightning', label: '', baseSats, tipSats: old.roundUp ? 0 : extras, roundUpSats: old.roundUp ? extras : 0, totalSats, legacy: true, status: sale.finalChecked ? 'expired' : 'waiting', activeAttemptId: `${id}-invoice`, items: [{ id: `${id}-amount`, name: 'Amount', qty: 1, unit: 'sats', unitSats: baseSats, currency, lineSats: baseSats, lineMinor: null }], attempts: [{ id: `${id}-invoice`, walletId: invoice.walletId, amountSats: totalSats, status: sale.finalChecked ? 'expired' : 'waiting', createdAt, paymentHash: invoice.paymentHash, paymentRequest: invoice.paymentRequest, invoiceId: invoice.invoiceId || invoice.invoice_id || null, expiresAt: Number.isSafeInteger(invoice.expiresAt || invoice.expires_at) ? invoice.expiresAt || invoice.expires_at : null }] });
+    return normalizeKioskOrder({ id, createdAt, currency, walletId: invoice.walletId, walletName: '', method: '', label: '', baseSats, tipSats: old.roundUp ? 0 : extras, roundUpSats: old.roundUp ? extras : 0, totalSats, legacy: true, status: sale.finalChecked ? 'expired' : 'waiting', activeAttemptId: `${id}-invoice`, items: [{ id: `${id}-amount`, name: 'Amount', qty: 1, unit: 'sats', unitSats: baseSats, currency, lineSats: baseSats, lineMinor: null }], attempts: [{ id: `${id}-invoice`, walletId: invoice.walletId, amountSats: totalSats, status: sale.finalChecked ? 'expired' : 'waiting', createdAt, paymentHash: invoice.paymentHash, paymentRequest: invoice.paymentRequest, invoiceId: invoice.invoiceId || invoice.invoice_id || null, expiresAt: Number.isSafeInteger(invoice.expiresAt || invoice.expires_at) ? invoice.expiresAt || invoice.expires_at : null }] });
   });
 }
 
@@ -250,6 +275,15 @@ export function kioskSaleTitle(sale, t) {
   if (!first) return t('Sale');
   if (rest.length) return t('{name} and {n} more', { name: first.name, n: rest.length });
   return first.qty > 1 ? `${first.qty} × ${first.name}` : first.name;
+}
+
+/**
+ * How a paid sale was paid, for its details and the export: 'card' or 'qr'
+ * when the register saw it, null when it did not (a sale paid while the
+ * register was elsewhere, or saved by a version that did not record it).
+ */
+export function kioskPaymentMethod(sale) {
+  return sale?.status === 'paid' && ['card', 'qr'].includes(sale.method) ? sale.method : null;
 }
 
 /**
@@ -309,11 +343,13 @@ const csvCell = value => {
 export function kioskSalesCsv(orders) {
   const header = ['Sale ID', 'Created UTC', 'Paid UTC', 'Status', 'Wallet', 'Currency', 'Item', 'Category', 'Quantity', 'Unit', 'Unit price minor', 'Unit sats', 'Item sats', 'Subtotal minor', 'Tip minor', 'Round-up minor', 'Total minor', 'Total sats', 'Label', 'Method', 'Duplicate payment'];
   const rows = [header.map(csvCell).join(',')];
-  for (const order of orders) order.items.forEach((item, index) => rows.push([order.id, new Date(order.createdAt).toISOString(), order.paidAt ? new Date(order.paidAt).toISOString() : '', order.status, order.walletName, order.currency, item.name, item.category, item.qty, item.unit, item.priceMinor, item.unitSats, item.lineSats, index ? '' : order.subtotalMinor, index ? '' : order.tipMinor, index ? '' : order.roundUpMinor, index ? '' : order.totalMinor, index ? '' : order.totalSats, order.label, order.method, order.duplicatePayment ? 'yes' : ''].map(csvCell).join(',')));
+  for (const order of orders) order.items.forEach((item, index) => rows.push([order.id, new Date(order.createdAt).toISOString(), order.paidAt ? new Date(order.paidAt).toISOString() : '', order.status, order.walletName, order.currency, item.name, item.category, item.qty, item.unit, item.priceMinor, item.unitSats, item.lineSats, index ? '' : order.subtotalMinor, index ? '' : order.tipMinor, index ? '' : order.roundUpMinor, index ? '' : order.totalMinor, index ? '' : order.totalSats, order.label, { card: 'Bitcoin Card', qr: 'QR code' }[kioskPaymentMethod(order)] || '', order.duplicatePayment ? 'yes' : ''].map(csvCell).join(',')));
   return '\uFEFF' + rows.join('\r\n') + '\r\n';
 }
 export function exportKioskBundle(data) {
-  return JSON.stringify({ kind: KIOSK_BUNDLE_KIND, version: 1, exportedAt: Date.now(), data: normalizeKioskMerchant(data) });
+  const { setAside = [], ...register } = data;
+  // Records set aside travel with the backup, untouched, so none is lost.
+  return JSON.stringify({ kind: KIOSK_BUNDLE_KIND, version: 1, exportedAt: Date.now(), data: normalizeKioskMerchant(register), ...(setAside.length ? { setAside } : {}) });
 }
 export function readKioskBundle(text) {
   if (typeof text !== 'string' || text.length > MAX_BUNDLE_BYTES) fail('Choose a register backup smaller than 20 MB.');

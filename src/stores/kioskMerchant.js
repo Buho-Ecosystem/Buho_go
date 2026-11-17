@@ -15,6 +15,9 @@ const merchantKey = store => toRaw(store.$state);
 const repositories = new WeakMap();
 const loads = new WeakMap();
 const queues = new WeakMap();
+const channels = new WeakMap();
+/** Another window of this app on the same device; there is none on a phone. */
+const otherWindows = () => typeof BroadcastChannel === 'function' ? new BroadcastChannel('buhoGO_kiosk_merchant') : null;
 const NO_CHANGE = Symbol('no change');
 const unchanged = value => ({ [NO_CHANGE]: true, value });
 const safeReason = reason => /^[A-Z0-9_-]{1,80}$/i.test(reason || '') ? reason : null;
@@ -58,21 +61,32 @@ export const useKioskMerchantStore = defineStore('kioskMerchant', {
     sales: state => state.data.orders.filter(order => order.status === 'paid').sort((a, b) => (b.paidAt || b.createdAt) - (a.paidAt || a.createdAt)),
     getOrder: state => id => state.data.orders.find(order => order.id === id) || null,
     pendingAttempts: state => state.data.orders.flatMap(order => order.attempts.filter(attempt => ['creating', 'waiting', 'expired'].includes(attempt.status)).map(attempt => ({ ...attempt, orderId: order.id, attemptId: attempt.id, invoiceData: attempt.paymentHash ? { walletId: attempt.walletId, paymentHash: attempt.paymentHash, paymentRequest: attempt.paymentRequest, amountSats: attempt.amountSats, expiresAt: attempt.expiresAt, invoiceId: attempt.invoiceId } : null }))),
+    /** Records that no longer read: kept in storage and the backup, not shown. */
+    setAsideCount: state => state.data.setAside?.length || 0,
     canRestore: state => !state.data.products.length && !state.data.orders.length && !state.data.savedBaskets.length && !kioskDraftHasValue(state.data.draft),
   },
   actions: {
-    async initialize({ storage, currency = 'USD', amountUnit = 'sats', entryMode = 'amount', legacyStorage = globalThis.localStorage } = {}) {
+    async initialize({ storage, currency = 'USD', amountUnit = 'sats', entryMode = 'amount', legacyStorage = globalThis.localStorage, windows } = {}) {
       if (this.initialized) return;
       if (loads.has(merchantKey(this))) return loads.get(merchantKey(this));
       if (storage) repositories.set(merchantKey(this), storage);
       if (!repositories.has(merchantKey(this))) repositories.set(merchantKey(this), createKioskMerchantStorage());
+      // A save in another window makes this one's copy stale: read the saved one
+      // again, so the next change here is not refused as a conflict.
+      if (!channels.has(merchantKey(this))) {
+        const channel = windows || (storage ? null : otherWindows());
+        channels.set(merchantKey(this), channel);
+        if (channel) channel.onmessage = ({ data }) => {
+          if (this.initialized && data?.revision > this.data.revision) this.reload().catch(() => {});
+        };
+      }
       this.loading = true;
       const load = (async () => {
         try {
           const repository = repositories.get(merchantKey(this));
           const saved = await repository.load();
           let data;
-          if (saved) data = normalizeKioskMerchant(saved, currency);
+          if (saved) data = normalizeKioskMerchant(saved, currency, { setAside: true });
           else {
             data = emptyKioskMerchant(currency);
             data.draft.amountUnit = amountUnit === 'fiat' ? 'fiat' : 'sats';
@@ -124,6 +138,7 @@ export const useKioskMerchantStore = defineStore('kioskMerchant', {
         }
         this.data = next;
         this.storageError = null;
+        try { channels.get(merchantKey(this))?.postMessage({ revision: next.revision }); } catch { /* Other windows read it on their next change. */ }
         return result === undefined ? undefined : cloneKiosk(result);
       });
       queues.set(merchantKey(this), queued);
@@ -329,6 +344,13 @@ export const useKioskMerchantStore = defineStore('kioskMerchant', {
       return this._change(data => { data.activeOrderId = null; data.draft = { ...emptyKioskDraft(data.catalogCurrency), amountUnit: data.draft.amountUnit }; return data.draft; });
     },
     async setSaleLabel(id, label) { return this._change(data => changeOrder(data, id, order => { order.label = kioskText(label); })); },
+    /** How a paid sale was paid ('card' or 'qr'), as the register saw it; never changed once set. */
+    async setSaleMethod(id, method) {
+      return this._change(data => changeOrder(data, id, order => {
+        if (order.status !== 'paid' || order.method || !['card', 'qr'].includes(method)) return unchanged(order);
+        order.method = method;
+      }));
+    },
     async exportBundle() { await this.flush(); return exportKioskBundle(this.data); },
     async restoreBundle(text) {
       const restored = readKioskBundle(text);
