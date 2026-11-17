@@ -1,14 +1,12 @@
-/** Browser check for the Bolt Card flow and kiosk parking, driven through the
- * running app against a stand-in card service (LNURL-withdraw with a 10,000
- * sat pinLimit, PIN 1234, "Card blocked" after three wrong PINs). Start
- * `pnpm dev --port 9031` first (or set BOLTCARD_BASE_URL). Every other
+/** Browser check for receiving from a Bolt Card in the wallet, driven through
+ * the running app against a stand-in card service (LNURL-withdraw with a
+ * 10,000 sat pinLimit, PIN 1234, "Card blocked" after three wrong PINs).
+ * Start `pnpm dev --port 9031` first (or set BOLTCARD_BASE_URL). Every other
  * external request is blocked; wallets are seeded into the store.
  *
- * Wallet: the tap opens the sheet at once, the slide (with its lock when a
- * PIN follows), the PIN in the sheet, a wrong PIN, the last try, a locked
- * card. Kiosk: a card held before the amount, the pay screen's card lane,
- * pay on tap below the PIN limit, the customer's PIN above it, a decline
- * that keeps the sale, and parked sales (several, watched, listed). */
+ * The tap opens the sheet at once, the slide (with its lock when a PIN
+ * follows), the PIN in the sheet, a wrong PIN, the last try, a locked card.
+ * Card payments at the register: scripts/check-kiosk-nfc.mjs. */
 import { chromium } from '@playwright/test';
 import assert from 'node:assert/strict';
 import { mkdir } from 'node:fs/promises';
@@ -83,11 +81,9 @@ const vmOf = (page, name) => page.evaluateHandle((name) => {
   return null;
 }, name);
 const typePin = async (page, digits) => { for (const d of digits) { await page.locator('.card-pin-key', { hasText: new RegExp(`^\\s*${d}\\s*$`) }).first().click(); await pause(80); } };
-const tapCard = (page, target) => page.evaluate(({ card, target }) => {
-  window.__audit.app.config.globalProperties.$pinia._s.get('wallet').pendingDeepLink = target
-    ? { type: 'lnurl', data: card, target, receivedAt: Date.now() }
-    : { type: 'lnurl', data: card };
-}, { card: CARD, target });
+const tapCard = (page) => page.evaluate((card) => {
+  window.__audit.app.config.globalProperties.$pinia._s.get('wallet').pendingDeepLink = { type: 'lnurl', data: card };
+}, CARD);
 
 /** Drag the slider's thumb to `share` of the track (and let go when asked). */
 async function drag(page, share, release) {
@@ -194,130 +190,6 @@ async function drag(page, share, release) {
   assert.deepEqual(errors, []);
   await context.close();
   console.log('✓ wallet: a sheet closed during the read stays closed');
-}
-
-// ── Kiosk ───────────────────────────────────────────────────────────────────
-async function kiosk(service) {
-  const opened = await open({ theme: 'dark', service });
-  const { page } = opened;
-  await page.evaluate(() => {
-    localStorage.removeItem('buhoGO_kiosk_parked_sales');
-    const app = window.__audit.app.config.globalProperties;
-    const store = app.$pinia._s.get('wallet');
-    store.wallets = [{ id: 'shop', type: 'lnbits', name: 'Café Till', metadata: {}, createdAt: 1, lastUsed: 1 }];
-    store.activeWalletId = 'shop';
-    store.connectionStates.shop = { connected: true, error: null };
-    store.providers.shop = {};
-    window.__paid = new Set();
-    let sale = 0;
-    store.ensureWalletConnectedForTransfer = async () => ({});
-    store.createInvoiceDetailsOnWallet = async () => { sale++; return { paymentRequest: `lnbc${sale}u1pkioskcardsale${'q'.repeat(180)}`, paymentHash: String(sale).padStart(64, 'c'), expiresAt: Math.floor(Date.now() / 1000) + 900 }; };
-    store.lookupInvoiceOnWallet = async (walletId, hash) => ({ paid: window.__paid.has(hash) });
-    Object.assign(store, { kioskEnabled: true, kioskOwnerAccess: false, kioskWalletId: 'shop', kioskTipEnabled: false, kioskRoundUpEnabled: false });
-    app.$router.push('/kiosk');
-  });
-  await page.waitForSelector('.kiosk-shell', { timeout: 30000 });
-  await pause(800);
-  const k = await vmOf(page, 'KioskDashboard');
-  await k.evaluate((k) => { k.nfcReady = true; });
-  return { ...opened, k };
-}
-const charge = async (k, page, amount) => {
-  await k.evaluate((k, amount) => { for (const d of String(amount)) k.handleNumpad(d); k.proceedToTipOrCharge(); }, amount);
-  await page.waitForSelector('.pos-pay', { timeout: 10000 });
-  await pause(600);
-};
-
-{
-  const { page, context, errors, k } = await kiosk(cardService());
-  await tapCard(page, 'kiosk');
-  await page.waitForSelector('.pos-card-held', { timeout: 5000 });
-  await shot(page, 'kiosk-card-held');
-  await charge(k, page, 21000);
-  await page.waitForSelector('.pos-card-confirm', { timeout: 10000 });
-  await pause(400);
-  await shot(page, 'kiosk-held-card-confirm');
-  assert.equal(await k.evaluate((k) => k.card.phase.value), 'review', 'a card tapped before the sale waits for Charge');
-  await page.locator('.pos-card-confirm').click();
-  await page.waitForSelector('.pos-pay .card-pin-key', { timeout: 10000 });
-  await pause(500);
-  await shot(page, 'kiosk-customer-pin');
-  await typePin(page, PIN);
-  await page.waitForSelector('.pos-card-status', { timeout: 10000 });
-  await pause(400);
-  await shot(page, 'kiosk-paying');
-  await page.evaluate(() => { window.__paid.add('1'.padStart(64, 'c')); });
-  await page.waitForSelector('.pos-paid-method', { timeout: 10000 });
-  await pause(500);
-  await shot(page, 'kiosk-paid-by-card');
-  assert.deepEqual(errors, []);
-  await context.close();
-  console.log('✓ kiosk: held card waits for Charge, customer PIN on the pay screen, paid by card');
-}
-
-{
-  const { page, context, errors, k } = await kiosk(cardService());
-  await charge(k, page, 4800);
-  assert.equal(await page.locator('.pos-card-lane').count(), 1, 'the pay screen offers the card');
-  await shot(page, 'kiosk-pay-screen');
-  await tapCard(page, 'kiosk');
-  await page.waitForSelector('.pos-card-status', { timeout: 10000 });
-  assert.equal(await page.locator('.card-pin').count(), 0);
-  assert.equal(await k.evaluate((k) => k.card.phase.value === 'submitting' || k.card.phase.value === 'waiting'), true, 'below the PIN limit a tap pays at once');
-  await context.close();
-  console.log('✓ kiosk: below the PIN limit a tap on the pay screen pays at once');
-  assert.deepEqual(errors, []);
-}
-
-{
-  const { page, context, errors, k } = await kiosk(cardService({ checkMs: 200 }));
-  await charge(k, page, 21000);
-  await tapCard(page, 'kiosk');
-  for (let i = 0; i < 3; i++) {
-    await page.waitForSelector('.pos-pay .card-pin-key', { timeout: 10000 });
-    await pause(i ? 700 : 300);
-    await typePin(page, '9999');
-    await pause(600);
-  }
-  await page.waitForSelector('.pos-card-problem', { timeout: 10000 });
-  await pause(400);
-  await shot(page, 'kiosk-card-declined');
-  assert.equal(await page.locator('.pos-qr-img').count(), 1, 'the QR is still there');
-  assert.equal(await k.evaluate((k) => k.state), 'payment', 'the sale is kept');
-  assert.deepEqual(errors, []);
-  await context.close();
-  console.log('✓ kiosk: a locked card says why, keeps the sale and its QR');
-}
-
-{
-  const { page, context, errors, k } = await kiosk(cardService());
-  await charge(k, page, 2500);
-  await page.locator('.pos-payment-actions .pos-outline-btn').first().click();
-  await pause(300);
-  await charge(k, page, 12000);
-  await page.locator('.pos-payment-actions .pos-outline-btn').first().click();
-  await pause(700);
-  assert.equal(await k.evaluate((k) => k.parkedCount), 2, 'a second park never drops the first');
-  await shot(page, 'kiosk-parked-line');
-  await page.locator('.pos-parked-line').click();
-  await page.waitForSelector('.pos-parked-row', { timeout: 5000 });
-  await pause(500);
-  await shot(page, 'kiosk-parked-sheet');
-  await page.keyboard.press('Escape');
-  await pause(400);
-  await charge(k, page, 800);
-  await page.evaluate(() => { window.__paid.add('1'.padStart(64, 'c')); });
-  await page.waitForFunction(() => document.body.innerText.includes('Parked sale paid'), null, { timeout: 12000 });
-  await pause(400);
-  await shot(page, 'kiosk-parked-paid');
-  assert.equal(await k.evaluate((k) => k.parkedCount), 1);
-  assert.equal(await k.evaluate((k) => k.state), 'payment', 'the sale on screen is untouched');
-  await page.locator('.pos-payment-actions .pos-cancel-btn').click();
-  await pause(300);
-  assert.equal(await k.evaluate((k) => k.parkedCount), 1, 'cancelling the sale on screen keeps the parked one');
-  assert.deepEqual(errors, []);
-  await context.close();
-  console.log('✓ kiosk: parked sales are kept, listed, watched and recorded when paid');
 }
 
 await browser.close();
