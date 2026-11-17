@@ -71,4 +71,5 @@ Before: the PIN took over the whole screen, the kiosk went back to its QR after 
 ## Checks
 
 - `node --test src/components/__tests__/withdrawAuthorization.spec.js src/composables/__tests__/kioskCardPayment.spec.js src/pages/__tests__/kioskPayments.spec.js`
-- `node scripts/check-boltcard.mjs` against a running dev server (`pnpm dev --port 9031`): drives both flows through the app against a stand-in card service and writes screenshots to `output/boltcard-check/`.
+- `node scripts/check-boltcard.mjs` against a running dev server (`pnpm dev --port 9031`): drives the wallet flow through the app against a stand-in card service and writes screenshots to `output/boltcard-check/`.
+- `node scripts/check-kiosk-nfc.mjs` against a running dev server (`npx quasar dev --port 9100`): card payments at the register, from the tap to the paid screen, with screenshots in `output/kiosk-nfc/`.
