@@ -1,6 +1,7 @@
 /** Browser check for taking wallets off this phone (utils/walletRemoval.js):
- * Manage Wallets grouped by kind, the details of each kind, the Danger Zone,
- * every alert, and what is left afterwards. BuhoGO never deletes a wallet:
+ * the wallet rows on Settings (a connected wallet says so in its caption),
+ * each wallet's own page, the Danger Zone in Advanced, every alert, and what
+ * is left afterwards. BuhoGO never deletes a wallet:
  * Spark and Arkade are "removed from this phone", NWC and LNbits are
  * "disconnected". Start `pnpm dev --port 9031` first (or set REMOVE_BASE_URL).
  * Screenshots go to output/remove-disconnect-check/. */
@@ -55,7 +56,8 @@ async function open({ theme = 'light', wallets = WALLETS, kiosk = null } = {}) {
     }
     // Balances read moments ago count as fresh; no network in this check.
     store.refreshBalance = async () => {};
-    if (kiosk) store.kioskWalletId = kiosk;
+    // A kiosk that is on, with the owner in Settings: only then does it stop taking payments.
+    if (kiosk) Object.assign(store, { kioskWalletId: kiosk, kioskEnabled: true, kioskOwnerAccess: true });
   }, { wallets, balances: BALANCES, kiosk });
   await pause(800);
   await page.evaluate(() => window.__audit.app.config.globalProperties.$router.push('/settings'));
@@ -70,19 +72,25 @@ const dialogText = (page) => page.evaluate(() => [...document.querySelectorAll('
 const closeDialogs = async (page) => { await page.keyboard.press('Escape'); await pause(500); };
 const store = (page, fn) => page.evaluate(fn);
 
-// 1 · Manage Wallets and details, light and dark.
+// 1 · The wallets on Settings and each wallet's page, light and dark.
 for (const theme of ['light', 'dark']) {
-  const { page, context, errors, vm } = await open({ theme });
-  await vm.evaluate((vm) => { vm.showWalletsDialog = true; });
-  await page.waitForSelector('.wallets-group-title');
+  const { page, context, errors } = await open({ theme });
+  await page.waitForSelector('#settings-wallets [data-wallet-id]');
   await pause(600);
-  // Members per group; within a group the list keeps its usual order (active first).
-  const groups = await page.$$eval('.wallets-group-section', (sections) => sections.map((s) => [s.querySelector('.wallets-group-title').textContent.trim(), [...s.querySelectorAll('.wallet-row-name')].map((r) => r.textContent.trim()).sort()]));
-  assert.deepEqual(groups, [['On this phone', ['Arkade', 'Main', 'Savings']], ['Connected', ['Alby Hub', 'Kitty']]]);
-  await shot(page, `${theme}-manage-wallets`);
+  // One list, no groups: where a wallet lives is in its row's caption. Only
+  // a connected wallet says "Connected"; one whose phrase is here names its
+  // kind. The state after it (Active, Offline) is left out here.
+  const captions = await page.$$eval('#settings-wallets [data-wallet-id]', (rows) => Object.fromEntries(rows.map((r) => {
+    const caption = r.querySelector('.settings-row-caption').cloneNode(true);
+    caption.querySelectorAll('.wallet-row-state').forEach((state) => state.remove());
+    return [r.dataset.walletId, caption.textContent.replace(/\s+/g, ' ').trim()];
+  })));
+  assert.deepEqual(captions, { main: 'Spark', savings: 'Spark', ark: 'Arkade', hub: 'Connected · NWC', kitty: 'Connected · LNbits' });
+  await shot(page, `${theme}-settings-wallets`);
   if (theme === 'light') {
     for (const [id, name] of [['savings', 'spark'], ['ark', 'arkade'], ['hub', 'nwc']]) {
-      await vm.evaluate((vm, id) => { vm.detailWalletId = id; }, id);
+      await page.locator(`#settings-wallets [data-wallet-id="${id}"]`).click();
+      await page.waitForSelector('.wallet-detail-panel');
       await pause(600);
       const text = await page.$eval('.wallet-detail-panel', (el) => el.innerText);
       assert.equal(/delete/i.test(text), false, `${name}: no "delete"`);
@@ -96,23 +104,27 @@ for (const theme of ['light', 'dark']) {
         assert.match(text, id === 'savings' ? /Backed up/ : /Back up/);
       }
       await shot(page, `details-${name}`);
+      await page.locator('.wallet-detail-panel').getByRole('button', { name: 'Close', exact: true }).click();
+      await page.waitForSelector('.wallet-detail-panel', { state: 'detached' });
     }
   }
   assert.deepEqual(errors, []);
   await context.close();
 }
-console.log('✓ Manage Wallets: "On this phone" and "Connected"; details say Remove from this phone or Disconnect, never delete');
+console.log('✓ Settings: only connected wallets say "Connected"; each wallet\'s page says Remove from this phone or Disconnect, never delete');
 
-// 2 · The Danger Zone and its alerts.
+// 2 · The Danger Zone (in Advanced) and its alerts.
 {
   const { page, context, errors, vm } = await open({ kiosk: 'hub' });
-  const header = page.getByText('Danger Zone', { exact: true });
-  await header.scrollIntoViewIfNeeded();
-  await header.click();
+  await page.locator('[data-audit="settings-advanced-row"]').scrollIntoViewIfNeeded();
+  await page.locator('[data-audit="settings-advanced-row"]').click();
+  const advanced = page.locator('[data-audit="settings-advanced-sheet"]');
+  await advanced.waitFor();
   await pause(700);
-  const rows = await page.$$eval('.settings-row--destructive', (els) => els.map((el) => el.innerText.replace(/\s+/g, ' ').trim()));
+  assert.match(await advanced.innerText(), /Danger Zone/i);
+  const rows = await advanced.locator('.settings-row--destructive').evaluateAll((els) => els.map((el) => el.innerText.replace(/\s+/g, ' ').trim()));
   assert.deepEqual(rows, ['Remove Spark from this phone Main and Savings', 'Remove Arkade from this phone Back up first', 'Disconnect all connected wallets Alby Hub and Kitty']);
-  await page.evaluate(() => window.scrollBy(0, 300));
+  await advanced.locator('.settings-row--destructive').last().scrollIntoViewIfNeeded();
   await pause(300);
   await shot(page, 'danger-zone');
 

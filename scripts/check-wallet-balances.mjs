@@ -1,7 +1,8 @@
 /**
  * Start `npm run dev -- --port 9007`, then run this script.
  * Real Home/Settings, persistence and LNbits provider; only HTTP responses
- * are scripted. Covers #328 without keys, a server or real payments.
+ * are scripted. Covers #328 without keys, a server or real payments. Settings
+ * lists the wallets at the top, each row with its balance, the total above.
  */
 import assert from 'node:assert/strict';
 import { chromium } from '@playwright/test';
@@ -55,23 +56,20 @@ try {
       }, expected);
     }
   };
-  const assertManage = async (balance, total) => {
+  const assertSettings = async (balance, total) => {
     await navigate('/settings');
     await page.locator('.settings-page').waitFor();
-    await page.getByText('Manage Wallets', { exact: true }).first().click();
-    const dialog = page.locator('.wallets-dialog-card').first();
-    await dialog.waitFor();
-    const text = await dialog.innerText();
-    assert.match(text, new RegExp(`\\b${total}\\b`));
+    const wallets = page.locator('#settings-wallets');
+    await wallets.waitFor();
+    const text = await wallets.innerText();
+    assert.match(await wallets.locator('[data-audit="settings-wallets-total"]').innerText(), new RegExp(`\\b${total}\\b`));
     if (balance === null) {
       // Unknown: a placeholder, never a dash or an invented 0.
-      assert.equal(await dialog.locator('[data-wallet-id="personal"] .balance-placeholder').count(), 1);
+      assert.equal(await wallets.locator('[data-wallet-id="personal"] .balance-placeholder').count(), 1);
     } else {
-      assert.match(text, new RegExp(`\\b${balance}\\b`));
+      assert.match(await wallets.locator('[data-wallet-id="personal"]').innerText(), new RegExp(`\\b${balance}\\b`));
     }
     assert.doesNotMatch(text, /1[,. ]?747|1[,. ]?763/);
-    await page.keyboard.press('Escape');
-    await dialog.waitFor({ state: 'hidden' });
     await navigate('/wallet');
     await assertHome(balance);
   };
@@ -83,15 +81,15 @@ try {
   await page.evaluate(() => window.balanceTestHome().updateWalletBalance());
   await assertHome(37);
   offline = true;
-  await assertManage(37, 53);
+  await assertSettings(37, 53);
   // A stale Home snapshot from an old build cannot win after restart.
   await page.evaluate(() => localStorage.setItem('buhoGO_wallet_state', JSON.stringify({ activeWalletId: 'personal', balance: 1747 })));
-  await page.reload(); await assertHome(37); await assertManage(37, 53);
+  await page.reload(); await assertHome(37); await assertSettings(37, 53);
 
   offline = false;
   balances.personal = 237; // 200 received
   await page.evaluate(() => window.balanceTestHome().updateWalletBalance());
-  await assertHome(237); await assertManage(237, 253);
+  await assertHome(237); await assertSettings(237, 253);
   await page.evaluate(async () => {
     const store = window.balanceTestHome().walletStore;
     await store.switchActiveWallet('business');
@@ -108,10 +106,10 @@ try {
     localStorage.setItem('buhoGO_wallet_store', JSON.stringify(state));
     localStorage.setItem('buhoGO_wallet_state', JSON.stringify({ activeWalletId: 'personal', balance: 37 }));
   });
-  await page.reload(); await assertHome(null); await assertManage(null, 16);
+  await page.reload(); await assertHome(null); await assertSettings(null, 16);
   offline = false; balances.personal = 37;
   await page.evaluate(() => window.balanceTestHome().updateWalletBalance());
-  await assertHome(37); await assertManage(37, 53);
+  await assertHome(37); await assertSettings(37, 53);
   assert.deepEqual(errors, []);
-  console.log('PASS: Home and Manage wallets agree after send/receive refresh, switching, offline restart and legacy-cache recovery. Real LNbits provider, scripted HTTP only.');
+  console.log('PASS: Home and the Settings wallet list agree after send/receive refresh, switching, offline restart and legacy-cache recovery. Real LNbits provider, scripted HTTP only.');
 } finally { await browser.close(); }

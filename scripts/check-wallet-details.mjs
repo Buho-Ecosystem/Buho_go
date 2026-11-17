@@ -1,4 +1,5 @@
-// Local, isolated wallet-management review. No real wallets or connections.
+// Local, isolated review of a wallet's own page: each wallet is a row on
+// Settings, and the row opens its page as one sheet. No real wallets or connections.
 // Start `npm run dev -- --port 9012` (or set WALLET_DETAIL_BASE_URL), then run this.
 import { chromium } from '@playwright/test';
 import assert from 'node:assert/strict';
@@ -38,9 +39,9 @@ await page.addInitScript(() => {
   localStorage.setItem('buhoGO_wallet_store', JSON.stringify({ wallets, activeWalletId: 'arkade', biometricsEnabled: false, sparkModelVersion: 2 }));
 });
 const panel = page.locator('.wallet-detail-panel');
-const row = id => page.locator(`[data-wallet-id="${id}"]`);
+const row = id => page.locator(`#settings-wallets [data-wallet-id="${id}"]`);
 const shot = name => page.screenshot({ path: `${output}/${name}.png` });
-async function back() { await panel.getByRole('button', { name: 'Back', exact: true }).click(); await panel.waitFor({ state: 'detached' }); }
+async function close() { await panel.getByRole('button', { name: 'Close', exact: true }).click(); await panel.waitFor({ state: 'detached' }); }
 
 try {
   await page.goto(`${base}/#/settings`);
@@ -58,11 +59,13 @@ try {
       store.connectionStates[id] = { connected: true };
       store.walletSwitching = false;
     };
-    store.connectWallet = async id => { window.reconnectTarget = id; store.connectionStates[id] = { connected: true }; };
+    // The NWC wallet did not answer, so its page waits for a tap on Reconnect
+    // instead of asking the wallet again when it opens.
+    store.nwcStatus.nwc = 'no-answer';
+    store.connectWallet = async id => { window.reconnectTarget = id; store.connectionStates[id] = { connected: true }; if (id === 'nwc') store.nwcStatus.nwc = 'answering'; };
     store.connectSparkWallet = async id => { window.reconnectTarget = id; store.connectionStates[id] = { connected: true }; };
     await store.persistState();
   });
-  await page.locator('.settings-page').getByText('Manage Wallets', { exact: true }).click();
   await row('arkade').click();
   assert.equal(await page.locator('.q-dialog[aria-modal="true"]').count(), 1);
   assert.equal(await panel.locator('input').count(), 0, 'opening details must not focus an editable title');
@@ -97,14 +100,16 @@ try {
   await panel.locator('input').waitFor({ state: 'detached' });
   assert.equal(await panel.locator('h2').textContent(), 'Travel wallet');
   assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('buhoGO_wallet_store')).wallets.find(w => w.id === 'arkade').name), 'Travel wallet');
-  await back();
+  await close();
   assert.equal(await row('arkade').evaluate(node => node === document.activeElement), true);
   await page.keyboard.press('Enter');
   await panel.waitFor();
+  // Escape dismisses the wallet's page only: Settings is underneath, focus back on the row.
   await page.keyboard.press('Escape');
   await panel.waitFor({ state: 'detached' });
-  assert.equal(await page.locator('.q-dialog[aria-modal="true"]').count(), 1);
-  console.log('PASS: one sheet, deliberate editing, cancel, validation, durable rename, storage-error recovery and keyboard Back');
+  assert.equal(await page.locator('.q-dialog[aria-modal="true"]').count(), 0);
+  await page.waitForFunction(() => document.activeElement?.dataset?.walletId === 'arkade', null, { timeout: 3000 });
+  console.log('PASS: one sheet, deliberate editing, cancel, validation, durable rename, storage-error recovery and keyboard Close');
 
   await row('spark').click();
   // Every Spark wallet stays live, so an offline one reconnects from here too.
@@ -120,16 +125,18 @@ try {
   await page.evaluate(() => window.finishSwitch());
   await panel.locator('.detail-active').waitFor();
   assert.equal(await page.evaluate(() => window.switchTarget), 'spark');
-  await back();
+  await close();
   await row('nwc').click();
   await panel.getByRole('button', { name: 'Reconnect', exact: true }).click();
   await panel.getByRole('button', { name: 'Reconnect', exact: true }).waitFor({ state: 'detached' });
   assert.equal(await page.evaluate(() => window.reconnectTarget), 'nwc');
-  await panel.getByRole('button', { name: 'Remove Wallet', exact: true }).click();
-  await page.locator('.danger-confirm-card').waitFor();
+  // A connected wallet is disconnected, never deleted: one plain alert first.
+  await panel.getByRole('button', { name: 'Disconnect', exact: true }).click();
+  const confirm = page.locator('.q-dialog').filter({ hasText: 'Disconnect My Lightning wallet?' });
+  await confirm.waitFor();
   assert.equal(await page.evaluate(async () => (await import('/src/stores/wallet.js')).useWalletStore().wallets.length), 4);
-  await page.locator('.danger-confirm-card').getByRole('button', { name: 'Cancel', exact: true }).click();
-  await page.locator('.danger-confirm-card').waitFor({ state: 'detached' });
+  await confirm.getByRole('button', { name: 'Cancel', exact: true }).click();
+  await confirm.waitFor({ state: 'detached' });
   console.log('PASS: correct switch/reconnect targets, busy state, Spark reconnect and address, and removal confirmation preserved');
 
   await page.evaluate(async () => {

@@ -1,5 +1,5 @@
-/** Controlled browser check for the LNbits setup steps and the Settings
- * Lightning address sheet. Start `pnpm dev --port 9031` first (or set
+/** Controlled browser check for the LNbits setup steps and the Lightning
+ * address on the LNbits wallet's own page in Settings. Start `pnpm dev --port 9031` first (or set
  * LNBITS_BASE_URL). Every external request is blocked; the LNbits server is
  * a stub on the page's own provider, so each step renders as a user sees it. */
 import { chromium } from '@playwright/test';
@@ -69,20 +69,21 @@ const setupStep = (step, { status = 'available', existing = [] } = {}) => page.e
   vm.step = step;
 }, { step, status, existing, server: SERVER });
 
-/** Settings with a stub provider for the active LNbits wallet. */
-const stubSettings = ({ status, existing = [] }) => page.evaluate(({ status, existing }) => {
-  let c = document.querySelector('.settings-page, .q-page').__vueParentComponent;
-  while (c && !c.proxy?._buildActiveLNBitsProvider) c = c.parent;
+/** Settings with a stub server behind every LNbits wallet; asks it again for this wallet. */
+const stubSettings = ({ status, existing = [] }) => page.evaluate(async ({ status, existing, walletId }) => {
+  let c = document.querySelector('.settings-page').__vueParentComponent;
+  while (c && !c.proxy?._buildLNBitsProvider) c = c.parent;
   const vm = c.proxy;
   window.__lnbits = { status };
-  vm._buildActiveLNBitsProvider = () => ({
+  vm._buildLNBitsProvider = () => ({
     lnurlpStatus: async () => window.__lnbits.status,
     listLightningAddresses: async () => existing,
     createLightningAddress: async ({ username }) => ({ address: `${username}@legend.lnbits.com` }),
   });
   vm.lnurlpStatus = {};
-  vm.maybeProbeLnurlpForActiveWallet();
-}, { status, existing });
+  const wallet = vm.wallets.find(w => w.id === walletId);
+  if (wallet) await vm.probeLnurlpFor(wallet);
+}, { status, existing, walletId: WALLET.id });
 
 try {
   await page.goto(`${base}/#/lnbits-setup`);
@@ -161,14 +162,16 @@ try {
   await page.evaluate(() => window.__audit.setDark(false));
   console.log('✓ dark theme');
 
-  // Settings: the row leads somewhere in every state.
+  // Settings: the wallet's own page; its address row leads somewhere in every state.
   await go('/settings');
-  await page.getByText('Lightning address', { exact: true }).first().waitFor({ timeout: 30000 });
+  await page.locator(`#settings-wallets [data-wallet-id="${WALLET.id}"]`).waitFor({ timeout: 30000 });
   await stubSettings({ status: 'off' });
+  await page.locator(`#settings-wallets [data-wallet-id="${WALLET.id}"]`).click();
+  const addressGroup = page.locator('[data-audit="detail-lnbits-address"]');
+  await addressGroup.waitFor();
   await page.getByText('Needs Pay Links', { exact: true }).waitFor();
-  await page.getByText('Needs Pay Links', { exact: true }).scrollIntoViewIfNeeded();
   await shot('settings-needs-paylinks');
-  await page.getByText('Needs Pay Links', { exact: true }).click();
+  await addressGroup.getByRole('button', { name: 'Set Up', exact: true }).click();
   await page.getByText('Pay Links is off', { exact: true }).waitFor();
   await page.getByRole('button', { name: 'Done', exact: true }).waitFor();
   await shot('settings-paylinks-sheet');
@@ -177,12 +180,12 @@ try {
 
   await stubSettings({ status: 'available', existing: [{ id: '1', username: 'shop', address: 'shop@legend.lnbits.com' }] });
   await page.getByText('Get one to receive payments by name', { exact: true }).waitFor();
-  await page.getByText('Get one to receive payments by name', { exact: true }).click();
+  await addressGroup.getByRole('button', { name: 'Set Up', exact: true }).click();
   await page.getByText('Pick one for this wallet.', { exact: true }).waitFor();
   await shot('settings-address-sheet');
   await page.getByRole('button', { name: 'Use address', exact: true }).click();
   await page.getByText('shop@legend.lnbits.com').first().waitFor();
-  console.log('✓ Settings: Needs Pay Links opens the help; Pay Links on opens the address sheet');
+  console.log('✓ Wallet page: Needs Pay Links opens the help; Pay Links on opens the address sheet');
 
   // German at 320 px: the longest copy must fit.
   await page.setViewportSize({ width: 320, height: 640 });
