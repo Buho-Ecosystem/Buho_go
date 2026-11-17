@@ -27,9 +27,13 @@
           <template #right>
             <span class="wallet-row-amount wallet-row-amount--total">
               <!-- Every configured wallet counts; a total missing a wallet's
-                   figure reads "at least" and is dimmed (same as the switcher). -->
-              <HiddenAmount v-balance-updating="walletStore.totalBalanceInfo.refreshing" :class="{ 'balance-stale': walletStore.totalBalanceInfo.outdated }">{{ walletStore.totalBalanceInfo.complete ? '' : '≥ ' }}{{ formatBalance(totalBalance) }}</HiddenAmount>
-              <HiddenAmount v-if="walletStore.fiatValueOf(totalBalance)" class="wallet-row-fiat" :class="{ 'balance-stale': walletStore.totalBalanceInfo.outdated }">{{ walletStore.totalBalanceInfo.complete ? '' : '≥ ' }}{{ walletStore.fiatValueOf(totalBalance) }}</HiddenAmount>
+                   figure reads "at least" and is dimmed (same as the switcher).
+                   Until the first figure is in, the wallet rows' placeholder. -->
+              <span v-if="!walletStore.totalBalanceInfo.known" v-balance-updating="walletStore.totalBalanceInfo.refreshing" class="balance-placeholder" role="img" :aria-label="$t('Balance not loaded yet')" />
+              <template v-else>
+                <HiddenAmount v-balance-updating="walletStore.totalBalanceInfo.refreshing" :class="{ 'balance-stale': walletStore.totalBalanceInfo.outdated }">{{ walletStore.totalBalanceInfo.complete ? '' : '≥ ' }}{{ formatBalance(totalBalance) }}</HiddenAmount>
+                <HiddenAmount v-if="walletStore.fiatValueOf(totalBalance)" class="wallet-row-fiat" :class="{ 'balance-stale': walletStore.totalBalanceInfo.outdated }">{{ walletStore.totalBalanceInfo.complete ? '' : '≥ ' }}{{ walletStore.fiatValueOf(totalBalance) }}</HiddenAmount>
+              </template>
             </span>
           </template>
         </SettingsRow>
@@ -50,7 +54,7 @@
             {{ walletRowKind(wallet) }}
             <span v-if="wallet.id === activeWalletId" class="wallet-row-state wallet-row-state--active"> · {{ $t('Active') }}</span>
             <!-- What it received since the user last looked at it (stores/unseenReceipts). -->
-            <span v-else-if="unseenReceipts.forWallet(wallet.id)" class="wallet-row-state wallet-row-state--unseen"> · <HiddenAmount aria-hidden="true">+ {{ formatBalance(unseenReceipts.forWallet(wallet.id).sats) }}</HiddenAmount><span class="sr-only">{{ $t('Received {amount} since you last looked', { amount: formatBalance(unseenReceipts.forWallet(wallet.id).sats) }) }}</span></span>
+            <span v-else-if="unseenReceipts.forWallet(wallet.id)" class="wallet-row-state wallet-row-state--unseen"> · <span class="sr-only">{{ $t('Received since you last looked') }}</span> <HiddenAmount>+ {{ formatBalance(unseenReceipts.forWallet(wallet.id).sats) }}</HiddenAmount></span>
             <span v-else-if="walletStore.connectionEnded[wallet.id]" class="wallet-row-state wallet-row-state--off"> · {{ $t('Connection ended') }}</span>
             <!-- The wallet page's own test (isWalletLive), so the row, the total and the page agree. -->
             <span v-else-if="!isWalletLive(wallet)" class="wallet-row-state wallet-row-state--off"> · {{ $t('Offline') }}</span>

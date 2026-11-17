@@ -91,6 +91,10 @@ test('totals cover every configured wallet and say when they are incomplete or s
   assert.deepEqual([exact.total, exact.complete, exact.stale], [1000, true, false]);
   const verifiedZero = summarizeTotal(['Z'], { Z: nextBalanceState(emptyBalanceState(), { value: 0, at: NOW }) }, { now: NOW });
   assert.deepEqual([verifiedZero.total, verifiedZero.complete, verifiedZero.stale], [0, true, false]);
+  // Nothing in yet: no total at all, not "at least 0". One figure is enough.
+  assert.equal(summarizeTotal(['C', 'D'], states, { now: NOW }).known, false);
+  assert.equal(total.known, true);
+  assert.equal(summarizeTotal([], states, { now: NOW }).known, true, 'no wallets is a true zero');
 });
 
 test('a total is outdated only when a figure in it failed to refresh, and refreshing while any wallet is', () => {

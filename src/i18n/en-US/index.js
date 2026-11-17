@@ -3291,7 +3291,8 @@ export default {
   "That doesn't look like a server address.": "That doesn't look like a server address.",
   "This server didn't answer. Check the address and try again.": "This server didn't answer. Check the address and try again.",
   "Show payment": "Show payment",
-  "Received {amount} since you last looked": "Received {amount} since you last looked",
+  "Received since you last looked": "Received since you last looked",
+  "Amount hidden": "Amount hidden",
   "to {wallet}": "to {wallet}",
   // Quick access: Quick Settings tiles and launcher shortcuts (#444-#446)
   "Quick access": "Quick access",

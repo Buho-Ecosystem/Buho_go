@@ -3288,7 +3288,8 @@ export default {
   "That doesn't look like a server address.": "Eso no parece la dirección de un servidor.",
   "This server didn't answer. Check the address and try again.": "Este servidor no respondió. Revisa la dirección e inténtalo de nuevo.",
   "Show payment": "Ver pago",
-  "Received {amount} since you last looked": "Recibiste {amount} desde la última vez que miraste",
+  "Received since you last looked": "Recibido desde la última vez que miraste",
+  "Amount hidden": "Importe oculto",
   "to {wallet}": "a {wallet}",
   // Quick access: Quick Settings tiles and launcher shortcuts (#444-#446)
   "Quick access": "Acceso rápido",

@@ -209,10 +209,12 @@ export default {
   overflow-wrap: break-word;
 }
 
+/* Secondary, not muted: small text needs 4.5:1 in both themes. Muted is for
+   glyphs such as the chevron. */
 .settings-row-caption {
   font-size: 12.5px;
   font-weight: 400;
-  color: var(--text-muted);
+  color: var(--text-secondary);
   line-height: 1.4;
   letter-spacing: -0.005em;
   /* Allow caption to wrap naturally but never overflow the row. */

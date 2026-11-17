@@ -9,13 +9,18 @@
     parent — drop this around the amount and it does the right
     thing globally.
 
+    Hidden, it is hidden from speech as well: a screen reader hears
+    "Amount hidden", never the figure, since speech is overheard like a
+    screen is seen. So callers speak an amount through this component,
+    not through a separate screen-reader copy of it.
+
     Do NOT use for per-payment amounts inside action flows (send,
     receive, payment confirmation). Those are scoped to a specific
     action the user is actively taking; hiding them would break
     the flow ("you're about to send ••••?").
   -->
   <span class="hidden-amount">
-    <span v-if="hidden" class="hidden-amount-placeholder">••••</span>
+    <span v-if="hidden" class="hidden-amount-placeholder" role="img" :aria-label="$t('Amount hidden')">••••</span>
     <slot v-else />
   </span>
 </template>

@@ -127,6 +127,8 @@ export function describeBalance(state, { now = Date.now(), freshForMs = FRESH_FO
  * zero is a complete zero; an unknown is never presented as one.
  * `outdated` (some figure is known to be out of date: its last refresh
  * failed) and `refreshing` follow the same rule as one wallet's figure.
+ * `known` is false until at least one wallet's figure is in: before that
+ * there is no total to show, only a placeholder, never "at least 0".
  */
 export function summarizeTotal(walletIds, states, { now = Date.now(), freshForMs = FRESH_FOR_MS } = {}) {
   let total = 0;
@@ -144,6 +146,7 @@ export function summarizeTotal(walletIds, states, { now = Date.now(), freshForMs
   }
   return {
     total,
+    known: walletIds.length === 0 || unknownIds.length < walletIds.length,
     complete: unknownIds.length === 0,
     stale: staleIds.length > 0,
     outdated,
