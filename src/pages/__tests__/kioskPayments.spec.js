@@ -70,7 +70,7 @@ async function harness(ctx, options = {}) {
     '../composables/useKioskPayments.js': { useKioskPayments: args => useKioskPayments({ ...args, monitorFactory, decodeInvoice: request => invoices.get(request), document: null }) },
     '../utils/roundUp.js': roundUp, '../utils/fiatCurrencies.js': fiat, '../utils/amountFormatting.js': amountFormatting,
     '../utils/kioskMerchant.js': merchantDomain, '../utils/amountKeypad.js': keypad,
-    '../components/KioskPinPad.vue': {}, '../components/AmountKeypad.vue': {}, '../components/kiosk/KioskProducts.vue': {}, '../components/kiosk/KioskReceipt.vue': {},
+    '../components/KioskPinPad.vue': {}, '../components/AmountKeypad.vue': {}, '../components/kiosk/KioskProducts.vue': {}, '../components/kiosk/KioskReceipt.vue': {}, '../components/kiosk/KioskPaidScreen.vue': {},
     qrcode: { toDataURL: async () => 'data:image/png;base64,test' },
     '../components/WithdrawAuthorization.vue': {}, '../components/CardFace.vue': {},
     '../utils/nfc.js': { isNfcAvailable: async () => false },
