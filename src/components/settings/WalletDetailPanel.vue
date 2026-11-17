@@ -2,8 +2,10 @@
   <section class="wallet-detail-panel" :class="{ 'wallet-detail-panel--dark': $q.dark.isActive }"
     @keydown.esc.stop.prevent @keyup.esc.stop.prevent="goBack">
     <header class="detail-header">
-      <button ref="backButton" type="button" class="detail-icon-button" :aria-label="$t('Back')" :disabled="saving" @click="goBack">
-        <Icon icon="tabler:chevron-left" width="22" height="22" />
+      <!-- The page is its own sheet now (opened from the wallet's row), so the
+           way out dismisses it: an x, not a chevron back to a list. -->
+      <button ref="backButton" type="button" class="detail-icon-button" :aria-label="$t('Close')" :disabled="saving" @click="goBack">
+        <Icon icon="tabler:x" width="22" height="22" />
       </button>
       <span>{{ $t('Wallet') }}</span>
       <span class="header-spacer" aria-hidden="true" />
@@ -11,7 +13,7 @@
 
     <div class="detail-content">
       <div class="detail-identity">
-        <div class="detail-avatar" :class="{ 'detail-avatar--arkade': wallet.type === 'arkade' }" aria-hidden="true"><WalletBrandMark :type="wallet.type" :size="28" /></div>
+        <WalletLogoTile class="detail-avatar" :type="wallet.type" :size="52" />
         <div class="detail-identity-copy">
           <h2>{{ wallet.name }}</h2>
           <div class="detail-status">
@@ -103,6 +105,69 @@
         <p v-else-if="canMoveAddress && !lightningAddress && !wallet.metadata?.lightningAddressPending" class="detail-group-note">{{ $t('This wallet has no address to move right now.') }}</p>
       </section>
 
+      <!-- Arkade: its own address, to copy or share. -->
+      <section v-if="wallet.type === 'arkade'" class="detail-group" :aria-label="$t('Arkade address')" data-audit="detail-arkade-address">
+        <div class="detail-group-row">
+          <span class="detail-group-copy">
+            <span class="detail-group-label">{{ $t('Arkade address') }}</span>
+            <span class="detail-group-value" :class="{ 'is-placeholder': !arkadeAddress }">{{ arkadeAddress ? truncateAddress(arkadeAddress) : $t('Not available') }}</span>
+          </span>
+          <button v-if="arkadeAddress" type="button" class="detail-icon-button" :aria-label="$t('Copy address')" @click="$emit('copy-arkade', arkadeAddress)">
+            <Icon icon="tabler:copy" width="18" height="18" />
+          </button>
+        </div>
+        <button v-if="arkadeAddress" type="button" class="detail-group-action" @click="$emit('share-arkade', arkadeAddress)">
+          {{ $t('Share address') }}
+        </button>
+      </section>
+
+      <!-- LNbits: the server it lives on, and its Lightning address from Pay Links. -->
+      <section v-if="wallet.type === 'lnbits' && lnbitsAddress" class="detail-group" :aria-label="$t('Lightning address')" data-audit="detail-lnbits-address">
+        <div v-if="serverDomain" class="detail-group-row detail-group-row--split">
+          <span class="detail-group-label">{{ $t('Server') }}</span>
+          <span class="detail-group-side">{{ serverDomain }}</span>
+        </div>
+        <div class="detail-group-row" :class="{ 'detail-group-row--ruled': serverDomain }">
+          <span class="detail-group-copy">
+            <span class="detail-group-label">{{ $t('Lightning address') }}</span>
+            <span class="detail-group-value" :class="{ 'is-placeholder': lnbitsAddress.state !== 'set' }">
+              <template v-if="lnbitsAddress.state === 'set'">{{ lnbitsAddress.address }}</template>
+              <template v-else-if="lnbitsAddress.state === 'unsetReady'">{{ $t('Get one to receive payments by name') }}</template>
+              <template v-else-if="lnbitsAddress.state === 'unsetBlocked'"><span class="detail-attention-dot" aria-hidden="true"></span>{{ $t('Needs Pay Links') }}</template>
+              <template v-else-if="lnbitsAddress.state === 'unknown'">{{ $t("Couldn't reach the server") }}</template>
+              <template v-else><q-spinner size="12px" class="q-mr-xs" :aria-hidden="true" />{{ $t('Checking server…') }}</template>
+            </span>
+          </span>
+          <button v-if="lnbitsAddress.state === 'set'" type="button" class="detail-icon-button" :aria-label="$t('Copy address')" @click="$emit('copy-address', lnbitsAddress.address)">
+            <Icon icon="tabler:copy" width="18" height="18" />
+          </button>
+        </div>
+        <!-- Every state leads somewhere except the brief wait for the first answer. -->
+        <button v-if="lnbitsAddress.state !== 'probing'" type="button" class="detail-group-action" @click="$emit('lnbits-address', wallet.id)">
+          {{ lnbitsAddress.state === 'set' ? $t('Change address') : lnbitsAddress.state === 'unknown' ? $t('Try again') : $t('Set Up') }}
+        </button>
+      </section>
+
+      <!-- Spark: on-chain deposits join the balance by themselves. One switch
+           for every Spark wallet, shown on each of their pages. -->
+      <section v-if="wallet.type === 'spark' && autoAddDeposits !== null" class="detail-group" data-audit="detail-auto-add">
+        <div class="detail-group-row">
+          <span class="detail-group-copy">
+            <span class="detail-group-title">{{ $t('Auto-add Bitcoin deposits') }}</span>
+            <span class="detail-group-note-inline">{{ $t('Add deposits to your balance without an extra step.') }} {{ $t('Applies to all your Spark wallets.') }}</span>
+          </span>
+          <button type="button" class="detail-icon-button" :aria-label="$t('About auto-add Bitcoin deposits')" @click="$emit('auto-add-info')">
+            <Icon icon="tabler:info-circle" width="18" height="18" />
+          </button>
+          <q-toggle
+            :model-value="autoAddDeposits"
+            :aria-label="$t('Auto-add Bitcoin deposits')"
+            :color="$q.dark.isActive ? 'brand-green' : 'brand-green-dark'"
+            @update:model-value="$emit('auto-add', $event)"
+          />
+        </div>
+      </section>
+
       <!-- Its Auto-Transfer rule, or the way to set one up. -->
       <button type="button" class="detail-group detail-link" data-audit="detail-auto-transfer" @click="$emit('auto-transfer', wallet.id)">
         <span class="detail-group-copy">
@@ -139,7 +204,7 @@
 <script setup>
 import { computed, getCurrentInstance, nextTick, onMounted, ref } from 'vue';
 import { Icon } from '@iconify/vue';
-import WalletBrandMark from '../WalletBrandMark.vue';
+import WalletLogoTile from './WalletLogoTile.vue';
 import HiddenAmount from '../HiddenAmount.vue';
 import NWCWalletDetails from '../nwc/NWCWalletDetails.vue';
 import { capabilitiesOf } from '../../utils/nwcWallet.js';
@@ -147,6 +212,7 @@ import { walletKind, WALLET_KIND } from '../../utils/walletRemoval.js';
 import balanceUpdating from '../../directives/balanceUpdating.js';
 import { MAX_WALLET_NAME_LENGTH, walletNameCopy } from '../../utils/walletNames.js';
 import { translateErrorCode } from '../../utils/userErrors';
+import { truncateAddress } from '../../utils/addressUtils.js';
 
 const vBalanceUpdating = balanceUpdating;
 
@@ -184,11 +250,19 @@ const props = defineProps({
   phraseBackedUp: Boolean,
   /** Its Auto-Transfer rule in a few words ("To Savings"); '' when it has none. */
   autoTransfer: { type: String, default: '' },
+  /** Arkade only: the wallet's ark1/tark1 address ('' while unknown). */
+  arkadeAddress: { type: String, default: '' },
+  /** LNbits only: its Lightning address row, { state, address } (Settings lnbitsAddressStateFor). */
+  lnbitsAddress: { type: Object, default: null },
+  /** LNbits only: the server's host name. */
+  serverDomain: { type: String, default: '' },
+  /** Spark only: whether on-chain deposits join the balance by themselves (null hides the switch). */
+  autoAddDeposits: { type: Boolean, default: null },
 });
 const isNwc = computed(() => (props.wallet.type || 'nwc') === 'nwc');
 const onPhone = computed(() => walletKind(props.wallet) === WALLET_KIND.ON_PHONE);
 const sharesBalance = computed(() => capabilitiesOf(props.wallet).balance);
-const emit = defineEmits(['back', 'switch', 'reconnect', 'remove', 'backup', 'copy-address', 'change-address', 'move-address', 'auto-transfer']);
+const emit = defineEmits(['back', 'switch', 'reconnect', 'remove', 'backup', 'copy-address', 'change-address', 'move-address', 'auto-transfer', 'copy-arkade', 'share-arkade', 'lnbits-address', 'auto-add', 'auto-add-info']);
 // vue-i18n runs in legacy mode (src/boot/i18n.js), so useI18n() throws.
 // Reach $t through the component proxy, the app's established pattern.
 const { proxy } = getCurrentInstance();
@@ -250,9 +324,7 @@ onMounted(() => backButton.value?.focus({ preventScroll: true }));
 .detail-icon-button { width: 44px; min-width: 44px; height: 44px; display: inline-flex; align-items: center; justify-content: center; border: 0; border-radius: 50%; color: inherit; background: transparent; cursor: pointer; }
 .detail-content { padding: 12px 20px max(20px, var(--safe-bottom, 0px)); overflow-y: auto; min-height: 0; }
 .detail-identity { display: flex; align-items: center; gap: 14px; margin-bottom: 24px; }
-.detail-avatar { flex: 0 0 52px; width: 52px; height: 52px; display: flex; align-items: center; justify-content: center; border-radius: 16px; background: #252527; }
-/* Arkade's purple mark needs a light tile on cream (brand rule). */
-body.body--light .detail-avatar--arkade { background: var(--arkade-tile); box-shadow: inset 0 0 0 1px var(--arkade-tint-border); }
+.detail-avatar { flex: 0 0 52px; }
 .detail-identity-copy { flex: 1; min-width: 0; }
 .detail-identity h2 { margin: 0; font-size: 1.375rem; font-weight: 700; line-height: 1.3; letter-spacing: -.02em; overflow-wrap: anywhere; }
 .detail-status { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; color: var(--detail-secondary); font-size: .8125rem; margin-top: 5px; }
@@ -291,6 +363,12 @@ button:not(:disabled):active { filter: brightness(.9); }
 .detail-group-value.is-placeholder { font-family: inherit; color: var(--detail-secondary); }
 .detail-group-action { display: block; width: 100%; min-height: 48px; padding: 12px 16px; border: 0; border-top: 1px solid var(--detail-line); background: transparent; color: inherit; font: 500 .9375rem/1.4 'Manrope', sans-serif; text-align: start; cursor: pointer; }
 .detail-group-note { margin: 0; padding: 0 16px 12px; color: var(--detail-secondary); font-size: .8125rem; line-height: 1.45; }
+.detail-group-row--split { justify-content: space-between; padding-right: 16px; }
+.detail-group-row--ruled { border-top: 1px solid var(--detail-line); }
+.detail-group-side { color: var(--detail-secondary); font-size: .875rem; overflow-wrap: anywhere; text-align: end; }
+.detail-group-title { font-size: .9375rem; font-weight: 600; }
+.detail-group-note-inline { color: var(--detail-secondary); font-size: .8125rem; line-height: 1.45; }
+.detail-attention-dot { display: inline-block; width: 6px; height: 6px; margin-right: 6px; border-radius: 50%; background: var(--color-warn, #B26A00); vertical-align: middle; }
 .detail-link { display: flex; align-items: center; gap: 8px; width: 100%; padding: 12px 12px 12px 16px; color: inherit; font: inherit; text-align: start; cursor: pointer; }
 .detail-link-chevron { flex-shrink: 0; color: var(--detail-secondary); }
 @media (max-width: 360px) {

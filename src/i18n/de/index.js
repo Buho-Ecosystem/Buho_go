@@ -20,6 +20,7 @@ import payRequests from './payRequests.js';
 import refundAddress from './refundAddress.js';
 import tillCodes from './tillCodes.js';
 import kioskPos from './kioskPos.js';
+import settingsLayout from './settingsLayout.js';
 export default {
   ...lightningAddress,
   ...emoji,
@@ -81,6 +82,7 @@ export default {
   ...refundAddress,
   ...tillCodes,
   ...kioskPos,
+  ...settingsLayout,
   // Spend: Bitrefill door
   "Gift cards, mobile top-ups and more": "Geschenkkarten, Handy-Guthaben und mehr",
   "Bitrefill is on its way": "Bitrefill kommt bald",

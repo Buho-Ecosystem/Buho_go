@@ -4,8 +4,10 @@ Status: accepted September 16, 2026 and implemented on `feat/simplify-backup-wos
 
 Two decisions changed after the first review of this proposal:
 
-- App lock stays where it is, as a quick toggle at the top of Settings.
-- Screen Privacy lives in Settings → Preferences.
+- App lock stays in Settings.
+- Screen Privacy lives in Settings.
+
+Since November 17, 2026 both are switches in the same Settings group as Notifications, and the Security tab opens on the keyring without a title ([Settings layout](SETTINGS_LAYOUT.md)).
 
 Security therefore holds backups and restoration only. Device protection is not part of it.
 
@@ -25,8 +27,8 @@ Hidden navigation still adds an interaction step even when users recognize the h
 | Settings / You / Spend tab bar → keyring tab | Security is the fourth tab of the hub, so it is one tap away wherever people look for backups. The tab wears the grey keyring from the home reminder; it turns green when active. |
 | Home → pending backup keyring | Opens `/security`. Keeps the readable Backup label and pending subject. Hidden entirely once every applicable phrase is checked. |
 | Settings → Security section | Removed. The backup, Drive and restore rows moved to Security. |
-| Settings → App lock | Unchanged: quick toggle at the top of Settings. |
-| Settings → Screen Privacy | Moved from the old Security section into Preferences. |
+| Settings → App lock | Stays in Settings: a switch next to Notifications and Screen Privacy. |
+| Settings → Screen Privacy | Moved from the old Security section into Settings, next to App lock. |
 | Profile → Identity backup | Removed. |
 | Profile setup → Back up your card | Removed. Setup completion now means username plus name or photo. |
 | `/identity/words` | Redirects to `/security`. |
@@ -85,8 +87,8 @@ Consolidate backups without relocating every sensitive action into a long Securi
 | Wallet and identity phrase backup/view | Security |
 | Paper and Drive restoration | Security; welcome restoration remains reachable |
 | Optional Drive management | Security → Google Drive backup |
-| App lock | Settings quick toggles (unchanged) |
-| Screen Privacy | Settings → Preferences |
+| App lock | Settings, next to Notifications |
+| Screen Privacy | Settings, next to App lock |
 | Per-identity private-key export | Existing identity-management detail, with explicit selected identity |
 | Identity switching and local removal | Existing identity management |
 | Wallet connections and removal | Existing wallet management |

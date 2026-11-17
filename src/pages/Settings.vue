@@ -1,241 +1,293 @@
 <template>
   <q-page class="settings-page" :class="$q.dark.isActive ? 'bg-dark' : 'bg-light'">
-    <SettingsHubHeader :title="$t('Settings')" />
+    <!-- The bar carries the small title only once the large one has scrolled away. -->
+    <SettingsHubHeader :title="titleTucked ? $t('Settings') : ''" />
 
-    <!-- Settings Content -->
+    <!-- Settings Content: one grouped list, the way the phone's own Settings
+         reads. Each group says what it holds in a short footer; a row shows
+         where its setting stands, and a row with a chevron opens its own page
+         or sheet. -->
     <div class="settings-content">
+      <h1 ref="largeTitle" class="settings-large-title">{{ $t('Settings') }}</h1>
 
-      <!--
-        Top-of-page surface: attention strip → quick toggles. These
-        pieces are the "always-on" affordances that turn Settings from
-        a flat scrollable list into something a mainstream user can
-        scan, act on, and live in. They sit above every section so even
-        a user who never scrolls past the first fold still gets the
-        high-value entry points (warnings, frequent toggles).
-      -->
-      <!-- Paused: backup status lives on the Security page.
-      <SettingsAttentionStrip
-        :warnings="attentionWarnings"
-        @action="onAttentionAction"
-        @dismiss="onAttentionDismiss"
-      />
-      -->
-
-      <SettingsQuickToggles
-        :toggles="quickToggles"
-        @toggle="onQuickToggle"
-      />
-
-      <!-- ─────────────── WALLET ─────────────── -->
-      <SettingsSection :title="$t('Wallet')">
-        <!-- Active wallet info — adapts to wallet type. -->
-
-        <!-- Spark Wallet: only the ACTIVE one; every Spark wallet is listed
-             in the home switcher and Manage Wallets. -->
-        <template v-if="isActiveWalletSpark && hasSparkWallet">
-          <SettingsRow
-            :label="activeWallet?.name || $t('Wallet')"
-            :show-chevron="false"
-            :interactive="false"
-          >
-            <!-- The wallet's own mark: the wallet glyph means "Manage Wallets" below. -->
-            <template #icon>
-              <WalletBrandMark type="spark" :size="18" color="currentColor" />
-            </template>
-            <template #caption>
-              <span v-if="!walletStore.getDisplayBalance(activeWalletId).known" class="balance-placeholder" role="img" :aria-label="$t('Balance not loaded yet')" />
-              <HiddenAmount v-else :class="{ 'balance-stale': walletStore.getDisplayBalance(activeWalletId).outdated }">{{ walletBalanceText(activeWalletId) }}</HiddenAmount>
-            </template>
-            <template #right>
-              <Icon icon="tabler:circle-check-filled" width="18" height="18" style="color: #15DE72;" />
-            </template>
-          </SettingsRow>
-
-          <!--
-            Lightning Address row. The address is registered server-side
-            against the wallet identity, so it survives reinstall and
-            recovery; the sheet shows it and handles changing the name.
-          -->
-          <SettingsRow
-            icon="tabler:at"
-            :label="$t('Lightning address')"
-            :caption-mono="!!activeWalletLightningAddress"
-            :interactive="true"
-            :show-chevron="true"
-            @click="openLightningAddressSheet(activeWalletId)"
-          >
-            <template #caption>
-              <template v-if="activeWalletLightningAddress">{{ activeWalletLightningAddress }}</template>
-              <template v-else>{{ $t('Get one to receive payments by name') }}</template>
-            </template>
-            <template v-if="activeWalletLightningAddress" #right>
-              <q-btn
-                flat round dense size="sm"
-                @click.stop="copyToClipboard(activeWalletLightningAddress, $t('Lightning address copied'))"
-              >
-                <Icon icon="tabler:copy" width="16" height="16" />
-              </q-btn>
-            </template>
-          </SettingsRow>
-
-        </template>
-
-        <!-- Arkade Wallet -->
-        <template v-else-if="isActiveWalletArkade">
-          <SettingsRow
-            icon="tabler:qrcode"
-            :label="$t('Arkade address')"
-            :caption="truncateAddress(activeArkadeAddress) || $t('Not available')"
-            caption-mono
-            :interactive="false"
-          >
-            <template #right>
-              <q-btn flat round dense size="sm" @click="copyArkadeAddress">
-                <Icon icon="tabler:copy" width="16" height="16" />
-              </q-btn>
-              <q-btn flat round dense size="sm" @click="shareArkadeAddress">
-                <Icon icon="tabler:share" width="16" height="16" />
-              </q-btn>
-            </template>
-          </SettingsRow>
-        </template>
-
-        <template v-else-if="isActiveWalletNWC">
-          <!--
-            Hero row for the active NWC connection: the user-given
-            wallet name takes the label slot (this is the name they
-            actually recognise — "My Phoenix", "Mutiny BTC" etc.)
-            with the upstream provider alias as caption. The plug
-            icon signals "this is a connection" at a glance.
-            The previous "Features" row (Send · Receive · Multi-pay
-            … etc) was demoted because the NWC method list is
-            technical jargon that doesn't help a mainstream user
-            understand which wallet they are paying from — anyone
-            who actually cares about NWC capability strings can find
-            them in the Manage Wallets dialog.
-          -->
-          <SettingsRow
-            icon="tabler:plug-connected"
-            :label="activeWallet?.name || $t('NWC Wallet')"
-            :caption="nwcWalletAlias ? `${$t('via')} ${nwcWalletAlias}` : $t('Nostr Wallet Connect')"
-            :interactive="false"
-          />
-          <SettingsRow
-            v-if="activeWalletLightningAddress"
-            icon="tabler:bolt"
-            :label="$t('Lightning address')"
-            :caption="activeWalletLightningAddress"
-            caption-mono
-            :interactive="false"
-          >
-            <template #right>
-              <q-btn
-                flat round dense size="sm"
-                @click="copyToClipboard(activeWalletLightningAddress, $t('Lightning address copied'))"
-              >
-                <Icon icon="tabler:copy" width="16" height="16" />
-              </q-btn>
-            </template>
-          </SettingsRow>
-        </template>
-
-        <template v-else-if="isActiveWalletLNBits">
-          <!--
-            Hero row first: user-given wallet name as label, server
-            domain as caption. Mirrors the NWC pattern so the active
-            wallet identity is immediately scannable regardless of
-            connection type. The server row was demoted because the
-            domain string (e.g. "demo.lnbits.com") is technical
-            context that's helpful but not identity.
-          -->
-          <SettingsRow
-            icon="tabler:wallet"
-            :label="activeWallet?.name || 'LNbits Wallet'"
-            :caption="lnbitsServerDomain ? `${$t('on')} ${lnbitsServerDomain}` : 'LNbits'"
-            :interactive="false"
-          />
-          <!--
-            Lightning Address row — always rendered for LNbits.
-
-            States, driven by `lnAddressRowState`:
-              • 'set'         — address attached; opens the sheet to swap it.
-              • 'unsetReady'  — no address yet, Pay Links answers; opens
-                                the sheet to pick or create one.
-              • 'unsetBlocked' — the server says Pay Links is off; opens
-                                 the sheet that says who can turn it on.
-              • 'unknown'     — the server could not be asked; a tap asks again.
-              • 'probing'     — not asked yet.
-          -->
-          <SettingsRow
-            icon="tabler:at"
-            :label="$t('Lightning address')"
-            :caption-mono="lnAddressRowState === 'set'"
-            :interactive="lnAddressRowClickable"
-            :show-chevron="lnAddressRowClickable"
-            @click="lnAddressRowClickable ? openLightningAddressDialog() : null"
-          >
-            <template #caption>
-              <template v-if="lnAddressRowState === 'set'">{{ activeWalletLightningAddress }}</template>
-              <template v-else-if="lnAddressRowState === 'unsetReady'">{{ $t('Get one to receive payments by name') }}</template>
-              <template v-else-if="lnAddressRowState === 'unsetBlocked'"><span class="ln-address-dot" aria-hidden="true"></span>{{ $t('Needs Pay Links') }}</template>
-              <template v-else-if="lnAddressRowState === 'unknown'">{{ $t("Couldn't reach the server") }}</template>
-              <template v-else><q-spinner size="12px" class="q-mr-xs" />{{ $t('Checking server…') }}</template>
-            </template>
-            <template v-if="lnAddressRowState === 'set'" #right>
-              <q-btn
-                flat round dense size="sm"
-                @click.stop="copyToClipboard(activeWalletLightningAddress, $t('Lightning address copied'))"
-              >
-                <Icon icon="tabler:copy" width="16" height="16" />
-              </q-btn>
-            </template>
-          </SettingsRow>
-        </template>
-
-        <!--
-          Wallet-level admin: the connected wallets, then the two features
-          that work across them. Each is a row that opens its own page, the
-          way iOS Settings lists its features (issue #449). Backups lives in
-          Security.
-        -->
+      <!-- ─────────────── WALLETS ───────────────
+           Every wallet on this phone, with its logo and balance; a row opens
+           that wallet's own page. The total sits on top, as Manage Wallets
+           used to show it. -->
+      <SettingsSection id="settings-wallets" :title="$t('Wallets')">
         <SettingsRow
-          icon="tabler:wallet"
-          :label="$t('Manage Wallets')"
-          :caption="`${wallets.length} ${wallets.length === 1 ? $t('wallet') : $t('wallets')}`"
-          @click="showWalletsDialog = true"
-        />
+          v-if="wallets.length > 1"
+          class="wallets-total-row"
+          :label="$t('Total')"
+          :caption="walletsOnlineSummary"
+          :interactive="false"
+          data-audit="settings-wallets-total"
+        >
+          <template #right>
+            <span class="wallet-row-amount wallet-row-amount--total">
+              <!-- Every configured wallet counts; a total missing a wallet's
+                   figure reads "at least" and is dimmed (same as the switcher). -->
+              <HiddenAmount v-balance-updating="walletStore.totalBalanceInfo.refreshing" :class="{ 'balance-stale': walletStore.totalBalanceInfo.outdated }">{{ walletStore.totalBalanceInfo.complete ? '' : '≥ ' }}{{ formatBalance(totalBalance) }}</HiddenAmount>
+              <HiddenAmount v-if="walletStore.fiatValueOf(totalBalance)" class="wallet-row-fiat" :class="{ 'balance-stale': walletStore.totalBalanceInfo.outdated }">{{ walletStore.totalBalanceInfo.complete ? '' : '≥ ' }}{{ walletStore.fiatValueOf(totalBalance) }}</HiddenAmount>
+            </span>
+          </template>
+        </SettingsRow>
+
         <SettingsRow
-          icon="tabler:credit-card-pay"
-          :label="$t('Default wallet')"
-          :caption="$t('For payments to contacts')"
-          :inline-value="paymentWalletLabel"
-          data-audit="settings-payment-wallet"
-          @click="showPaymentWalletSheet = true"
+          v-for="wallet in sortedWallets"
+          :key="wallet.id"
+          tiled
+          :label="wallet.name"
+          :data-wallet-id="wallet.id"
+          @click="openWalletDetail(wallet.id)"
+        >
+          <template #icon>
+            <WalletLogoTile :type="wallet.type" :size="30" />
+          </template>
+          <template #caption>
+            {{ walletRowKind(wallet) }}
+            <span v-if="wallet.id === activeWalletId" class="wallet-row-state wallet-row-state--active"> · {{ $t('Active') }}</span>
+            <!-- What it received since the user last looked at it (stores/unseenReceipts). -->
+            <span v-else-if="unseenReceipts.forWallet(wallet.id)" class="wallet-row-state wallet-row-state--unseen"> · <HiddenAmount aria-hidden="true">+ {{ formatBalance(unseenReceipts.forWallet(wallet.id).sats) }}</HiddenAmount><span class="sr-only">{{ $t('Received {amount} since you last looked', { amount: formatBalance(unseenReceipts.forWallet(wallet.id).sats) }) }}</span></span>
+            <span v-else-if="walletStore.connectionEnded[wallet.id]" class="wallet-row-state wallet-row-state--off"> · {{ $t('Connection ended') }}</span>
+            <span v-else-if="!connectionStates[wallet.id]?.connected" class="wallet-row-state wallet-row-state--off"> · {{ $t('Offline') }}</span>
+          </template>
+          <template #right>
+            <span class="wallet-row-amount">
+              <!-- Same rule as the home switcher: a placeholder until the first
+                   figure, dimmed only when known to be out of date. -->
+              <span v-if="!walletStore.getDisplayBalance(wallet.id).known" v-balance-updating="walletStore.getDisplayBalance(wallet.id).refreshing" class="balance-placeholder" role="img" :aria-label="$t('Balance not loaded yet')" />
+              <HiddenAmount v-else :class="{ 'balance-stale': walletStore.getDisplayBalance(wallet.id).outdated }">{{ walletBalanceText(wallet.id) }}</HiddenAmount>
+            </span>
+            <Icon icon="tabler:chevron-right" width="16" height="16" class="settings-row-chevron" />
+          </template>
+        </SettingsRow>
+
+        <!-- A restore keeps finding the phrase's other wallets for a while. -->
+        <SettingsRow
+          v-if="walletStore.sparkDiscoveryRunning"
+          :label="$t('Looking for more wallets from your recovery phrase')"
+          :interactive="false"
+          role="status"
+        >
+          <template #icon><q-spinner size="18px" :aria-hidden="true" /></template>
+        </SettingsRow>
+
+        <SettingsRow accent :label="$t('Add wallet')" data-audit="settings-add-wallet" @click="showAddWalletDialog = true" />
+        <template #footer>
+          {{ $t('Spark and Arkade wallets live on this phone, and their recovery words bring them back. Connected wallets live with their provider.') }}
+        </template>
+      </SettingsSection>
+
+      <!-- Wallets an earlier version kept on another recovery phrase:
+           off the list (one phrase per device), never out of reach. -->
+      <SettingsSection v-if="setAsideWallets.length" :title="$t('Other recovery phrase')">
+        <SettingsRow
+          v-for="entry in setAsideWallets"
+          :key="entry.id"
+          :label="entry.name || $t('Wallet')"
+          :inline-value="$t('Show recovery phrase')"
+          @click="openSeedPhraseDialog('view', entry.id)"
         />
+        <template #footer>
+          {{ $t('These wallets use a different recovery phrase than this phone. Write their words down to keep their money: they open the wallet in any Spark wallet app.') }}
+        </template>
+      </SettingsSection>
+
+      <!-- ─────────────── WHAT BUHOGO DOES FOR YOU ───────────────
+           The two features that work across the wallets, each a door to
+           its own page (issue #449). -->
+      <SettingsSection>
         <SettingsRow
           icon="tabler:arrow-autofit-right"
+          :tile="TILE.green"
           :label="$t('Auto-Transfer')"
           :inline-value="autoTransferMeta"
+          data-audit="settings-auto-transfer-row"
           @click="$router.push('/auto-transfer')"
         />
         <SettingsRow
           icon="tabler:cash-register"
+          :tile="TILE.ink"
           :label="$t('kiosk.kioskMode')"
           :inline-value="walletStore.kioskEnabled ? $t('On') : $t('Off')"
           data-audit="settings-kiosk-row"
           @click="$router.push('/kiosk-mode')"
         />
+        <template #footer>
+          {{ $t('Auto-Transfer moves money to another wallet once one holds more than you choose. Kiosk Mode turns this phone into a register for your shop.') }}
+        </template>
+      </SettingsSection>
 
+      <!-- ─────────────── THIS PHONE ───────────────
+           What reaches you, and what keeps others out. -->
+      <SettingsSection>
         <!--
-          Transaction report. Wallet-level because it reads across the
-          wallets rather than belonging to any one of them, which is also
-          why it sits next to Manage Wallets.
+          Notifications: one row, the details in a sheet (master switch, then
+          one switch per kind). The value says what is in effect, so a
+          permission revoked in system settings reads as Blocked or Off
+          without destroying the user's own choices.
         -->
         <SettingsRow
+          v-if="notificationsStore.supported"
+          icon="tabler:bell"
+          :tile="TILE.red"
+          :label="$t('Notifications')"
+          :inline-value="notificationsSummary"
+          @click="showNotificationsSheet = true"
+        />
+        <!--
+          App lock. On the web the switch is there so people find it, and
+          opens the Get-the-App dialog; on a phone without any screen lock
+          it is off and says why.
+        -->
+        <SettingsRow
+          icon="tabler:lock"
+          :tile="TILE.slate"
+          :label="$t('App lock')"
+          :caption="isNativeApp && !biometricsAvailable ? $t('No screen lock set on this device') : ''"
+          :interactive="false"
+          data-audit="settings-app-lock"
+        >
+          <template #right>
+            <q-toggle
+              :model-value="isNativeApp && biometricsEnabled"
+              :disable="isNativeApp && !biometricsAvailable"
+              :aria-label="$t('App lock')"
+              @update:model-value="setAppLock"
+              :color="$q.dark.isActive ? 'brand-green' : 'brand-green-dark'"
+            />
+          </template>
+        </SettingsRow>
+        <!--
+          Screen Privacy — Android FLAG_SECURE.
+          On native: toggle mirrors the canonical persisted value
+          owned by SecureScreenPlugin; toggling here flows through
+          the store action which writes to SharedPreferences AND
+          applies the flag in a single round-trip.
+          On web / PWA: the toggle is rendered (so users discover
+          the feature) but always shows OFF and any attempt to
+          enable opens the "Get the Android app" dialog.
+        -->
+        <SettingsRow
+          icon="tabler:eye-off"
+          :tile="TILE.teal"
+          :label="$t('Screen Privacy')"
+          :interactive="false"
+        >
+          <template #right>
+            <q-toggle
+              :model-value="screenPrivacySupported ? walletStore.privacyScreenEnabled : false"
+              :aria-label="$t('Screen Privacy')"
+              @update:model-value="togglePrivacyScreen"
+              :color="$q.dark.isActive ? 'brand-green' : 'brand-green-dark'"
+            />
+          </template>
+        </SettingsRow>
+        <template #footer>
+          {{ $t("App lock asks for your face or fingerprint when BuhoGO opens, or for your phone's PIN, pattern or password when neither is set up. Screen Privacy blocks screenshots, screen recordings and app switcher previews.") }}
+        </template>
+      </SettingsSection>
+
+      <!-- ─────────────── HOW BUHOGO LOOKS AND FEELS ─────────────── -->
+      <SettingsSection>
+        <!-- Theme, main unit, hidden balances and amount format: one page. -->
+        <SettingsRow
+          icon="tabler:typography"
+          :tile="TILE.indigo"
+          :label="$t('Display')"
+          :inline-value="$q.dark.isActive ? $t('Dark') : $t('Light')"
+          data-audit="settings-display-row"
+          @click="showDisplaySheet = true"
+        />
+        <SettingsRow
+          icon="tabler:world"
+          :tile="TILE.blue"
+          :label="$t('Language')"
+          :inline-value="getCurrentLanguageLabel()"
+          @click="showLanguageDialog = true"
+        />
+        <SettingsRow
+          icon="tabler:coins"
+          :tile="TILE.amber"
+          :label="$t('Currency')"
+          :inline-value="preferredFiatCurrency"
+          @click="openCurrencyDialog"
+        />
+        <!--
+          Haptics: on by default, in the app only (a browser cannot play
+          them). Off silences every haptic in the app; the phone's own
+          vibration setting still applies on top. On the web the toggle
+          stays off and switching it on opens the Get-the-App dialog, like
+          Screen Privacy.
+        -->
+        <SettingsRow
+          icon="tabler:device-mobile-vibration"
+          :tile="TILE.plum"
+          :label="$t('Haptics')"
+          :interactive="false"
+        >
+          <template #right>
+            <q-toggle
+              :model-value="hapticsSupported && hapticsOn"
+              :aria-label="$t('Haptics')"
+              @update:model-value="updateHaptics"
+              :color="$q.dark.isActive ? 'brand-green' : 'brand-green-dark'"
+            />
+          </template>
+        </SettingsRow>
+        <!--
+          Quick access: the Quick Settings tiles and the Home screen
+          shortcuts, in a sheet. Android only; on the web the row is there
+          so people find it, and opens the Get-the-App dialog. The iOS app
+          has no tiles or shortcuts, so it has no row.
+        -->
+        <SettingsRow
+          v-if="showQuickAccessRow"
+          icon="tabler:layout-grid-add"
+          :tile="TILE.steel"
+          :label="$t('Quick access')"
+          @click="openQuickAccess"
+        />
+        <template #footer>
+          {{ $t('Haptics let you feel a tap for payments, errors and other key moments.') }}
+          <template v-if="showQuickAccessRow">{{ $t('Quick access opens Send, Receive or Scan QR in one tap from outside the app.') }}</template>
+        </template>
+      </SettingsSection>
+
+      <!-- ─────────────── PAYMENTS AND RECORDS ─────────────── -->
+      <SettingsSection>
+        <SettingsRow
+          icon="tabler:credit-card-pay"
+          :tile="TILE.green"
+          :label="$t('Default wallet')"
+          :inline-value="paymentWalletLabel"
+          data-audit="settings-payment-wallet"
+          @click="showPaymentWalletSheet = true"
+        />
+        <!-- Transaction report: reads across the wallets rather than
+             belonging to any one of them. -->
+        <SettingsRow
           icon="tabler:file-text"
+          :tile="TILE.gray"
           :label="$t('Transaction report')"
-          :caption="$t('PDF, CSV or XML for your accountant')"
           @click="showTaxReportSheet = true"
+        />
+        <template #footer>
+          {{ $t('Payments to your contacts start from the default wallet. The transaction report is a PDF, CSV or XML file for your accountant.') }}
+        </template>
+      </SettingsSection>
+
+      <!-- ─────────────── ADVANCED ───────────────
+           Exchange rates, the business check and removing wallets, on their
+           own page so reaching them is already deliberate. -->
+      <SettingsSection>
+        <SettingsRow
+          icon="tabler:adjustments-horizontal"
+          :tile="TILE.gray"
+          :label="$t('Advanced')"
+          data-audit="settings-advanced-row"
+          @click="showAdvancedSheet = true"
         />
       </SettingsSection>
 
@@ -252,7 +304,7 @@
         :existing-addresses="lnAddressSheet.existingAddresses"
         :default-username="lnAddressSheet.defaultUsername"
         :create-address="createLnbitsAddress"
-        :check-status="probeLnurlpForActiveWallet"
+        :check-status="probeLnurlpForSheetWallet"
         @available="showLnbitsAddressStep"
         @confirm="onLightningAddressConfirm"
       />
@@ -265,6 +317,19 @@
       />
 
       <NotificationsSheet v-model="showNotificationsSheet" />
+
+      <DisplaySheet
+        v-model="showDisplaySheet"
+        :dark="$q.dark.isActive"
+        :main-unit="defaultDisplayCurrency === 'bitcoin' ? 'bitcoin' : 'fiat'"
+        :fiat-code="preferredFiatCurrency"
+        :balance-hidden="walletStore.balanceHidden"
+        :bip177="useBip177Format"
+        @toggle-theme="handleToggleDark"
+        @main-unit="setDisplayCurrency"
+        @toggle-hidden="walletStore.setBalanceHidden()"
+        @amount-format="updateAmountFormat"
+      />
 
       <!-- Tiles and launcher shortcuts (#445, #446). Also opened by
            long-pressing a BuhoGO tile: ?section=quick-access. -->
@@ -281,234 +346,76 @@
         v-model="showTransferModal"
         :from-wallet-id="transferFromWalletId"
       />
-
-      <!-- ─────────────── PREFERENCES ───────────────
-           Theme / Display Currency / App Lock live in Quick Toggles at
-           the top of the page: binary controls that don't need a full
-           row. Here are the pickers that need a dialog (Currency,
-           Language) plus the two on/off rows too rarely flipped to earn
-           a quick toggle (Amount format, Screen Privacy). -->
-      <SettingsSection :title="$t('Preferences')">
-        <SettingsRow
-          icon="tabler:currency-dollar"
-          :label="$t('Currency')"
-          :inline-value="preferredFiatCurrency"
-          @click="openCurrencyDialog"
-        />
-        <SettingsRow
-          icon="tabler:language"
-          :label="$t('Language')"
-          :inline-value="getCurrentLanguageLabel()"
-          @click="showLanguageDialog = true"
-        />
-        <!--
-          Amount format — moved down from Quick Toggles. Almost no
-          mainstream user has a reason to flip this (it controls
-          ₿ vs sats writing convention), so its old home as a
-          top-of-page quick pill was prime real estate wasted. Now
-          a regular row with a plain-language caption so a curious
-          user can still find and understand it.
-        -->
-        <SettingsRow
-          icon="tabler:hash"
-          :label="$t('Amount Display Format')"
-          :caption="useBip177Format ? $t('Show amounts as ₿ 1,234') : $t('Show amounts as 1,234 sats')"
-          :interactive="false"
-        >
-          <template #right>
-            <q-toggle
-              :model-value="useBip177Format"
-              @update:model-value="updateAmountFormat"
-              :color="$q.dark.isActive ? 'brand-green' : 'brand-green-dark'"
-            />
-          </template>
-        </SettingsRow>
-
-        <!--
-          Notifications: one row, the details in a sheet (master switch, then
-          one switch per kind). The value says what is in effect, so a
-          permission revoked in system settings reads as Blocked or Off
-          without destroying the user's own choices.
-        -->
-        <SettingsRow
-          v-if="notificationsStore.supported"
-          icon="tabler:bell"
-          :label="$t('Notifications')"
-          :inline-value="notificationsSummary"
-          @click="showNotificationsSheet = true"
-        />
-
-        <!--
-          Quick access: the Quick Settings tiles and the Home screen
-          shortcuts, in a sheet. Android only; on the web the row is there
-          so people find it, and opens the Get-the-App dialog. The iOS app
-          has no tiles or shortcuts, so it has no row.
-        -->
-        <SettingsRow
-          v-if="showQuickAccessRow"
-          icon="tabler:layout-grid-add"
-          :label="$t('Quick access')"
-          :caption="$t('Open Send, Receive or Scan QR in one tap')"
-          @click="openQuickAccess"
-        />
-
-        <!--
-          Haptics: on by default, in the app only (a browser cannot play
-          them). Off silences every haptic in the app; the phone's own
-          vibration setting still applies on top. On the web the toggle
-          stays off and switching it on opens the Get-the-App dialog, like
-          Screen Privacy.
-        -->
-        <SettingsRow
-          icon="tabler:device-mobile-vibration"
-          :label="$t('Haptics')"
-          :caption="$t('Feel a tap for payments, errors and other key moments')"
-          :interactive="false"
-        >
-          <template #right>
-            <q-toggle
-              :model-value="hapticsSupported && hapticsOn"
-              :aria-label="$t('Haptics')"
-              @update:model-value="updateHaptics"
-              :color="$q.dark.isActive ? 'brand-green' : 'brand-green-dark'"
-            />
-          </template>
-        </SettingsRow>
-
-        <!--
-          Screen Privacy — Android FLAG_SECURE.
-          On native: toggle mirrors the canonical persisted value
-          owned by SecureScreenPlugin; toggling here flows through
-          the store action which writes to SharedPreferences AND
-          applies the flag in a single round-trip.
-          On web / PWA: the toggle is rendered (so users discover
-          the feature) but always shows OFF and any attempt to
-          enable opens the "Get the Android app" dialog. The OS
-          doesn't expose screen-capture blocking to browsers, so
-          honestly surfacing that is the only correct UX.
-        -->
-        <SettingsRow
-          icon="tabler:shield-lock"
-          :label="$t('Screen Privacy')"
-          :caption="$t('Block screenshots, screen recordings, and previews in the app switcher.')"
-          :interactive="false"
-        >
-          <template #right>
-            <q-toggle
-              :model-value="screenPrivacySupported ? walletStore.privacyScreenEnabled : false"
-              @update:model-value="togglePrivacyScreen"
-              :color="$q.dark.isActive ? 'brand-green' : 'brand-green-dark'"
-            />
-          </template>
-        </SettingsRow>
-      </SettingsSection>
-
-      <!-- The Onboarding Guide lives on the About page now, next to the
-           project's story, so Settings stays pure configuration. -->
-
-      <!-- ─────────────── ADVANCED ───────────────
-           Collapsed by default. Power-user toggles that the
-           typical user never needs to touch (exchange-rate source,
-           auto-add Bitcoin deposits). Positioned after the
-           mainstream surfaces — wallet, preferences — so
-           anyone hunting for advanced controls is happy to scroll
-           the extra row. -->
-      <SettingsSection
-        id="settings-advanced"
-        :title="$t('Advanced')"
-        collapsible
-        :default-expanded="$route.query.section === 'advanced'"
-      >
-        <SettingsRow
-          icon="tabler:chart-line"
-          :label="$t('Exchange rates')"
-          :inline-value="mempoolSourceLabel"
-          @click="openExchangeRates"
-        />
-
-        <!-- Auto-add Bitcoin deposits — only relevant for Spark
-             wallets (the only type with a static deposit address).
-             Default-on covers the typical user; only people who
-             want manual control over each on-chain claim need to
-             find this toggle, and Advanced is the right home. -->
-        <SettingsRow
-          v-if="isSparkActiveWallet"
-          icon="tabler:download"
-          :label="$t('Auto-add Bitcoin deposits')"
-          :caption="$t('Add deposits to your balance without an extra step.')"
-          :interactive="false"
-        >
-          <template #right>
-            <q-btn
-              flat
-              round
-              dense
-              size="sm"
-              class="branta-info"
-              :aria-label="$t('About auto-add Bitcoin deposits')"
-              @click="showAutoAddDepositsDialog = true"
-            >
-              <Icon icon="tabler:info-circle" width="18" height="18" />
-            </q-btn>
-            <q-toggle
-              :model-value="bitcoinPrefsStore.autoAddIncomingBitcoin"
-              @update:model-value="bitcoinPrefsStore.setAutoAddIncomingBitcoin"
-              :color="$q.dark.isActive ? 'brand-green' : 'brand-green-dark'"
-            />
-          </template>
-        </SettingsRow>
-
-        <!-- The existing device preference, with a short description.
-             No separate payment mode or privacy guarantee is introduced. -->
-        <SettingsRow
-          icon="tabler:rosette-discount-check"
-          :label="$t('Business check')"
-          :interactive="false"
-        >
-          <template #right>
-            <q-toggle
-              :model-value="bitcoinPrefsStore.brantaVerificationEnabled"
-              @update:model-value="bitcoinPrefsStore.setBrantaVerificationEnabled"
-              :color="$q.dark.isActive ? 'brand-green' : 'brand-green-dark'"
-              :aria-label="$t('Business check')"
-            />
-          </template>
-        </SettingsRow>
-        <template #footer>
-          {{ $t("Shows the business behind a payment when a match is available. Checked with Branta.") }}
-          <a href="https://branta.pro" class="settings-footer-link" @click.prevent="openBrantaSite">{{ $t('About Branta') }}</a>
-        </template>
-      </SettingsSection>
-
-      <!-- ─────────────── DANGER ZONE ───────────────
-           Collapsed by default. Lives at the very bottom of the
-           page so reaching it is already deliberate (scroll past
-           everything else), and the chevron toggle adds one more
-           tap before destructive actions become visible. -->
-      <SettingsSection
-        v-if="dangerActions.length"
-        :title="$t('Danger Zone')"
-        collapsible
-        :default-expanded="false"
-      >
-        <!-- Every wallet of a kind at once; one wallet leaves from its own
-             details in Manage Wallets. A row that cannot run yet is muted
-             and says why; tapping it offers the way out. -->
-        <SettingsRow
-          v-for="action in dangerActions"
-          :key="action.key"
-          destructive
-          :quiet="!!action.blockedReason"
-          :label="action.label"
-          :caption="action.blockedReason || action.covers"
-          @click="action.run"
-        />
-      </SettingsSection>
-
-      <!-- About lives behind its own door in the home menu now; Settings
-           stays pure configuration. -->
-
     </div>
+
+    <!-- Advanced: rarely needed, so one row away. Removing every wallet of
+         a kind at once lives here; one wallet leaves from its own page. -->
+    <q-dialog
+      v-model="showAdvancedSheet"
+      position="bottom"
+      transition-show="slide-up"
+      transition-hide="slide-down"
+      :class="$q.dark.isActive ? 'dialog_dark' : 'dialog_light'"
+    >
+      <q-card class="settings-sheet-card" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'" data-audit="settings-advanced-sheet">
+        <div class="form-sheet-grabber" aria-hidden="true"></div>
+        <header class="form-sheet-header">
+          <span aria-hidden="true"></span>
+          <h2 class="form-sheet-title">{{ $t('Advanced') }}</h2>
+          <button type="button" class="form-sheet-cancel settings-sheet-done" @click="showAdvancedSheet = false">{{ $t('Done') }}</button>
+        </header>
+        <div class="settings-sheet-body">
+          <SettingsSection>
+            <SettingsRow
+              icon="tabler:chart-line"
+              :label="$t('Exchange rates')"
+              :inline-value="mempoolSourceLabel"
+              @click="openExchangeRates"
+            />
+            <template #footer>{{ $t('Where BuhoGO gets Bitcoin prices.') }}</template>
+          </SettingsSection>
+
+          <!-- The existing device preference, with a short description.
+               No separate payment mode or privacy guarantee is introduced. -->
+          <SettingsSection>
+            <SettingsRow
+              icon="tabler:rosette-discount-check"
+              :label="$t('Business check')"
+              :interactive="false"
+            >
+              <template #right>
+                <q-toggle
+                  :model-value="bitcoinPrefsStore.brantaVerificationEnabled"
+                  @update:model-value="bitcoinPrefsStore.setBrantaVerificationEnabled"
+                  :color="$q.dark.isActive ? 'brand-green' : 'brand-green-dark'"
+                  :aria-label="$t('Business check')"
+                />
+              </template>
+            </SettingsRow>
+            <template #footer>
+              {{ $t("Shows the business behind a payment when a match is available. Checked with Branta.") }}
+              <a href="https://branta.pro" class="settings-footer-link" @click.prevent="openBrantaSite">{{ $t('About Branta') }}</a>
+            </template>
+          </SettingsSection>
+
+          <!-- Every wallet of a kind at once; one wallet leaves from its own
+               page. A row that cannot run yet is muted and says why; tapping
+               it offers the way out. -->
+          <SettingsSection v-if="dangerActions.length" :title="$t('Danger Zone')">
+            <SettingsRow
+              v-for="action in dangerActions"
+              :key="action.key"
+              destructive
+              :quiet="!!action.blockedReason"
+              :label="action.label"
+              :caption="action.blockedReason || action.covers"
+              @click="action.run"
+            />
+            <template #footer>{{ $t('A single wallet can be removed on its own page.') }}</template>
+          </SettingsSection>
+        </div>
+      </q-card>
+    </q-dialog>
 
     <!-- Typed confirmation: only when a recovery phrase leaves this phone
          (utils/walletRemoval.js). Every other removal is a plain alert. -->
@@ -713,17 +620,18 @@
       </q-card>
     </q-dialog>
 
-    <!-- Enhanced Wallets Management Dialog - full-width bottom sheet -->
+    <!-- A wallet's own page, opened from its row in the Wallets group:
+         what it is, its balance, what only this kind of wallet has, its
+         Auto-Transfer rule, and the way it leaves this phone. -->
     <q-dialog
       v-model="showWalletsDialog"
       position="bottom"
       transition-show="slide-up"
       transition-hide="slide-down"
       :class="$q.dark.isActive ? 'dialog_dark' : 'dialog_light'"
+      @hide="onWalletDetailHidden"
     >
       <q-card class="wallets-dialog-card" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
-        <!-- One sheet, pushed navigation: a wallet's details replace the list
-             and Back returns to it, focus on the row that opened them. -->
         <WalletDetailPanel
           v-if="detailWallet"
           :key="detailWallet.id"
@@ -757,170 +665,16 @@
           @copy-address="copyToClipboard($event, $t('Lightning address copied'))"
           @change-address="openLightningAddressSheet"
           @move-address="openMoveAddress"
+          :arkade-address="detailWallet.type === 'arkade' ? (arkadeAddressOf(detailWallet) || '') : ''"
+          :lnbits-address="detailWallet.type === 'lnbits' ? lnbitsAddressStateFor(detailWallet) : null"
+          :server-domain="detailWallet.type === 'lnbits' ? lnbitsDomainOf(detailWallet) : ''"
+          :auto-add-deposits="detailWallet.type === 'spark' ? bitcoinPrefsStore.autoAddIncomingBitcoin : null"
+          @copy-arkade="copyArkadeAddress"
+          @share-arkade="shareArkadeAddress"
+          @lnbits-address="openLightningAddressDialog"
+          @auto-add="bitcoinPrefsStore.setAutoAddIncomingBitcoin"
+          @auto-add-info="showAutoAddDepositsDialog = true"
         />
-        <template v-else>
-        <div class="sheet-grabber" aria-hidden="true"><div class="grabber-bar"></div></div>
-        <!-- Fixed Header -->
-        <q-card-section class="dialog-header wallets-dialog-header">
-          <q-btn flat round dense class="glass-back-btn" :aria-label="$t('Back')" v-close-popup>
-            <Icon icon="tabler:chevron-left" width="20" height="20" />
-          </q-btn>
-          <div class="dialog-title" :class="$q.dark.isActive ? 'dialog_title_dark' : 'dialog_title_light'">
-            {{ $t('Manage Wallets') }}
-          </div>
-          <div class="wallets-header-spacer" aria-hidden="true"></div>
-        </q-card-section>
-
-        <!-- Scrollable Content -->
-        <q-card-section class="wallets-dialog-content">
-          <!-- Wallet Statistics -->
-          <div class="wallet-stats" :class="$q.dark.isActive ? 'wallets-group-dark' : 'wallets-group-light'" v-if="wallets.length > 0">
-            <div class="stat-item">
-              <div class="stat-value" :class="$q.dark.isActive ? 'balance_dark' : 'balance_light'">
-                {{ wallets.length }}
-              </div>
-              <div class="stat-label" :class="$q.dark.isActive ? 'sats' : 'sats-light'">
-                {{ $t('Wallets') }}
-              </div>
-            </div>
-            <div class="stat-divider" :class="$q.dark.isActive ? 'divider-dark' : 'divider-light'"></div>
-            <div class="stat-item">
-              <div class="stat-value" :class="$q.dark.isActive ? 'balance_dark' : 'balance_light'">
-                <!-- Every configured wallet counts; a total missing a wallet's
-                     figure reads "at least" and is dimmed (same as the switcher). -->
-                <HiddenAmount v-balance-updating="walletStore.totalBalanceInfo.refreshing" :class="{ 'balance-stale': walletStore.totalBalanceInfo.outdated }">{{ walletStore.totalBalanceInfo.complete ? '' : '≥ ' }}{{ formatBalance(totalBalance) }}</HiddenAmount>
-              </div>
-              <HiddenAmount v-if="walletStore.fiatValueOf(totalBalance)" class="stat-fiat" :class="{ 'balance-stale': walletStore.totalBalanceInfo.outdated }">{{ walletStore.totalBalanceInfo.complete ? '' : '≥ ' }}{{ walletStore.fiatValueOf(totalBalance) }}</HiddenAmount>
-              <div class="stat-label" :class="$q.dark.isActive ? 'sats' : 'sats-light'">
-                {{ $t('Total') }}
-              </div>
-            </div>
-            <div class="stat-divider" :class="$q.dark.isActive ? 'divider-dark' : 'divider-light'"></div>
-            <div class="stat-item">
-              <div class="stat-value online-value" :class="$q.dark.isActive ? 'online-dark' : 'online-light'">
-                {{ connectedWallets.length }}/{{ wallets.length }}
-              </div>
-              <div class="stat-label" :class="$q.dark.isActive ? 'sats' : 'sats-light'">
-                {{ $t('Online') }}
-              </div>
-            </div>
-          </div>
-
-          <!-- Scrollable Wallet List -->
-          <div class="wallets-list-container">
-            <div v-if="wallets.length === 0" class="no-wallets">
-              <Icon icon="tabler:wallet" width="48" height="48" class="no-wallets-icon"
-                      :class="$q.dark.isActive ? 'text-grey-6' : 'text-grey-4'" />
-              <div class="no-wallets-text" :class="$q.dark.isActive ? 'view_title_dark' : 'view_title'">
-                {{ $t('No wallets connected yet') }}
-              </div>
-              <div class="no-wallets-hint" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'">
-                {{ $t('Tap "Add Wallet" to get started') }}
-              </div>
-            </div>
-
-            <!-- A restore keeps finding the phrase's other wallets for a while. -->
-            <p v-if="walletStore.sparkDiscoveryRunning" class="wallets-discovery" role="status">
-              <q-spinner size="14px" :aria-hidden="true" />
-              {{ $t('Looking for more wallets from your recovery phrase') }}
-            </p>
-
-            <!-- Grouped by what this phone holds: a wallet's recovery phrase, or
-                 only a connection to a wallet that lives elsewhere. -->
-            <section v-for="group in walletGroups" :key="group.kind" class="wallets-group-section" :aria-label="group.title">
-            <h3 class="wallets-group-title">{{ group.title }}</h3>
-            <div class="wallets-list-scroll" :class="$q.dark.isActive ? 'wallets-group-dark' : 'wallets-group-light'">
-              <div
-                v-for="wallet in group.wallets"
-                :key="wallet.id"
-                class="wallet-card-wrapper"
-              >
-              <div
-                class="wallet-card"
-                :class="{
-                  'wallet-card-disconnected': !connectionStates[wallet.id]?.connected,
-                  'wallet-card-dark': $q.dark.isActive,
-                  'wallet-card-light': !$q.dark.isActive
-                }"
-                role="button"
-                tabindex="0"
-                :data-wallet-id="wallet.id"
-                @click="openWalletDetail(wallet.id)"
-                @keydown.enter.prevent="openWalletDetail(wallet.id)"
-                @keydown.space.prevent="openWalletDetail(wallet.id)"
-              >
-                <!-- Wallet Avatar -->
-                <div class="wallet-avatar">
-                  <div class="wallet-avatar-circle wallet-avatar-black" :class="{ 'wallet-avatar-arkade': wallet.type === 'arkade' }">
-                    <WalletBrandMark :type="wallet.type" :size="20" />
-                  </div>
-                  <div
-                    class="wallet-status-dot"
-                    :class="connectionStates[wallet.id]?.connected ? 'status-connected' : 'status-disconnected'"
-                  ></div>
-                </div>
-
-                <!-- Wallet Details: name + one status line. -->
-                <div class="wallet-details">
-                  <div class="wallet-row-name" :class="$q.dark.isActive ? 'row-name-dark' : 'row-name-light'">
-                    {{ wallet.name }}
-                  </div>
-                  <div class="wallet-row-sub" :class="$q.dark.isActive ? 'row-sub-dark' : 'row-sub-light'">
-                    <span>{{ getWalletTypeLabel(wallet) }}</span>
-                    <span v-if="wallet.id === activeWalletId" class="row-sub-active" :class="$q.dark.isActive ? 'sub-active-dark' : 'sub-active-light'"> · {{ $t('Active') }}</span>
-                    <!-- What it received since the user last looked at it (stores/unseenReceipts). -->
-                    <span v-else-if="unseenReceipts.forWallet(wallet.id)" class="row-sub-unseen"> · <HiddenAmount aria-hidden="true">+ {{ formatBalance(unseenReceipts.forWallet(wallet.id).sats) }}</HiddenAmount><span class="sr-only">{{ $t('Received {amount} since you last looked', { amount: formatBalance(unseenReceipts.forWallet(wallet.id).sats) }) }}</span></span>
-                    <span v-else-if="walletStore.connectionEnded[wallet.id]"> · {{ $t('Connection ended') }}</span>
-                    <span v-else-if="!connectionStates[wallet.id]?.connected"> · {{ $t('Offline') }}</span>
-                  </div>
-                </div>
-
-                <!-- Trailing value + disclosure -->
-                <div class="wallet-row-value" :class="$q.dark.isActive ? 'row-value-dark' : 'row-value-light'">
-                  <!-- Same rule as the home switcher: a placeholder until the first
-                       figure, dimmed only when known to be out of date. -->
-                  <span v-if="!walletStore.getDisplayBalance(wallet.id).known" v-balance-updating="walletStore.getDisplayBalance(wallet.id).refreshing" class="balance-placeholder" role="img" :aria-label="$t('Balance not loaded yet')" />
-                  <template v-else>
-                    <HiddenAmount :class="{ 'balance-stale': walletStore.getDisplayBalance(wallet.id).outdated }">{{ walletBalanceText(wallet.id) }}</HiddenAmount>
-                    <HiddenAmount v-if="walletStore.fiatValueOf(walletStore.getDisplayBalance(wallet.id).balance)" class="wallet-row-fiat" :class="{ 'balance-stale': walletStore.getDisplayBalance(wallet.id).outdated }">{{ walletStore.fiatValueOf(walletStore.getDisplayBalance(wallet.id).balance) }}</HiddenAmount>
-                  </template>
-                </div>
-                <Icon icon="tabler:chevron-right" width="16" height="16" class="wallet-row-chevron" />
-              </div>
-
-              </div>
-          </div>
-            </section>
-
-            <!-- Wallets an earlier version kept on another recovery phrase:
-                 off the list (one phrase per device), never out of reach. -->
-            <section v-if="setAsideWallets.length" class="set-aside" :aria-label="$t('Other recovery phrase')">
-              <h3 class="set-aside-title">{{ $t('Other recovery phrase') }}</h3>
-              <div class="set-aside-group" :class="$q.dark.isActive ? 'wallets-group-dark' : 'wallets-group-light'">
-                <button v-for="entry in setAsideWallets" :key="entry.id" type="button" class="set-aside-row" @click="openSeedPhraseDialog('view', entry.id)">
-                  <span class="set-aside-name">{{ entry.name || $t('Wallet') }}</span>
-                  <span class="set-aside-action">{{ $t('Show recovery phrase') }}</span>
-                </button>
-              </div>
-              <p class="set-aside-footer">{{ $t('These wallets use a different recovery phrase than this phone. Write their words down to keep their money: they open the wallet in any Spark wallet app.') }}</p>
-            </section>
-          </div>
-        </q-card-section>
-
-        <!-- The sheet's one CTA, pinned hard at the bottom edge. -->
-        <q-card-section class="wallets-dialog-footer" :class="$q.dark.isActive ? 'wallets-footer-dark' : 'wallets-footer-light'">
-          <q-btn
-            class="add-wallet-btn"
-            :class="$q.dark.isActive ? 'add-wallet-btn-dark' : 'add-wallet-btn-light'"
-            no-caps
-            unelevated
-            @click="showAddWalletDialog = true"
-          >
-            <Icon icon="tabler:plus" width="20" height="20" class="q-mr-sm" />
-            {{ $t('Add Wallet') }}
-          </q-btn>
-        </q-card-section>
-        </template>
       </q-card>
     </q-dialog>
 
@@ -1211,7 +965,6 @@ import { toggleThemeWithSweep } from '../utils/themeTransition.js'
 import { isBiometricAvailable } from '../utils/biometric.js'
 import { isScreenPrivacySupported } from '../utils/secureScreen.js'
 import { Capacitor } from '@capacitor/core'
-import {truncateAddress} from '../utils/addressUtils.js'
 import { loadDismissedWarnings, saveDismissedWarnings } from '../utils/attentionWarnings.js'
 import SparkSeedPhraseDialog from '../components/SparkSeedPhraseDialog.vue'
 import balanceUpdating from '../directives/balanceUpdating.js'
@@ -1220,7 +973,6 @@ import WalletBrandMark from '../components/WalletBrandMark.vue'
 import BiometricEnableDialog from '../components/BiometricEnableDialog.vue'
 import LNBitsAddressSheet from '../components/lnbits/LNBitsAddressSheet.vue'
 import ExchangeRateSheet from '../components/settings/ExchangeRateSheet.vue'
-import { suggestedWalletName } from '../utils/nwcWallet.js'
 import { walletTypeLabel } from '../utils/walletNames.js'
 import { NWC_ERROR, nwcError } from '../utils/nwcErrors.js'
 import SparkLightningAddressSheet from '../components/SparkLightningAddressSheet.vue'
@@ -1238,7 +990,8 @@ import TaxReportSheet from '../components/settings/TaxReportSheet.vue'
 import SettingsSection from '../components/settings/SettingsSection.vue'
 import SettingsRow from '../components/settings/SettingsRow.vue'
 import SettingsAttentionStrip from '../components/settings/SettingsAttentionStrip.vue'
-import SettingsQuickToggles from '../components/settings/SettingsQuickToggles.vue'
+import WalletLogoTile from '../components/settings/WalletLogoTile.vue'
+import DisplaySheet from '../components/settings/DisplaySheet.vue'
 import SettingsHubHeader from '../components/settings/SettingsHubHeader.vue'
 import SettingsHubNav from '../components/settings/SettingsHubNav.vue'
 import HiddenAmount from '../components/HiddenAmount.vue'
@@ -1250,6 +1003,24 @@ import { LNBitsWalletProvider } from '../providers/LNBitsWalletProvider'
 // here for future reuse.
 // import MnemonicVerify from '../components/MnemonicVerify.vue'
 import { SUPPORTED_LOCALES, applyLocale, getSavedLocale } from '../i18n/locales'
+
+/**
+ * Row tile colours, one hue per kind of setting, white glyph on top. Wallet
+ * rows carry their own brand tiles (WalletLogoTile) instead.
+ */
+const SETTINGS_TILE = Object.freeze({
+  green: '#0A8F6C',
+  ink: '#3A3A3F',
+  red: '#D2453B',
+  slate: '#4A5568',
+  teal: '#2C7A73',
+  indigo: '#5A4FCF',
+  blue: '#2F7BD9',
+  amber: '#C27C0E',
+  plum: '#8E5BA8',
+  steel: '#557089',
+  gray: '#7A7670',
+});
 
 export default {
   name: 'SettingsPage',
@@ -1279,7 +1050,8 @@ export default {
     SettingsSection,
     SettingsRow,
     SettingsAttentionStrip,
-    SettingsQuickToggles,
+    WalletLogoTile,
+    DisplaySheet,
     SettingsHubHeader,
     SettingsHubNav,
     HiddenAmount,
@@ -1289,11 +1061,17 @@ export default {
       hapticsOn: hapticsEnabled(),
       hapticsSupported: hapticsSupported(),
       quickAccessSupported: quickAccessSupported(),
+      // A wallet's own page (WalletDetailPanel), opened from its row.
       showWalletsDialog: false,
+      showDisplaySheet: false,
+      showAdvancedSheet: false,
+      // The large title scrolled away: the bar shows the small one.
+      titleTucked: false,
+      TILE: SETTINGS_TILE,
       showPaymentWalletSheet: false,
       showSparkLnAddressSheet: false,
       showAddWalletDialog: false,
-      // A wallet's details, pushed inside the Manage Wallets sheet.
+      // The wallet whose page is open.
       detailWalletId: null,
       showAddSparkSheet: false,
       lnAddressWalletId: null,
@@ -1411,9 +1189,14 @@ export default {
       // preference itself returns to Automatic (paymentPreferences.forgetMissing).
       return (id && this.wallets.find(wallet => wallet.id === id)?.name) || this.$t('Automatic');
     },
-    /** Wallets set aside on another recovery phrase (see the wallet store). */
+    /**
+     * Wallets set aside on another recovery phrase (see the wallet store).
+     * Read again whenever the wallet list changes: the set-aside list is
+     * written by the same migrations that change it.
+     */
     setAsideWallets() {
-      return this.showWalletsDialog ? this.walletStore.setAsideSparkWallets() : [];
+      void this.wallets.length;
+      return this.walletStore.setAsideSparkWallets();
     },
     /** The wallet the detail sheet is showing; null once it is removed. */
     detailWallet() {
@@ -1495,16 +1278,11 @@ export default {
       'sparkWallets',
       'isActiveWalletSpark',
       'activeSparkAddress',
-      'isActiveWalletArkade',
       'arkadeWallet',
-      'activeArkadeAddress',
       'useBip177Format',
       'hasBackedUp',
       'walletSwitching',
-      'isActiveWalletNWC',
-      'isActiveWalletLNBits',
       'activeWallet',
-      'activeWalletLightningAddress',
       'walletInfos',
     ]),
 
@@ -1572,56 +1350,13 @@ export default {
       return any ? this.$t('On') : this.$t('Off');
     },
 
-    /**
-     * The auto-add-incoming-Bitcoin setting only applies to Spark
-     * wallets (the only wallet type that produces static deposit
-     * addresses). Hide the section for everyone else so we don't
-     * advertise a control they can't use.
-     */
-    isSparkActiveWallet() {
-      return this.walletStore.activeWalletType === 'spark';
-    },
-
-
-    nwcWalletAlias() {
-      if (!this.activeWallet || this.activeWallet.type !== 'nwc') return null;
-      // What the wallet calls itself; placeholders ("Unknown", "N/A") say nothing.
-      return suggestedWalletName({ alias: this.activeWallet.metadata?.alias }, '') || null;
-    },
-
-    lnbitsServerDomain() {
-      if (!this.activeWallet || this.activeWallet.type !== 'lnbits') return '';
-      const url = this.activeWallet.connectionData?.serverUrl || '';
-      try {
-        return new URL(url).hostname;
-      } catch {
-        return url;
-      }
-    },
-
-    /**
-     * Drives the Lightning Address row template. Single source of truth so
-     * the template never repeats branching logic.
-     *
-     *   'set'           — address attached; row opens dialog to swap.
-     *   'unsetReady'    — no address; lnurlp probe succeeded.
-     *   'unsetBlocked'  — no address; lnurlp probe explicitly failed.
-     *   'probing'       — first paint, awaiting probe result.
-     */
-    lnAddressRowState() {
-      if (this.activeWalletLightningAddress) return 'set';
-      const walletId = this.activeWallet?.id;
-      if (!walletId) return 'probing';
-      const status = this.lnurlpStatus[walletId];
-      if (status === 'available') return 'unsetReady';
-      if (status === 'off') return 'unsetBlocked';
-      if (status === 'unknown') return 'unknown';
-      return 'probing';
-    },
-
-    /** Every state leads somewhere except the brief wait for the first answer. */
-    lnAddressRowClickable() {
-      return this.lnAddressRowState !== 'probing';
+    /** Under the total: how many wallets, and how many of them answer right now. */
+    walletsOnlineSummary() {
+      const count = this.wallets.length;
+      const online = this.connectedWallets.length;
+      return online >= count
+        ? this.$t('{count} wallets, all online', { count })
+        : this.$t('{count} wallets, {online} online', { count, online });
     },
 
     activeSparkBackedUp() {
@@ -1675,76 +1410,6 @@ export default {
       return rules.length ? this.$t('Paused') : this.$t('No rules yet');
     },
 
-    /**
-     * The 4 most-frequently-flipped controls, surfaced as compact pill
-     * toggles above the sections. Same underlying state as the full
-     * rows further down — deliberate duplication, mirroring iOS
-     * Control Center vs Settings → Display.
-     *
-     * Each toggle's `id` is consumed by `onQuickToggle(id)` which
-     * fans out to the matching setter so the underlying logic
-     * (dialogs, confirmations, etc.) stays in one place.
-     */
-    quickToggles() {
-      const darkActive = this.$q.dark.isActive;
-      const bitcoinDisplay = this.defaultDisplayCurrency === 'bitcoin';
-      const balanceHidden = this.walletStore.balanceHidden;
-      return [
-        {
-          id: 'theme',
-          icon: 'tabler:contrast',
-          label: this.$t('Theme'),
-          value: darkActive ? this.$t('Dark') : this.$t('Light'),
-          // No `on` — Theme is either-or, neither side is "active".
-        },
-        {
-          id: 'display',
-          // Currency switch (Bitcoin ↔ user's fiat). The two-way
-          // arrow reads as "swap" — same visual convention banking
-          // apps use for currency toggles. The old eye icon
-          // collided with hide-balance one row below.
-          icon: 'tabler:arrows-exchange',
-          label: this.$t('Display'),
-          value: bitcoinDisplay ? this.$t('Bitcoin') : this.preferredFiatCurrency,
-        },
-        {
-          // Privacy mode for balances. Replaced the previous "Format"
-          // pill (BIP-177 vs Legacy), which was technical jargon a
-          // noob would never tap on purpose. Hide-balance is a
-          // mainstream-loved fintech feature (Cash App, Revolut,
-          // Monzo all have it) and a quick toggle is the perfect
-          // home for it: one tap covers the wallet hero, every
-          // switcher row, and the manage-wallets totals.
-          id: 'hide-balance',
-          icon: balanceHidden ? 'tabler:eye-off' : 'tabler:eye',
-          label: this.$t('Balance'),
-          value: balanceHidden ? this.$t('Hidden') : this.$t('Visible'),
-          on: balanceHidden,
-        },
-        {
-          id: 'app-lock',
-          // Biometric-first hint. Even when the user's enrolled
-          // method is device PIN, fingerprint reads as "biometric
-          // app lock" to mainstream users — same convention as
-          // banking apps (Revolut, N26, Sparkasse).
-          icon: 'tabler:fingerprint',
-          label: this.$t('Lock'),
-          // On web the card stays tappable so the user can discover
-          // the feature; the tap opens the Get-the-App dialog rather
-          // than the native enable flow. On native without enrolled
-          // biometrics we still surface N/A and disable — that's a
-          // device-level limitation, not a platform limitation.
-          value: !this.isNativeApp
-            ? this.$t('Off')
-            : this.biometricsAvailable
-              ? (this.biometricsEnabled ? this.$t('On') : this.$t('Off'))
-              : this.$t('N/A'),
-          on: this.biometricsEnabled, // true binary on/off — show green tint when on.
-          disabled: this.isNativeApp && !this.biometricsAvailable,
-        },
-      ];
-    },
-
     isPinValid() {
       if (!this.hasPin) {
         return this.newPin.length >= 4;
@@ -1764,26 +1429,24 @@ export default {
       if (section === 'quick-access') this.openQuickAccessFromRoute();
     },
 
-    // A removed wallet's details close; the sheet always reopens on the list.
+    // A removed wallet's page closes. An LNbits wallet's page asks its
+    // server about Pay Links once, so the address row knows what it can offer.
     detailWallet(wallet) {
-      if (!wallet && this.detailWalletId) this.detailWalletId = null;
+      if (!wallet && this.detailWalletId) {
+        this.detailWalletId = null;
+        this.showWalletsDialog = false;
+        return;
+      }
+      if (wallet?.type === 'lnbits' && !this.lnurlpStatus[wallet.id]) void this.probeLnurlpFor(wallet);
     },
     showWalletsDialog(open) {
-      if (!open) this.detailWalletId = null;
+      // Remember which row to focus once the sheet has gone.
+      if (!open) {
+        this.lastDetailWalletId = this.detailWalletId;
+        this.detailWalletId = null;
+      }
     },
 
-    /**
-     * Trigger an lnurlp availability probe whenever the active wallet
-     * becomes (or is replaced by) an LNbits wallet. Result is cached
-     * per wallet id, so re-visits during the same session are free.
-     * Fires `immediate: true` so the first paint reflects the probe.
-     */
-    'activeWallet.id': {
-      immediate: true,
-      handler() {
-        this.maybeProbeLnurlpForActiveWallet();
-      },
-    },
   },
 
   created() {
@@ -1833,9 +1496,18 @@ export default {
     // the row shows the current state on first paint.
     this.refreshSparkLightningAddress();
 
-    // Handle deep link from wallet switcher "Manage Wallets" button
-    if (this.$route.query.section === 'wallets') {
-      this.$nextTick(() => { this.showWalletsDialog = true; });
+    // ?section=wallets (the home switcher's Manage button) needs nothing
+    // more: the wallets head this page. ?section=advanced opens Advanced.
+    if (this.$route.query.section === 'advanced') {
+      this.$nextTick(() => { this.showAdvancedSheet = true; });
+    }
+
+    // Large title: once it scrolls under the bar, the bar shows the title.
+    if (typeof IntersectionObserver === 'function' && this.$refs.largeTitle) {
+      this.titleObserver = new IntersectionObserver(([entry]) => {
+        this.titleTucked = !entry.isIntersecting;
+      }, { rootMargin: '-64px 0px 0px 0px' });
+      this.titleObserver.observe(this.$refs.largeTitle);
     }
 
     // Long-pressing a BuhoGO tile in Quick Settings (#445).
@@ -1856,6 +1528,7 @@ export default {
     if (this.exchangeRateInterval) {
       clearInterval(this.exchangeRateInterval);
     }
+    this.titleObserver?.disconnect();
   },
   methods: {
     /**
@@ -1925,18 +1598,16 @@ export default {
     // ─── LNbits Lightning Address ─────────────────────────────────────
 
     /**
-     * Construct a one-shot LNBitsWalletProvider for the active LNbits
-     * wallet. We deliberately mirror the throwaway pattern used by
-     * LNBitsSetupPage (it doesn't go through the connected provider
-     * registry in `walletStore.providers`, so the call path is identical
-     * whether the wallet was just added or has been around for months).
+     * Construct a one-shot LNBitsWalletProvider for an LNbits wallet. We
+     * deliberately mirror the throwaway pattern used by LNBitsSetupPage (it
+     * doesn't go through the connected provider registry in
+     * `walletStore.providers`, so the call path is identical whether the
+     * wallet was just added or has been around for months).
      *
-     * @returns {LNBitsWalletProvider|null} a fresh provider, or null
-     *   if the active wallet isn't an LNbits wallet (defensive guard;
-     *   callers gate on `isActiveWalletLNBits` already).
+     * @returns {LNBitsWalletProvider|null} a fresh provider, or null if the
+     *   wallet isn't an LNbits wallet.
      */
-    _buildActiveLNBitsProvider() {
-      const wallet = this.activeWallet;
+    _buildLNBitsProvider(wallet) {
       if (!wallet || wallet.type !== 'lnbits') return null;
       const conn = wallet.connectionData || {};
       return new LNBitsWalletProvider(wallet.id, {
@@ -1947,41 +1618,58 @@ export default {
       });
     },
 
-    /**
-     * Ask the active LNbits wallet's server about Pay Links (lnurlp) once
-     * and cache the answer, so moving around Settings does not re-ask.
-     * No-op for other wallet types.
-     */
-    async maybeProbeLnurlpForActiveWallet() {
-      const wallet = this.activeWallet;
-      if (!wallet || wallet.type !== 'lnbits' || this.lnurlpStatus[wallet.id]) return;
-      await this.probeLnurlpForActiveWallet();
+    /** The wallet the LNbits address sheet is working on. */
+    _lnAddressSheetWallet() {
+      return this.wallets.find((w) => w.id === this.lnAddressSheet.walletId) || null;
     },
 
-    /** Ask again, cache and return the answer ('available' | 'off' | 'unknown'). */
-    async probeLnurlpForActiveWallet() {
-      const wallet = this.activeWallet;
-      const provider = this._buildActiveLNBitsProvider();
+    /**
+     * An LNbits wallet's Lightning address row, for its page:
+     *   { state, address }, state one of
+     *   'set'          — address attached; opens the sheet to swap it.
+     *   'unsetReady'   — no address yet, Pay Links answers; opens the sheet
+     *                    to pick or create one.
+     *   'unsetBlocked' — the server says Pay Links is off; opens the sheet
+     *                    that says who can turn it on.
+     *   'unknown'      — the server could not be asked; a tap asks again.
+     *   'probing'      — not asked yet.
+     */
+    lnbitsAddressStateFor(wallet) {
+      const address = this.walletStore.lightningAddressOf(wallet) || '';
+      if (address) return { state: 'set', address };
+      const status = this.lnurlpStatus[wallet.id];
+      const state = { available: 'unsetReady', off: 'unsetBlocked', unknown: 'unknown' }[status] || 'probing';
+      return { state, address: '' };
+    },
+
+    /** Ask the wallet's server about Pay Links (lnurlp), cache and return the answer ('available' | 'off' | 'unknown'). */
+    async probeLnurlpFor(wallet) {
+      const provider = this._buildLNBitsProvider(wallet);
       if (!provider) return 'unknown';
       const status = await provider.lnurlpStatus();
       this.lnurlpStatus = { ...this.lnurlpStatus, [wallet.id]: status };
       return status;
     },
 
+    /** The address sheet's "check again" button: the wallet it is open for. */
+    probeLnurlpForSheetWallet() {
+      return this.probeLnurlpFor(this._lnAddressSheetWallet());
+    },
+
     /**
-     * The Lightning Address row. Pay Links answering opens the address
-     * step (pick when addresses exist, else create); Pay Links off opens
-     * the step that says who can turn it on; a server that cannot be
-     * reached is asked once more, then said so.
+     * The Lightning Address row on an LNbits wallet's page. Pay Links
+     * answering opens the address step (pick when addresses exist, else
+     * create); Pay Links off opens the step that says who can turn it on; a
+     * server that cannot be reached is asked once more, then said so.
      */
-    async openLightningAddressDialog() {
-      const wallet = this.activeWallet;
+    async openLightningAddressDialog(walletId) {
+      const wallet = this.wallets.find((w) => w.id === walletId);
       if (!wallet || wallet.type !== 'lnbits') return;
 
       let status = this.lnurlpStatus[wallet.id];
-      if (status !== 'available' && status !== 'off') status = await this.probeLnurlpForActiveWallet();
+      if (status !== 'available' && status !== 'off') status = await this.probeLnurlpFor(wallet);
       if (status === 'unknown') {
-        this.$q.notify({ type: 'warning', message: this.$t("Couldn't reach the server"), caption: this._lnbitsDomain(wallet), timeout: 3000 });
+        this.$q.notify({ type: 'warning', message: this.$t("Couldn't reach the server"), caption: this.lnbitsDomainOf(wallet), timeout: 3000 });
         return;
       }
 
@@ -1990,7 +1678,7 @@ export default {
         view: status === 'off' ? 'paylinks' : 'address',
         walletId: wallet.id,
         serverUrl: wallet.connectionData?.serverUrl || '',
-        domain: this._lnbitsDomain(wallet),
+        domain: this.lnbitsDomainOf(wallet),
         existingAddresses: [],
         defaultUsername: wallet.name || '',
       };
@@ -2006,7 +1694,7 @@ export default {
     },
 
     async _loadLnbitsAddresses() {
-      const provider = this._buildActiveLNBitsProvider();
+      const provider = this._buildLNBitsProvider(this._lnAddressSheetWallet());
       try {
         this.lnAddressSheet.existingAddresses = provider ? await provider.listLightningAddresses() : [];
       } catch (err) {
@@ -2017,23 +1705,16 @@ export default {
     },
 
     createLnbitsAddress(username, options = {}) {
-      const provider = this._buildActiveLNBitsProvider();
+      const provider = this._buildLNBitsProvider(this._lnAddressSheetWallet());
       if (!provider) return Promise.reject(new Error(this.$t('Could not create address.')));
       return provider.createLightningAddress({ username, successText: options.successText });
     },
 
-    _lnbitsDomain(wallet) {
-      return this.lnbitsServerDomain
-        || (wallet.connectionData?.serverUrl ? this._safeHostname(wallet.connectionData.serverUrl) : '');
-    },
-
-    /**
-     * Parse just the hostname portion of a URL. Used as a fallback when
-     * `lnbitsServerDomain` isn't yet computed (rare race).
-     */
-    _safeHostname(rawUrl) {
-      try { return new URL(rawUrl).hostname; }
-      catch { return rawUrl; }
+    /** The LNbits server's host name, for captions ("demo.lnbits.com"). */
+    lnbitsDomainOf(wallet) {
+      const url = wallet?.connectionData?.serverUrl || '';
+      try { return new URL(url).hostname; }
+      catch { return url; }
     },
 
     async onLightningAddressConfirm({ address, isNew }) {
@@ -2082,36 +1763,20 @@ export default {
     },
 
     /**
-     * Fan-out router for quick-toggle pills. Keeps the underlying
-     * setters / dialogs as the single source of truth — quick toggles
-     * are a shortcut surface, not a second implementation path.
+     * The App lock switch. On the web no device lock exists, so the switch
+     * says where it does (the Android app) and stays off; on a phone it
+     * runs the usual enable or disable steps.
      */
-    onQuickToggle(id) {
-      switch (id) {
-        case 'theme':
-          this.handleToggleDark();
-          return;
-        case 'display':
-          this.setDisplayCurrency(
-            this.defaultDisplayCurrency === 'bitcoin' ? 'fiat' : 'bitcoin',
+    setAppLock(value) {
+      if (!this.isNativeApp) {
+        if (value) {
+          this.promptForApp(
+            this.$t('Biometric app lock runs on the device and is only available in the BuhoGO Android app. Install it from Google Play to unlock the app with your fingerprint or face.')
           );
-          return;
-        case 'hide-balance':
-          this.walletStore.setBalanceHidden();
-          return;
-        case 'app-lock':
-          if (!this.isNativeApp) {
-            // Web: no native biometric API exists. Surface the
-            // limitation honestly with the same Get-the-App prompt
-            // we use for screen privacy.
-            this.promptForApp(
-              this.$t('Biometric app lock runs on the device and is only available in the BuhoGO Android app. Install it from Google Play to unlock the app with your fingerprint or face.')
-            );
-            return;
-          }
-          this.toggleBiometrics(!this.biometricsEnabled);
-          return;
+        }
+        return;
       }
+      this.toggleBiometrics(value);
     },
 
     /**
@@ -2727,17 +2392,28 @@ export default {
       return walletTypeLabel(wallet);
     },
 
+    /** A wallet's row: its own page. */
     openWalletDetail(walletId) {
       this.detailWalletId = walletId;
+      this.showWalletsDialog = true;
     },
 
-    /** Back from a wallet's details to the list, focus on the row that opened them. */
+    /** Back from a wallet's page: the sheet closes, focus returns to its row (onWalletDetailHidden). */
     closeWalletDetail() {
-      const walletId = this.detailWalletId;
-      this.detailWalletId = null;
-      this.$nextTick(() => {
-        document.querySelector(`.wallets-dialog-card [data-wallet-id="${CSS.escape(walletId || '')}"]`)?.focus();
-      });
+      this.showWalletsDialog = false;
+    },
+
+    onWalletDetailHidden() {
+      const walletId = this.lastDetailWalletId;
+      this.lastDetailWalletId = null;
+      if (!walletId) return;
+      document.querySelector(`.settings-content [data-wallet-id="${CSS.escape(walletId)}"]`)?.focus({ preventScroll: true });
+    },
+
+    /** A wallet row's caption: where the wallet lives and what kind it is ("Connected · NWC"). */
+    walletRowKind(wallet) {
+      const type = this.getWalletTypeLabel(wallet);
+      return walletKind(wallet) === WALLET_KIND.CONNECTED ? `${this.$t('Connected')} · ${type}` : type;
     },
 
     openAddSparkWallet() {
@@ -2813,16 +2489,21 @@ export default {
       }
     },
 
-    async copyArkadeAddress() {
-      await this.copyToClipboard(this.activeArkadeAddress, this.$t('Arkade address copied'));
+    /** An Arkade wallet's own ark1/tark1 address, whether or not it is the active wallet. */
+    arkadeAddressOf(wallet) {
+      return this.walletStore.walletInfos[wallet.id]?.arkadeAddress || wallet.metadata?.arkadeAddress || null;
     },
 
-    async shareArkadeAddress() {
-      if (!this.activeArkadeAddress) return;
+    async copyArkadeAddress(address) {
+      await this.copyToClipboard(address, this.$t('Arkade address copied'));
+    },
+
+    async shareArkadeAddress(address) {
+      if (!address) return;
 
       const result = await shareContent({
         title: this.$t('Arkade address'),
-        text: this.activeArkadeAddress
+        text: address
       });
 
       if (result.success) {
@@ -2831,7 +2512,7 @@ export default {
         if (result.reason === 'error') {
           console.error('Failed to share Arkade address:', result.error);
         }
-        await this.copyArkadeAddress();
+        await this.copyArkadeAddress(address);
       }
     },
 
@@ -2839,9 +2520,6 @@ export default {
     // Recovery phrase (unified view + backup flow)
     // ==========================================
 
-    truncateAddress(address) {
-      return truncateAddress(address);
-    },
 
     navigateToCreateSpark() {
       this.showAddWalletDialog = false;
@@ -2889,15 +2567,6 @@ export default {
 
 <style scoped>
 /* Pay Links is off on this LNbits server: an amber dot before the caption. */
-.ln-address-dot {
-  display: inline-block;
-  width: 7px;
-  height: 7px;
-  margin-right: 6px;
-  border-radius: 50%;
-  background: #B7791F;
-  vertical-align: 1px;
-}
 
 .settings-page {
   min-height: 100vh;
@@ -3614,9 +3283,6 @@ export default {
 }
 
 /* Info affordance next to a toggle (Advanced). */
-.branta-info {
-  color: var(--text-muted);
-}
 
 .currency-code,
 .language-name {
@@ -3649,58 +3315,6 @@ export default {
 }
 
 /* Wallet Statistics */
-/* Summary strip: three equal, centered columns on the same grouped
-   surface as the list below - a reading, not a bordered widget. */
-.wallet-stats {
-  display: flex;
-  align-items: center;
-  border-radius: 16px;
-  padding: 0.875rem 0.5rem;
-  margin-bottom: 0.75rem;
-}
-
-.stat-item {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  text-align: center;
-  min-width: 0;
-}
-
-.wallet-stats .stat-value {
-  font-family: 'Manrope', sans-serif;
-  font-size: 17px;
-  font-weight: 600;
-  line-height: 1.2;
-  margin-bottom: 0.15rem;
-}
-
-.stat-value.online-value.online-light { color: #1A1A1A; }
-.stat-value.online-value.online-dark  { color: #15DE72; }
-
-.stat-label {
-  font-family: 'Manrope', sans-serif;
-  font-size: 11px;
-  font-weight: 500;
-  text-transform: capitalize;
-  letter-spacing: 0.025em;
-  opacity: 0.55;
-}
-
-.stat-divider {
-  width: 1px;
-  height: 28px;
-  flex-shrink: 0;
-}
-
-.divider-dark {
-  background: rgba(128, 128, 128, 0.25);
-}
-
-.divider-light {
-  background: rgba(128, 128, 128, 0.22);
-}
 
 /* Wallets List */
 /* Wallets Dialog - Scrollable Layout */
@@ -3716,178 +3330,6 @@ export default {
   flex-direction: column;
 }
 
-.wallets-dialog-card .sheet-grabber {
-  display: flex;
-  justify-content: center;
-  padding: 10px 0 2px;
-  flex-shrink: 0;
-}
-
-.wallets-dialog-card .grabber-bar {
-  width: 36px;
-  height: 5px;
-  border-radius: 3px;
-  background: rgba(128, 128, 128, 0.35);
-}
-
-.wallets-dialog-header {
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  border-bottom: none;
-  padding-top: 0.25rem;
-  padding-bottom: 0.5rem;
-}
-
-.wallets-dialog-header .dialog-title {
-  flex: 1;
-  text-align: center;
-  font-size: 16px;
-  font-weight: 600;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-/* Mirrors the back button so the title stays optically centered. */
-.wallets-header-spacer {
-  flex: 0 0 auto;
-  width: 40px;
-}
-
-/* Pinned footer + its one CTA: dark ink in light mode, the app's credit
-   green in dark mode. */
-.wallets-dialog-footer {
-  flex-shrink: 0;
-  padding: 0.75rem 1rem;
-  padding-bottom: max(0.875rem, var(--safe-bottom, 0px));
-  border-top: 1px solid rgba(128, 128, 128, 0.15);
-}
-
-.wallets-footer-dark { background: #171717; }
-.wallets-footer-light { background: var(--bg-primary); }
-
-.add-wallet-btn {
-  width: 100%;
-  min-height: 48px;
-  border-radius: 12px;
-  font-family: 'Manrope', sans-serif;
-  font-size: 14px;
-  font-weight: 600;
-  transition: all 0.15s ease;
-}
-
-.add-wallet-btn-dark {
-  color: var(--btn-primary-fg);
-  background: var(--btn-primary-bg);
-}
-
-.add-wallet-btn-dark:hover {
-  filter: brightness(1.05);
-}
-
-.add-wallet-btn-light {
-  color: #FFFFFF;
-  background: #1A1A1A;
-}
-
-.add-wallet-btn-light:hover {
-  background: #2A2A2A;
-}
-
-.wallets-dialog-content {
-  flex: 1;
-  overflow-y: auto;
-  overflow-x: hidden;
-  padding: 1rem 1.5rem 1.5rem;
-  min-height: 0;
-  scrollbar-width: none;
-}
-
-.wallets-dialog-content::-webkit-scrollbar {
-  display: none;
-}
-
-.wallets-list-container {
-  margin-top: 0.25rem;
-}
-
-/* Inset grouped list: one rounded surface, hairline separators inset past
-   the leading mark - the same reading as the wallet switcher sheet. */
-.wallets-list-scroll {
-  display: flex;
-  flex-direction: column;
-  border-radius: 16px;
-  overflow: hidden;
-}
-
-.wallets-group-section + .wallets-group-section { margin-top: 18px; }
-.wallets-group-title { margin: 0 4px 8px; color: var(--text-secondary); font-size: 13px; font-weight: 600; }
-
-.wallets-group-light { background: #FFFFFF; }
-.wallets-group-dark  { background: #2C2C2E; }
-
-/* Two-line disclosure row: identity left, value trailing, chevron as the
-   affordance. All management lives one tap deeper. */
-.wallet-card {
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
-}
-
-.wallet-row-name {
-  font-family: 'Manrope', sans-serif;
-  font-size: 15px;
-  font-weight: 600;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.row-name-dark { color: #F6F6F6; }
-.row-name-light { color: #212121; }
-
-.wallet-row-sub {
-  font-family: 'Manrope', sans-serif;
-  font-size: 12px;
-  margin-top: 2px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.row-sub-dark { color: rgba(255, 255, 255, 0.5); }
-.row-sub-light { color: rgba(0, 0, 0, 0.45); }
-
-.row-sub-active.sub-active-light { color: #1A1A1A; font-weight: 600; }
-.row-sub-active.sub-active-dark { color: #15DE72; font-weight: 600; }
-/* Received since the user last looked: the credit green, in words on this line. */
-.row-sub-unseen { color: #059573; font-weight: 700; font-variant-numeric: tabular-nums; }
-.row-sub-dark .row-sub-unseen { color: #15DE72; }
-.row-sub-unseen .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
-
-.wallet-row-value {
-  font-family: var(--font-mono);
-  font-size: 13px;
-  font-weight: 500;
-  flex-shrink: 0;
-  margin-left: auto;
-  text-align: right;
-}
-
-.row-value-dark { color: rgba(255, 255, 255, 0.75); }
-.row-value-light { color: rgba(0, 0, 0, 0.65); }
-
-.set-aside { margin-top: 24px; }
-.set-aside-title { margin: 0 4px 8px; color: var(--text-secondary); font-size: 13px; font-weight: 600; }
-.set-aside-group { border-radius: 16px; overflow: hidden; }
-.set-aside-row { width: 100%; min-height: 52px; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 0 16px; border: 0; background: transparent; color: var(--text-primary); font: 600 15px/1.3 'Manrope', sans-serif; text-align: left; cursor: pointer; }
-.set-aside-row + .set-aside-row { border-top: 1px solid var(--border-card); }
-.set-aside-name { min-width: 0; overflow-wrap: anywhere; }
-.set-aside-action { flex: 0 0 auto; color: var(--brand-accent-text); font-size: 14px; }
-.set-aside-footer { margin: 8px 6px 0; color: var(--text-secondary); font-size: 12.5px; line-height: 1.45; }
-
 .wallet-row-fiat {
   display: block;
   margin-top: 2px;
@@ -3897,91 +3339,7 @@ export default {
   opacity: 0.7;
 }
 
-.stat-fiat {
-  display: block;
-  font-size: 12px;
-  color: var(--text-secondary);
-}
-
-.wallet-row-chevron {
-  flex-shrink: 0;
-  opacity: 0.35;
-}
-
-.no-wallets {
-  text-align: center;
-  padding: 2rem;
-}
-
-.no-wallets-icon {
-  margin-bottom: 1rem;
-}
-
-.no-wallets-hint {
-  font-family: 'Manrope', sans-serif;
-  font-size: 13px;
-  margin-top: 0.5rem;
-  opacity: 0.5;
-}
-
-.no-wallets-text {
-  font-family: 'Manrope', sans-serif;
-  font-size: 14px;
-  font-weight: 500;
-}
-
-/* Wallet row inside the grouped surface */
-.wallet-card-wrapper:not(:first-child) .wallet-card {
-  position: relative;
-}
-
-.wallet-card-wrapper:not(:first-child) .wallet-card::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 74px;
-  right: 0;
-  height: 1px;
-  background: rgba(128, 128, 128, 0.18);
-}
-
-.wallet-card {
-  display: flex;
-  align-items: center;
-  gap: 0.875rem;
-  padding: 0.875rem 1rem;
-  transition: background 0.12s ease;
-  overflow: hidden;
-  max-width: 100%;
-}
-
-.wallet-card-dark:hover {
-  background: rgba(255, 255, 255, 0.06);
-}
-
-.wallet-card-light:hover {
-  background: rgba(0, 0, 0, 0.045);
-}
-
-.wallet-card-disconnected {
-  opacity: 0.65;
-}
-
 /* Wallet Avatar */
-.wallet-avatar {
-  position: relative;
-  flex-shrink: 0;
-}
-
-.wallet-avatar-circle {
-  width: 44px;
-  height: 44px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: white;
-}
 
 .wallet-green {
   background: linear-gradient(135deg, #15DE72, #059573);
@@ -4003,48 +3361,7 @@ export default {
   background: linear-gradient(135deg, #EF4444, #DC2626);
 }
 
-.wallet-avatar-black {
-  background: linear-gradient(135deg, #2A2A2A, #1A1A1A);
-}
-
-/* Arkade's purple mark needs a light tile on cream (brand rule). */
-body.body--light .wallet-avatar-arkade {
-  background: var(--arkade-tile);
-  box-shadow: inset 0 0 0 1px var(--arkade-tint-border);
-}
-
-.wallet-status-dot {
-  position: absolute;
-  bottom: 0;
-  right: 0;
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  border: 2px solid;
-}
-
-.wallet-card-dark .wallet-status-dot {
-  border-color: #2C2C2E;
-}
-
-.wallet-card-light .wallet-status-dot {
-  border-color: #FFF;
-}
-
-.status-connected {
-  background: #15DE72;
-}
-
-.status-disconnected {
-  background: #EF4444;
-}
-
 /* Wallet Details */
-.wallet-details {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-}
 
 .wallet-error-msg {
   font-family: 'Manrope', sans-serif;
@@ -4133,28 +3450,8 @@ body.body--light .wallet-avatar-arkade {
     padding: 1rem;
   }
 
-  .wallet-card {
-    padding: 0.75rem;
-    gap: 0.75rem;
-    border-radius: 10px;
-  }
-
   .app-title {
     font-size: 18px;
-  }
-
-  .wallet-avatar-circle {
-    width: 40px;
-    height: 40px;
-  }
-
-  .wallet-avatar-circle .q-icon {
-    font-size: 20px !important;
-  }
-
-  .wallet-status-dot {
-    width: 10px;
-    height: 10px;
   }
 
   .wallet-name-field :deep(.q-field__native) {
@@ -4183,28 +3480,6 @@ body.body--light .wallet-avatar-arkade {
 
   .picker-dialog-card {
     max-height: 88vh;
-  }
-
-  .add-wallet-btn {
-    height: 42px;
-    font-size: 13px;
-    margin-top: 0.75rem;
-  }
-
-  .wallets-dialog-content {
-    padding: 0.75rem 1rem 1rem;
-  }
-
-  .wallet-stats {
-    padding: 0.75rem;
-  }
-
-  .stat-value {
-    font-size: 14px;
-  }
-
-  .stat-label {
-    font-size: 9px;
   }
 
   .dialog-actions {
@@ -4434,15 +3709,6 @@ body.body--light .wallet-avatar-arkade {
   border: 1px solid transparent;
 }
 
-.wallets-discovery {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 0 4px 10px;
-  font-size: 12px;
-  color: var(--text-secondary);
-}
-
 .option-disabled {
   cursor: default;
   opacity: 0.55;
@@ -4665,4 +3931,59 @@ body.body--light .wallet-avatar-arkade {
   color: rgba(0, 0, 0, 0.5);
 }
 
+
+/* ─── Grouped list (Settings root) ─────────────────────────────
+   One large title that hands over to the bar once scrolled, then the
+   groups. Wallet rows carry their own logo tiles (WalletLogoTile). */
+.settings-large-title {
+  margin: 4px 4px 14px;
+  font-family: 'Manrope', sans-serif;
+  font-size: 32px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+  color: var(--text-primary);
+}
+
+/* Balance on the right of a wallet row: the figure, fiat under it. */
+.wallet-row-amount {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  min-width: 0;
+  max-width: 46vw;
+  font-family: 'Manrope', sans-serif;
+  font-size: 14px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+  text-align: right;
+  white-space: nowrap;
+}
+.wallet-row-amount--total { font-size: 15px; font-weight: 700; }
+.wallet-row-amount .wallet-row-fiat { color: var(--text-secondary); opacity: 1; }
+.wallets-total-row :deep(.settings-row-label) { font-weight: 700; }
+
+/* After the kind on a wallet row: Active, what came in, or why it is quiet. */
+.wallet-row-state--active { color: var(--brand-accent-text); font-weight: 600; }
+.wallet-row-state--unseen { color: var(--brand-accent-text); font-weight: 600; }
+.wallet-row-state--off { color: var(--text-secondary); }
+
+/* A slot icon lives in this page's scope, so the chevron is styled here. */
+.settings-row-chevron { flex-shrink: 0; color: var(--text-muted); opacity: 0.7; }
+
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+
+/* Advanced: a form sheet ending on Done, like Notifications. */
+.settings-sheet-card {
+  width: 100%;
+  max-width: 560px;
+  margin: 0 auto;
+  max-height: min(90dvh, calc(100dvh - var(--safe-top, 0px) - 8px));
+  overflow-y: auto;
+  border-radius: 24px 24px 0 0;
+  padding-bottom: max(20px, var(--safe-bottom, 0px));
+}
+.settings-sheet-body { padding: 4px 16px 0; }
+.settings-sheet-done { justify-self: end; font-weight: 600; }
 </style>

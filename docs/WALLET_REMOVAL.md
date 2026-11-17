@@ -11,8 +11,8 @@ BuhoGO never deletes a wallet. It is an interface to wallets that live on their 
 
 ## Where it happens
 
-- **Manage Wallets** lists wallets in two groups, *On this phone* and *Connected*. One wallet leaves from its own details: the last row is *Remove from this phone* or *Disconnect*. Wallets on this phone show a *Recovery phrase* row (*Backed up*, or a *Back up* action). Connected NWC wallets say where to revoke the connection.
-- **Settings → Danger Zone** (inline, collapsed) has only whole-kind actions: *Remove Spark from this phone*, *Remove Arkade from this phone*, *Disconnect all connected wallets*. Each row names the wallets it covers. A row that cannot run yet is muted and says why (*Back up first*); tapping it offers the way out.
+- **Settings → Wallets** lists every wallet as a row; a connected wallet's caption starts with *Connected*. One wallet leaves from its own page: the last row is *Remove from this phone* or *Disconnect*. Wallets on this phone show a *Recovery phrase* row (*Backed up*, or a *Back up* action). Connected NWC wallets say where to revoke the connection.
+- **Settings → Advanced → Danger Zone** has only whole-kind actions: *Remove Spark from this phone*, *Remove Arkade from this phone*, *Disconnect all connected wallets*. Each row names the wallets it covers. A row that cannot run yet is muted and says why (*Back up first*); tapping it offers the way out.
 
 ## Rules (utils/walletRemoval.js)
 

@@ -26,7 +26,7 @@ There is no automatic sequence through other backups. Each starts from the Secur
 | Required update → backup access | `/security`, the one route the update gate yields to |
 | `/settings?section=backup`, `/settings?section=backups`, `/identity/words` | Redirect to `/security` |
 
-Settings and Profile carry no backup entries. App lock stays a Settings quick toggle and Screen Privacy lives in Settings → Preferences; see [Security area](SECURITY_AREA_PLAN.md) for the reasoning.
+Settings and Profile carry no backup entries. App lock and Screen Privacy are switches in Settings, next to Notifications ([Settings layout](SETTINGS_LAYOUT.md)); see [Security area](SECURITY_AREA_PLAN.md) for the reasoning.
 
 **The identity-card backup status/reminder is removed**, as is the profile setup step for backing up. The QR action, public-key copy and other card interactions remain on the card. The previously disabled home banner and Settings attention strip remain disabled.
 

@@ -36,13 +36,16 @@
       { 'settings-row--disabled': disabled },
       { 'settings-row--destructive': destructive },
       { 'settings-row--quiet': quiet },
+      { 'settings-row--accent': accent },
+      { 'settings-row--tiled': tile || tiled },
+      { 'settings-row--iconed': !(tile || tiled) && (icon || $slots.icon) },
     ]"
     :aria-disabled="disabled ? 'true' : null"
     @click="onClick"
   >
-    <span v-if="icon || $slots.icon" class="settings-row-icon">
+    <span v-if="icon || $slots.icon" class="settings-row-icon" :class="{ 'settings-row-icon--tile': tile }" :style="tile ? { background: tile } : null">
       <slot name="icon">
-        <Icon :icon="icon" width="20" height="20" />
+        <Icon :icon="icon" :width="tile ? 18 : 20" :height="tile ? 18 : 20" />
       </slot>
     </span>
 
@@ -68,7 +71,7 @@
     <span class="settings-row-right">
       <slot name="right">
         <Icon
-          v-if="interactive && showChevron && !destructive"
+          v-if="interactive && showChevron && !destructive && !accent"
           icon="tabler:chevron-right"
           width="16"
           height="16"
@@ -105,6 +108,12 @@ export default {
     destructive: { type: Boolean, default: false },
     /** A destructive row that cannot run yet: muted, still tappable (it explains why). */
     quiet: { type: Boolean, default: false },
+    /** An action row ("Add wallet"): the label in the accent colour, no chevron. */
+    accent: { type: Boolean, default: false },
+    /** The icon on a rounded square in this colour, white glyph (grouped-list style). */
+    tile: { type: String, default: '' },
+    /** The #icon slot brings its own tile (a wallet logo): same size and divider inset as `tile`. */
+    tiled: { type: Boolean, default: false },
   },
   emits: ['click'],
   methods: {
@@ -119,6 +128,10 @@ export default {
 <style scoped>
 .settings-row {
   all: unset;
+  position: relative;
+  /* Where the divider under this row starts (SettingsSection draws it):
+     under the text, past the icon, the way grouped lists inset it. */
+  --settings-row-inset: 16px;
   display: flex;
   align-items: center;
   gap: 14px;
@@ -152,6 +165,23 @@ export default {
   align-items: center;
   justify-content: center;
   color: var(--text-secondary);
+}
+
+.settings-row--iconed { --settings-row-inset: 50px; }
+.settings-row--tiled { --settings-row-inset: 60px; }
+
+/* Grouped-list tile: a rounded square in the setting's colour. */
+.settings-row-icon--tile,
+.settings-row--tiled .settings-row-icon {
+  width: 30px;
+  height: 30px;
+  border-radius: 7px;
+  color: #fff;
+}
+
+.settings-row--accent .settings-row-label {
+  color: var(--brand-accent-text);
+  font-weight: 600;
 }
 
 .settings-row-body {
