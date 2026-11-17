@@ -89,7 +89,7 @@ With no fresh usable price, Bitcoin entry remains possible. Empty fiat input can
 
 ### 3. Ask the customer to pay
 
-Show the exact amount, one useful QR, plain guidance and a clearly different waiting/received state. Browser: **Scan with your wallet**. Android with working supported NFC: add **Hold a Lightning card against the back of this phone**. Unsupported or unavailable NFC keeps QR usable and has a concrete recovery/fallback. Do not imply ecash tap or offline settlement.
+Show the exact amount, one useful QR, plain guidance and a clearly different waiting/received state. Browser: **Scan with your wallet**. Android with working supported NFC: add **Hold a Bitcoin Card here** with **Against the back of this phone**. Unsupported or unavailable NFC keeps QR usable and has a concrete recovery/fallback. Do not imply ecash tap or offline settlement.
 
 Customer card PIN and owner PIN must be unmistakably different contexts. Card authorization accepted is not payment received. Do not show success, success haptics or a completed sale until the receiving wallet confirms the payment.
 

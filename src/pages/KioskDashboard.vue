@@ -19,7 +19,7 @@
       </header>
 
       <div v-if="storageProblem || merchant.storageError" class="pos-notice" role="alert">{{ $t('Register data could not be saved. Keep this screen open and try again.') }}<button @click="retryStorage">{{ $t('Try again') }}</button></div>
-      <button v-if="pendingOrders.length && state === 'input'" class="pos-parked-line" @click="showParkedSheet = true"><q-icon name="schedule" size="18px" /><span>{{ $t('{n} waiting payments', { n: pendingOrders.length }) }}</span><q-icon name="chevron_right" size="18px" /></button>
+      <button v-if="pendingOrders.length && state === 'input'" class="pos-parked-line" @click="showParkedSheet = true"><q-icon name="schedule" size="18px" /><span>{{ count(pendingOrders.length, '1 waiting payment', '{n} waiting payments') }}</span><q-icon name="chevron_right" size="18px" /></button>
       <!-- ═══ Paid ═══ -->
       <div v-if="state === 'success'" class="pos-state-center">
         <div class="pos-paid-ring"><q-icon name="check" size="36px" /></div>
@@ -78,7 +78,7 @@
           </div>
           <div v-else-if="nfcReady" class="pos-card-lane">
             <span class="pos-card-wave"><svg class="pos-contactless" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" aria-hidden="true"><path d="M7.5 9.2a4.2 4.2 0 0 1 0 5.6" /><path d="M11 6.6a8 8 0 0 1 0 10.8" /><path d="M14.5 4a11.8 11.8 0 0 1 0 16" /></svg></span>
-            <span class="pos-card-lane-text"><b>{{ $t('Hold a Lightning card here') }}</b><span>{{ $t('Against the back of this phone') }}</span></span>
+            <span class="pos-card-lane-text"><b>{{ $t('Hold a Bitcoin Card here') }}</b><span>{{ $t('Against the back of this phone') }}</span></span>
           </div>
         </template>
 
@@ -160,7 +160,7 @@
       <q-dialog v-model="showSavedSheet" position="bottom"><q-card class="pos-cart-sheet pos-basket-sheet"><div class="pos-sheet-header"><strong>{{ $t('Saved baskets') }}</strong><button class="pos-icon-btn" :aria-label="$t('Close')" @click="showSavedSheet = false"><q-icon name="close" /></button></div><div class="pos-basket-items"><p v-if="!merchant.savedBaskets.length">{{ $t('No saved baskets') }}</p><button v-for="basket in merchant.savedBaskets" :key="basket.id" class="pos-saved-row" :disabled="hasDraft" @click="resumeBasket(basket.id)">{{ basket.name }}<q-icon name="chevron_right" /></button><p v-if="hasDraft">{{ $t('Save or clear this basket before opening another.') }}</p></div></q-card></q-dialog>
       <q-dialog v-model="showParkedSheet" position="bottom"><q-card class="pos-cart-sheet pos-basket-sheet"><div class="pos-sheet-header"><strong>{{ $t('Waiting payments') }}</strong><button class="pos-icon-btn" :aria-label="$t('Close')" @click="showParkedSheet = false"><q-icon name="close" /></button></div><p>{{ $t('Still checked for payment, even after expiry.') }}</p><div class="pos-basket-items"><button v-for="order in pendingOrders" :key="order.id" class="pos-saved-row" :disabled="hasDraft" @click="resumeOrder(order.id)"><span>{{ displaySats(order.totalSats) }}<small>{{ $t(order.status === 'uncertain' ? 'Not confirmed' : order.status === 'expired' ? 'Expired' : 'Waiting') }}</small></span><q-icon name="chevron_right" /></button><p v-if="hasDraft">{{ $t('Save or clear this basket before opening another.') }}</p></div></q-card></q-dialog>
 
-      <q-dialog v-model="showCurrentReceipt" position="bottom"><q-card v-if="activeOrder?.status === 'paid'" class="pos-cart-sheet pos-basket-sheet pos-current-receipt"><div class="pos-sheet-header"><strong>{{ $t('Receipt') }}</strong><button class="pos-icon-btn" :aria-label="$t('Close')" @click="showCurrentReceipt = false"><q-icon name="close" /></button></div><KioskReceipt :sale="activeOrder" :format-currency="money" :format-sats="displaySats" /><button class="pos-primary-btn" @click="exportCurrentReceipt">{{ $t('Export receipt') }}</button><button v-if="canPrintReceipt" class="pos-secondary-btn" @click="printCurrentReceipt">{{ $t('Print receipt') }}</button></q-card></q-dialog>
+      <q-dialog v-model="showCurrentReceipt" position="bottom"><q-card v-if="activeOrder?.status === 'paid'" class="pos-cart-sheet pos-basket-sheet pos-current-receipt"><div class="pos-sheet-header"><strong>{{ $t('Receipt') }}</strong><button class="pos-icon-btn" :aria-label="$t('Close')" @click="showCurrentReceipt = false"><q-icon name="close" /></button></div><KioskReceipt :sale="activeOrder" :format-currency="money" :format-sats="displaySats" /><div class="pos-receipt-actions"><button class="pos-secondary-btn" @click="shareCurrentReceipt">{{ $t('Share receipt') }}</button><button v-if="canPrintReceipt" class="pos-secondary-btn" @click="printCurrentReceipt">{{ $t('Print receipt') }}</button></div></q-card></q-dialog>
       <!-- ═══ Unlock ═══
            The lock goes straight to the PIN, as Guided Access does: the right
            PIN ends the register (owner area), Resume goes back to it. -->
@@ -179,12 +179,12 @@
 <script>
 import { defineComponent, ref, computed, onMounted, onUnmounted, getCurrentInstance, watch, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
-import { useQuasar } from 'quasar'
+import { useQuasar, copyToClipboard } from 'quasar'
 import { useWalletStore } from '../stores/wallet.js'
 import { useKioskMerchantStore } from '../stores/kioskMerchant.js'
 import { useKioskPayments } from '../composables/useKioskPayments.js'
 import { roundUpTargetSats } from '../utils/roundUp.js'
-import { cloneKiosk, buildSaleSnapshot, priceBasket, newKioskId, kioskDraftHasValue, formatKioskMoney } from '../utils/kioskMerchant.js'
+import { cloneKiosk, buildSaleSnapshot, priceBasket, newKioskId, kioskDraftHasValue, formatKioskMoney, kioskCountLabel, kioskReceiptText } from '../utils/kioskMerchant.js'
 import { keypadSats } from '../utils/amountKeypad.js'
 import { freshRate } from '../utils/fiatCurrencies.js'
 import { formatAmount } from '../utils/amountFormatting.js'
@@ -193,7 +193,7 @@ import KioskPinPad from '../components/KioskPinPad.vue'
 import AmountKeypad from '../components/AmountKeypad.vue'
 import KioskProducts from '../components/kiosk/KioskProducts.vue'
 import KioskReceipt from '../components/kiosk/KioskReceipt.vue'
-import { saveFile } from '../services/fileExport.js'
+import { shareContent } from '../utils/share.js'
 import QRCode from 'qrcode'
 import WithdrawAuthorization from '../components/WithdrawAuthorization.vue'
 import CardFace from '../components/CardFace.vue'
@@ -417,8 +417,22 @@ export default defineComponent({
       try { window.print() } finally { delete document.body.dataset.kioskPrint }
     }
     const money = (minor, currency) => formatKioskMoney(minor, currency, proxy.$i18n.locale)
-    async function exportCurrentReceipt() { if (activeOrder.value?.status === 'paid') { const order = cloneKiosk(activeOrder.value); try { await saveFile({ filename: `receipt-${order.id}.csv`, data: merchant.salesCsv([order]), mimeType: 'text/csv' }) } catch(error) { showError(error) } } }
-    return { paymentAmount, paymentShowsFiat, canPrintReceipt, printCurrentReceipt, showCurrentReceipt, money, exportCurrentReceipt, connectWallet, connectionChecking, store, merchant, payments, draft, entryMode, state, busy, activeOrder, invoiceData, pendingOrders, storageProblem, retryStorage, qrDataUrl, hasDraft, itemCount, quantities, basketDisplay, chargeLabel, canCharge, walletReady, priceMissing, fiatCurrency, fiatRate, isFiatMode, amountSats, totalSatsForCharge, kioskWalletName, productSearchOpen, productSearch, productCategory, productSearchInput, productList, showCartSheet, showSavedSheet, showParkedSheet, showUnlockDialog, unlockPinRef, unlockError, paymentProblem, card, cardAuthorization, cardPinActive, cardPinChecking, cardProblem, cardBusy, nfcReady, selectedTipPercent, useRoundUp, baseAmountSats, tipInteractive, tipOptions, selectedTipAmount, totalBeforeRoundUp, roundUpValue, finalAmountSats, offersTip, offersRoundUp, extrasTitle, extrasSkipLabel, extraLabel, displaySats, productPrice, itemPrice, editAmount, swapAmount, explainMissingRate, addToAccumulated, addProduct, changeQuantity, clearAll, saveBasket, resumeBasket, resumeOrder, setEntryMode, openProductSearch, closeProductSearch, closeSearchKeyboard, proceedToTipOrCharge, createCharge, confirmTip, retryExpired, resetToInput, handleUnlockPin, resetUnlock, recoverOwner, confirmHeldCard, cancelCardPin }
+    const count = (n, one, many) => kioskCountLabel(t, n, one, many, proxy.$i18n.locale)
+    // The receipt on screen is what the customer sees; sharing hands them the same lines as text.
+    async function shareCurrentReceipt() {
+      if (activeOrder.value?.status !== 'paid') return
+      const order = cloneKiosk(activeOrder.value)
+      const paidAt = new Date(order.paidAt || order.createdAt)
+      const date = Number.isNaN(paidAt.getTime()) ? '' : new Intl.DateTimeFormat(proxy.$i18n.locale, { dateStyle: 'medium', timeStyle: 'short' }).format(paidAt)
+      const text = kioskReceiptText(order, { t, money, bitcoin: displaySats, date })
+      const result = await shareContent({ title: t('Receipt'), text })
+      if (result.success || result.reason === 'cancelled') return
+      try {
+        await copyToClipboard(text)
+        $q.notify({ message: t('Receipt copied'), timeout: 2000 })
+      } catch (error) { showError(error) }
+    }
+    return { paymentAmount, paymentShowsFiat, canPrintReceipt, printCurrentReceipt, showCurrentReceipt, money, shareCurrentReceipt, count, connectWallet, connectionChecking, store, merchant, payments, draft, entryMode, state, busy, activeOrder, invoiceData, pendingOrders, storageProblem, retryStorage, qrDataUrl, hasDraft, itemCount, quantities, basketDisplay, chargeLabel, canCharge, walletReady, priceMissing, fiatCurrency, fiatRate, isFiatMode, amountSats, totalSatsForCharge, kioskWalletName, productSearchOpen, productSearch, productCategory, productSearchInput, productList, showCartSheet, showSavedSheet, showParkedSheet, showUnlockDialog, unlockPinRef, unlockError, paymentProblem, card, cardAuthorization, cardPinActive, cardPinChecking, cardProblem, cardBusy, nfcReady, selectedTipPercent, useRoundUp, baseAmountSats, tipInteractive, tipOptions, selectedTipAmount, totalBeforeRoundUp, roundUpValue, finalAmountSats, offersTip, offersRoundUp, extrasTitle, extrasSkipLabel, extraLabel, displaySats, productPrice, itemPrice, editAmount, swapAmount, explainMissingRate, addToAccumulated, addProduct, changeQuantity, clearAll, saveBasket, resumeBasket, resumeOrder, setEntryMode, openProductSearch, closeProductSearch, closeSearchKeyboard, proceedToTipOrCharge, createCharge, confirmTip, retryExpired, resetToInput, handleUnlockPin, resetUnlock, recoverOwner, confirmHeldCard, cancelCardPin }
   },
 })
 </script>
@@ -429,8 +443,8 @@ export default defineComponent({
 .pos-connection button { min-height:44px; border:0; background:transparent; color:var(--text-primary); flex:none; }
 .pos-current-receipt { height:85dvh; }
 .pos-current-receipt :deep(.kiosk-receipt) { height:auto; flex:1 1 0; min-height:0; }
-.pos-current-receipt > button { flex:0 0 auto; margin:0; }
-.pos-current-receipt .pos-secondary-btn { color:var(--text-secondary); border-color:var(--border-card); }
+.pos-receipt-actions { display:flex; flex:0 0 auto; gap:10px; }
+.pos-receipt-actions .pos-secondary-btn { flex:1 1 0; min-width:0; margin:0; color:var(--text-primary); border-color:var(--border-card); font-weight:650; }
 .pos-entry-controls { display:flex; align-items:center; gap:6px; padding:0 16px 8px; flex:none; }
 .pos-entry-switch { display:flex; flex:1; gap:3px; padding:3px; border-radius:12px; background:var(--bg-input); }
 .pos-entry-switch button { flex:1; min-height:44px; border:0; border-radius:9px; background:transparent; color:var(--text-secondary); font:650 14px 'Manrope',sans-serif; }
@@ -551,7 +565,7 @@ button:focus-visible,input:focus-visible { outline:2px solid var(--brand-accent-
 .pos-cart-sheet { width: 100%; border-radius: 16px 16px 0 0 !important; padding-bottom: var(--safe-bottom, 0px); }
 .pos-cart-sheet-dark { background: #0C0C0C !important; border: 1px solid #2A342A !important; border-bottom: none !important; color: #FFF; }
 .pos-cart-sheet-light { background: var(--bg-card) !important; border: 1px solid var(--border-card) !important; border-bottom: none !important; color: var(--text-primary); }
-.pos-sheet-header { display: flex; justify-content: space-between; font-family: 'Manrope', sans-serif; font-weight: 700; font-size: 15px; padding-bottom: 12px; border-bottom: 1px solid #2A342A; margin-bottom: 8px; }
+.pos-sheet-header { display: flex; justify-content: space-between; font-family: 'Manrope', sans-serif; font-weight: 700; font-size: 15px; padding-bottom: 12px; border-bottom: 1px solid var(--border-card); margin-bottom: 8px; }
 .pos-cart-sheet-light .pos-sheet-header { border-color: var(--border-card); }
 .pos-sheet-total { color: #059573; }
 .pos-cart-sheet-dark .pos-sheet-remove { color: rgba(255, 255, 255, 0.4); }
@@ -700,6 +714,6 @@ button:focus-visible,input:focus-visible { outline:2px solid var(--brand-accent-
   :global(body[data-kiosk-print] #q-app), :global(body[data-kiosk-print] .q-dialog__backdrop) { display:none !important; }
   :global(body[data-kiosk-print] .q-dialog), :global(body[data-kiosk-print] .q-dialog__inner) { position:static !important; height:auto !important; padding:0 !important; }
   .pos-current-receipt { display:flex; height:auto; max-height:none; width:100%; overflow:visible; box-shadow:none; }
-  .pos-current-receipt > button,.pos-current-receipt > .pos-sheet-header { display:none; }
+  .pos-receipt-actions,.pos-current-receipt > .pos-sheet-header { display:none; }
 }
 </style>

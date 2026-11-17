@@ -44,19 +44,19 @@
         <KioskProducts ref="catalog" :products="merchant.products" :categories="merchant.categories" :search="search" v-model:category="category" :format-price="productPrice" :manage="true" :disabled="busy" :scroll-top="catalogScroll" :empty-action-label="$t('Add product')" @edit="editProduct" @manage="editProduct()" @clear-filters="resetSearch" @scroll="catalogScroll = $event" />
       </template>
       <div v-else-if="view === 'receipt' && selectedSale" class="ko-receipt"><KioskReceipt :sale="selectedSale" :format-currency="money" :format-sats="sats" :format-date="date" /><p v-if="selectedSale.duplicatePayment" class="ko-error" role="status">{{ $t('More than one payment was received. Review the payment details.') }}</p></div>
-      <div v-else-if="view === 'receipt'" class="ko-centered"><h2>{{ $t('This receipt is unavailable') }}</h2><p>{{ $t('Return to sales to choose another receipt.') }}</p><button class="ko-plain" @click="go('sales')">{{ $t('Sales and activity') }}</button></div>
+      <div v-else-if="view === 'receipt'" class="ko-centered"><h2>{{ $t('This receipt is unavailable') }}</h2><p>{{ $t('Return to sales to choose another receipt.') }}</p><button class="ko-plain" @click="go('sales')">{{ $t('Sales') }}</button></div>
       <div v-else-if="view === 'sales'" class="ko-sales">
         <div class="ko-filters">
           <label class="ko-sr" for="ko-period">{{ $t('Period') }}</label><select id="ko-period" v-model="period"><option value="today">{{ $t('Today') }}</option><option value="week">{{ $t('Last 7 days') }}</option><option value="all">{{ $t('All time') }}</option></select>
           <label class="ko-sr" for="ko-status">{{ $t('Payment status') }}</label><select id="ko-status" v-model="statusFilter"><option value="all">{{ $t('All statuses') }}</option><option value="paid">{{ $t('Paid') }}</option><option value="waiting">{{ $t('Waiting') }}</option><option value="attention">{{ $t('Needs attention') }}</option></select>
           <label v-if="saleCurrencies.length > 1" class="ko-sr" for="ko-sale-currency">{{ $t('Currency') }}</label><select v-if="saleCurrencies.length > 1" id="ko-sale-currency" v-model="saleCurrency"><option value="">{{ $t('All currencies') }}</option><option v-for="code in saleCurrencies" :key="code" :value="code">{{ code }}</option></select>
         </div>
-        <q-virtual-scroll ref="salesList" class="ko-scroll ko-sales-scroll" :items="visibleSales" :virtual-scroll-item-size="78" :virtual-scroll-slice-size="20" :aria-label="$t('Sales and activity')" @scroll.passive="salesScroll = $event.target.scrollTop">
+        <q-virtual-scroll ref="salesList" class="ko-scroll ko-sales-scroll" :items="visibleSales" :virtual-scroll-item-size="78" :virtual-scroll-slice-size="20" :aria-label="$t('Sales')" @scroll.passive="salesScroll = $event.target.scrollTop">
           <template #before>
           <div v-if="summary.length" class="ko-summary" :aria-label="$t('Sales summary')">
             <section v-for="group in summary" :key="group.currency">
               <div class="ko-summary-main"><span>{{ $t('Base sales') }} · {{ group.currency }}</span><strong>{{ group.minor == null ? sats(group.baseSats) : money(group.minor, group.currency) }}</strong></div>
-              <p>{{ $t('{n} paid sales', { n: group.count }) }} · {{ $t('Average {amount}', { amount: group.minor == null ? sats(Math.floor(group.baseSats / group.count)) : money(Math.round(group.minor / group.count), group.currency) }) }}</p>
+              <p>{{ countLabel(group.count, '1 paid sale', '{n} paid sales') }} · {{ $t('Average {amount}', { amount: group.minor == null ? sats(Math.floor(group.baseSats / group.count)) : money(Math.round(group.minor / group.count), group.currency) }) }}</p>
               <p v-if="group.extrasSats">{{ $t('Extras') }} {{ sats(group.extrasSats) }}</p>
             </section>
           </div>
@@ -71,19 +71,19 @@
         </q-virtual-scroll>
       </div>
       <div v-else-if="view === 'categories'" class="ko-scroll ko-body">
-        <IdentityGroup v-if="merchant.categories.length"><IdentityRow v-for="name in merchant.categories" :key="name" :label="name" :caption="$t('{n} products', { n: merchant.products.filter(product => product.category === name).length })" @click="editCategory(name)" /></IdentityGroup>
+        <IdentityGroup v-if="merchant.categories.length"><IdentityRow v-for="name in merchant.categories" :key="name" :label="name" :caption="countLabel(merchant.products.filter(product => product.category === name).length, '1 product', '{n} products')" @click="editCategory(name)" /></IdentityGroup>
         <div v-else class="ko-centered ko-empty"><h2>{{ $t('Group your products') }}</h2><p>{{ $t('Categories help you find products at the counter.') }}</p></div>
         <button class="ko-primary" @click="editCategory()">{{ $t('Add category') }}</button>
       </div>
       <div v-else-if="view === 'baskets'" class="ko-scroll ko-body">
-        <IdentityGroup v-if="merchant.savedBaskets.length" :footer="$t('Saved baskets keep their original prices.')"><IdentityRow v-for="basket in merchant.savedBaskets" :key="basket.id" :label="basket.name" :caption="$t('{n} items', { n: basket.draft.items.reduce((count, item) => count + item.qty, 0) })" @click="basketActions(basket)" /></IdentityGroup>
+        <IdentityGroup v-if="merchant.savedBaskets.length" :footer="$t('Saved baskets keep their original prices.')"><IdentityRow v-for="basket in merchant.savedBaskets" :key="basket.id" :label="basket.name" :caption="countLabel(basket.draft.items.reduce((total, item) => total + item.qty, 0), '1 item', '{n} items')" @click="basketActions(basket)" /></IdentityGroup>
         <div v-else class="ko-centered ko-empty"><Icon icon="tabler:shopping-bag" width="32" height="32" /><h2>{{ $t('No saved baskets') }}</h2><p>{{ $t('Save a basket from the register and return to it later.') }}</p></div>
       </div>
       <div v-else-if="view === 'settings'" class="ko-scroll ko-body">
         <IdentityGroup :title="$t('Payments')">
           <IdentityRow :label="$t('Receiving Wallet')" :caption="receivingWallet?.blocked ? receivingWallet.caption : ''" @click="walletSheetOpen = true"><template #trailing><span class="ko-value">{{ receivingWallet?.name || $t('Choose') }}</span></template></IdentityRow>
           <IdentityRow :label="$t('Price currency')" :caption="$t('Existing products keep their pricing currency.')" :interactive="false" wrap><template #trailing><select :value="merchant.catalogCurrency" :disabled="currencyLocked || busy" :aria-label="$t('Price currency')" @change="changeCurrency($event.target.value)"><option v-for="code in currencies" :key="code" :value="code">{{ code }}</option></select></template></IdentityRow>
-          <IdentityRow :label="$t('Withdraw and Auto-Transfer')" @click="go('payouts')" />
+          <IdentityRow :label="$t('Payouts')" :caption="$t('Withdraw and Auto-Transfer')" @click="go('payouts')" />
         </IdentityGroup>
         <IdentityGroup :title="$t('Checkout')">
           <IdentityRow :label="$t('Tips')" :interactive="false"><template #trailing><q-toggle :model-value="walletStore.kioskTipEnabled" color="positive" :disable="busy" :aria-label="$t('Tips')" @update:model-value="value => run(() => walletStore.setKioskTipEnabled(value))" /></template></IdentityRow>
@@ -106,8 +106,8 @@
       </div>
       <div v-else class="ko-scroll ko-body">
         <button class="ko-primary ko-open" :disabled="busy" @click="openRegister"><Icon icon="tabler:device-mobile" width="20" height="20" />{{ $t('Open register') }}</button>
-        <IdentityGroup :title="$t('At the counter')"><IdentityRow :label="$t('Products')" icon="tabler:package" :caption="$t('{n} products', { n: merchant.products.length })" @click="go('products')" /><IdentityRow :label="$t('Saved baskets')" icon="tabler:shopping-bag" :caption="$t('{n} baskets', { n: merchant.savedBaskets.length })" @click="go('baskets')" /></IdentityGroup>
-        <IdentityGroup :title="$t('Your business')"><IdentityRow :label="$t('Sales and activity')" icon="tabler:receipt" @click="go('sales')" /><IdentityRow :label="$t('Withdraw and Auto-Transfer')" icon="tabler:arrow-up-right" @click="go('payouts')" /><IdentityRow :label="$t('Register settings')" icon="tabler:adjustments-horizontal" @click="go('settings')" /></IdentityGroup>
+        <IdentityGroup :title="$t('At the counter')"><IdentityRow :label="$t('Products')" icon="tabler:package" :caption="countLabel(merchant.products.length, '1 product', '{n} products')" @click="go('products')" /><IdentityRow :label="$t('Saved baskets')" icon="tabler:shopping-bag" :caption="countLabel(merchant.savedBaskets.length, '1 basket', '{n} baskets')" @click="go('baskets')" /></IdentityGroup>
+        <IdentityGroup :title="$t('Your business')"><IdentityRow :label="$t('Sales')" icon="tabler:receipt" @click="go('sales')" /><IdentityRow :label="$t('Payouts')" :caption="$t('Withdraw and Auto-Transfer')" icon="tabler:arrow-up-right" @click="go('payouts')" /><IdentityRow :label="$t('Register settings')" icon="tabler:adjustments-horizontal" @click="go('settings')" /></IdentityGroup>
       </div>
     </template>
     <KioskWalletSheet v-model="walletSheetOpen" :options="walletOptions" :selected="setupStep ? setupWalletId : walletStore.kioskWalletId || ''" @select="setWallet" />
@@ -123,6 +123,7 @@
 <script>
 import { Icon } from "@iconify/vue";
 import { Capacitor } from "@capacitor/core";
+import { copyToClipboard } from "quasar";
 import { saveFile } from "../services/fileExport.js";
 import { useKioskPayments } from "../composables/useKioskPayments.js";
 import KioskToolbar from "../components/kiosk/KioskToolbar.vue";
@@ -142,7 +143,9 @@ import { useAutoWithdrawStore } from "../stores/autoWithdraw";
 import { kioskWalletBlocker, KIOSK_BLOCKER } from "../utils/walletCapabilities.js";
 import { walletTypeLabel } from "../utils/walletNames.js";
 import { SELECTABLE_FIAT_CURRENCIES } from "../utils/fiatCurrencies.js";
-import { formatKioskMoney, kioskDraftHasValue, kioskError } from "../utils/kioskMerchant.js";
+import { formatKioskMoney, kioskDraftHasValue, kioskError, kioskCountLabel, kioskReceiptText } from "../utils/kioskMerchant.js";
+import { formatAmount } from "../utils/amountFormatting.js";
+import { shareContent } from "../utils/share.js";
 import { destinationLabel, statusText as transferStatusText } from "../utils/autoTransferCopy.js";
 const normalize = (value) => String(value || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLocaleLowerCase();
 const VIEWS = ["home", "products", "categories", "sales", "receipt", "baskets", "settings", "payouts"];
@@ -160,7 +163,7 @@ export default {
       return VIEWS.includes(this.$route.query.view) ? this.$route.query.view : "home";
     },
     title() {
-      return this.$t({ home: "kiosk.kioskMode", products: "Products", categories: "Categories", sales: "Sales and activity", receipt: "Receipt", baskets: "Saved baskets", settings: "Register settings", payouts: "Withdraw and Auto-Transfer" }[this.view]);
+      return this.$t({ home: "kiosk.kioskMode", products: "Products", categories: "Categories", sales: "Sales", receipt: "Receipt", baskets: "Saved baskets", settings: "Register settings", payouts: "Payouts" }[this.view]);
     },
     walletOptions() {
       return this.walletStore.wallets.map((wallet) => {
@@ -195,7 +198,7 @@ export default {
       const actions = [{ id: "register", icon: "tabler:device-mobile", label: this.$t("Open register") }];
       if (this.view === "products") actions.unshift({ id: "categories", icon: "tabler:category", label: this.$t("Categories") });
       if (this.view === "sales") actions.unshift({ id: "export-sales", icon: "tabler:download", label: this.$t("Export sales"), disabled: !this.visibleSales.length });
-      if (this.view === "receipt" && this.selectedSale) actions.unshift({ id: "details", icon: "tabler:info-circle", label: this.$t("Payment details") }, { id: "label", icon: "tabler:tag", label: this.$t("Edit label") }, { id: "print", icon: "tabler:printer", label: this.$t("Print receipt") }, { id: "export-receipt", icon: "tabler:download", label: this.$t("Export receipt") });
+      if (this.view === "receipt" && this.selectedSale) actions.unshift({ id: "details", icon: "tabler:info-circle", label: this.$t("Payment details") }, { id: "label", icon: "tabler:tag", label: this.$t("Edit label") }, { id: "print", icon: "tabler:printer", label: this.$t("Print receipt") }, { id: "share-receipt", icon: "tabler:share", label: this.$t("Share receipt") });
       return actions.filter((action) => action.id !== "print" || this.canPrint);
     },
     selectedSale() {
@@ -425,7 +428,7 @@ export default {
         window.print();
       }
       if (id === "export-sales") this.exportSales();
-      if (id === "export-receipt") await this.run(() => this.download(`buhogo-receipt-${this.selectedSale.id}.csv`, this.merchant.salesCsv([this.selectedSale]), "text/csv;charset=utf-8"));
+      if (id === "share-receipt") await this.shareReceipt(this.selectedSale);
     },
     restoreBrowse() {
       if (this.browse) {
@@ -461,7 +464,19 @@ export default {
       return formatKioskMoney(minor, currency, this.$i18n.locale);
     },
     sats(value) {
-      return `${Number(value || 0).toLocaleString(this.$i18n.locale)} sats`;
+      return formatAmount(Number(value || 0), this.walletStore.useBip177Format !== false);
+    },
+    countLabel(n, one, many) {
+      return kioskCountLabel((key, values) => this.$t(key, values), n, one, many, this.$i18n.locale);
+    },
+    async shareReceipt(sale) {
+      const text = kioskReceiptText(sale, { t: (key) => this.$t(key), money: this.money, bitcoin: this.sats, date: this.date(sale.paidAt || sale.createdAt) });
+      const result = await shareContent({ title: this.$t("Receipt"), text });
+      if (result.success || result.reason === "cancelled") return;
+      await this.run(async () => {
+        await copyToClipboard(text);
+        this.$q.notify({ message: this.$t("Receipt copied"), timeout: 2000 });
+      });
     },
     date(value) {
       return new Intl.DateTimeFormat(this.$i18n.locale, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }).format(value);

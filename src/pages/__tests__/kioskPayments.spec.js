@@ -75,9 +75,9 @@ async function harness(ctx, options = {}) {
     '../components/WithdrawAuthorization.vue': {}, '../components/CardFace.vue': {},
     '../utils/nfc.js': { isNfcAvailable: async () => false },
     '../utils/haptics.js': { haptics: { tap() {}, medium() {}, success() {}, error() {} } },
-    quasar: { useQuasar: () => ({ notify: notice => h.notices.push(notice), dialog: value => ({ onOk: ok => h.dialogs.push({ value, ok }) }) }) },
+    quasar: { useQuasar: () => ({ notify: notice => h.notices.push(notice), dialog: value => ({ onOk: ok => h.dialogs.push({ value, ok }) }) }), copyToClipboard: async () => {} },
     '../composables/useKioskCardPayment.js': { ...cardPayment, useKioskCardPayment: args => cardPayment.useKioskCardPayment({ ...args, resolve: async () => ({ callback: 'https://card.example/callback', defaultDescription: 'Card', minSats: 1, maxSats: 10000 }), paymentWaitMs: options.cardPaymentWaitMs }) },
-    '../services/fileExport.js': { saveTextFile: async () => {} },
+    '../utils/share.js': { shareContent: async () => ({ success: false, reason: 'unsupported' }) },
     '../services/lnurlWithdraw.js': { safeWithdrawError: error => error },
     '../utils/walletCapabilities.js': walletCapabilities,
   };

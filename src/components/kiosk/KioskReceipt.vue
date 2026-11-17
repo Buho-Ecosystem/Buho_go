@@ -9,21 +9,22 @@
     </div>
     <div class="kiosk-receipt__items" tabindex="0" role="region" :aria-label="$t('Receipt items')">
       <div v-for="(item, index) in sale.items" :key="item.id || index" class="kiosk-receipt__item">
-        <span class="kiosk-receipt__item-name">{{ item.qty }} × {{ item.name }}<small>{{ $t('{price} each', { price: unitLabel(item) }) }}</small></span>
-        <strong>{{ lineLabel(item) }}</strong>
+        <span class="kiosk-receipt__item-name">{{ item.qty }} × {{ item.name }}<small>{{ $t('{price} each', { price: figures.items[index].unit }) }}</small></span>
+        <strong>{{ lineLabel(item, index) }}</strong>
       </div>
       <p v-if="!sale.items?.length" class="kiosk-receipt__empty">{{ $t('No item details were recorded for this payment.') }}</p>
     </div>
     <div v-if="hasExtras" class="kiosk-receipt__totals">
-      <div><span>{{ $t('Items') }}</span><strong>{{ satsOnly ? formatSats(sale.baseSats) : formatCurrency(sale.subtotalMinor, sale.currency) }}</strong></div>
-      <div v-if="sale.tipSats || sale.tipMinor"><span>{{ $t('Tip') }}</span><strong>{{ extraLabel('tip') }}</strong></div>
-      <div v-if="sale.roundUpSats || sale.roundUpMinor"><span>{{ $t('Round-up') }}</span><strong>{{ extraLabel('roundUp') }}</strong></div>
+      <div><span>{{ $t('Items') }}</span><strong>{{ figures.subtotal }}</strong></div>
+      <div v-if="sale.tipSats || sale.tipMinor"><span>{{ $t('Tip') }}</span><strong>{{ figures.tip }}</strong></div>
+      <div v-if="sale.roundUpSats || sale.roundUpMinor"><span>{{ $t('Round-up') }}</span><strong>{{ figures.roundUp }}</strong></div>
     </div>
   </section>
 </template>
 
 <script>
 import { Icon } from '@iconify/vue';
+import { kioskReceiptFigures } from '../../utils/kioskMerchant.js';
 
 /** An immutable receipt snapshot. Details, labels, printing and export belong to the owner's More menu. */
 export default {
@@ -42,8 +43,8 @@ export default {
   computed: {
     confirmed() { return this.paid || this.sale.status === 'paid'; },
     hasExtras() { return Boolean(this.sale.tipSats || this.sale.tipMinor || this.sale.roundUpSats || this.sale.roundUpMinor); },
-    satsOnly() { return Boolean(this.sale.items?.length) && this.sale.items.every((item) => item.unit === 'sats'); },
-    defaultPrimary() { return this.satsOnly ? this.formatSats(this.sale.totalSats) : this.formatCurrency(this.sale.totalMinor, this.sale.currency); },
+    figures() { return kioskReceiptFigures(this.sale, { money: this.formatCurrency, bitcoin: this.formatSats }); },
+    defaultPrimary() { return this.figures.total; },
     dateText() {
       const value = this.sale.paidAt || this.sale.createdAt;
       if (this.formatDate) return this.formatDate(value);
@@ -53,15 +54,8 @@ export default {
     },
   },
   methods: {
-    unitLabel(item) {
-      return item.unit === 'sats' ? this.formatSats(item.unitSats) : this.formatCurrency(item.priceMinor, item.currency || this.sale.currency);
-    },
-    lineLabel(item) {
-      if (this.formatItemTotal) return this.formatItemTotal(item);
-      return item.unit === 'sats' ? this.formatSats(item.lineSats) : this.formatCurrency(item.lineMinor, item.currency || this.sale.currency);
-    },
-    extraLabel(name) {
-      return this.satsOnly ? this.formatSats(this.sale[`${name}Sats`]) : this.formatCurrency(this.sale[`${name}Minor`], this.sale.currency);
+    lineLabel(item, index) {
+      return this.formatItemTotal ? this.formatItemTotal(item) : this.figures.items[index].line;
     },
   },
 };

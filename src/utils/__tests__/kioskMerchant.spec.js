@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { buildSaleSnapshot, emptyKioskMerchant, exportKioskBundle, formatKioskMoney, kioskSalesCsv, normalizeKioskDraft, normalizeKioskOrder, priceBasket, readKioskBundle } from '../kioskMerchant.js';
+import { buildSaleSnapshot, emptyKioskMerchant, exportKioskBundle, formatKioskMoney, kioskCountLabel, kioskReceiptText, kioskSalesCsv, normalizeKioskDraft, normalizeKioskOrder, priceBasket, readKioskBundle } from '../kioskMerchant.js';
 
 const sats = value => ({ id: `sats-${value}`, name: 'Amount', unit: 'sats', unitSats: value, qty: 1 });
 const fiat = (id, priceMinor) => ({ id, name: 'Coffee', unit: 'fiat', priceMinor, currency: 'USD', qty: 1 });
@@ -60,4 +60,21 @@ test('duplicate basket identities and altered quoted line prices are rejected', 
 test('catalog hundredths remain visible for currencies whose locale usually hides decimals', () => {
   assert.equal(formatKioskMoney(125, 'JPY', 'en-US'), '¥1.25');
   assert.equal(formatKioskMoney(125, 'USD', 'en-US'), '$1.25');
+});
+
+test('a shared receipt is plain text with the sold lines, extras, total and the Bitcoin received', () => {
+  const sale = { ...buildSaleSnapshot({ items: [{ ...fiat('coffee', 250), qty: 2 }], currency: 'USD', rate: 100_000, walletId: 'wallet', tipSats: 500 }), paidAt: 2 };
+  const t = (key) => key;
+  const money = (minor, currency) => formatKioskMoney(minor, currency);
+  const bitcoin = (value) => `₿ ${value}`;
+  assert.equal(kioskReceiptText(sale, { t, money, bitcoin, date: '16 Nov 2026, 17:07' }), [
+    'Receipt', '16 Nov 2026, 17:07', '',
+    `2 × Coffee  ${money(sale.items[0].lineMinor, 'USD')}`, '',
+    `Items  ${money(sale.subtotalMinor, 'USD')}`,
+    `Tip  ${money(sale.tipMinor, 'USD')}`, '',
+    `Total  ${money(sale.totalMinor, 'USD')}`,
+    `Paid in Bitcoin  ₿ ${sale.totalSats}`,
+  ].join('\n'));
+  assert.equal(kioskCountLabel(t, 1, '1 paid sale', '{n} paid sales'), '1 paid sale');
+  assert.equal(kioskCountLabel((key, values) => key.replace('{n}', values.n), 10000, '1 paid sale', '{n} paid sales', 'de'), '10.000 paid sales');
 });

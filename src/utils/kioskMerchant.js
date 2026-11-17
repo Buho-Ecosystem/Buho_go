@@ -230,6 +230,56 @@ export function formatKioskMoney(minor, currency, locale = 'en-US') {
   if (minor == null) return '—';
   return new Intl.NumberFormat(locale, { style: 'currency', currency: kioskCurrency(currency), minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(minor / 100);
 }
+
+/**
+ * Count copy with a singular key, the app's way of saying "1 sale" and
+ * "{n} sales" (the locale files hold no plural forms). The number uses the
+ * locale's grouping, so it reads like the amounts beside it: "10,000 sales".
+ */
+export function kioskCountLabel(t, n, one, many, locale) {
+  return n === 1 ? t(one) : t(many, { n: new Intl.NumberFormat(locale || undefined).format(n) });
+}
+
+/**
+ * The figures one receipt shows, for the screen and for the shared text alike.
+ * A sale typed in Bitcoin only is shown in Bitcoin; anything priced in fiat is
+ * shown in the currency it was sold in.
+ */
+export function kioskReceiptFigures(sale, { money, bitcoin }) {
+  const items = sale.items || [];
+  const bitcoinOnly = items.length > 0 && items.every((item) => item.unit === 'sats');
+  const extra = (name) => (bitcoinOnly ? bitcoin(sale[`${name}Sats`]) : money(sale[`${name}Minor`], sale.currency));
+  return {
+    bitcoinOnly,
+    total: bitcoinOnly ? bitcoin(sale.totalSats) : money(sale.totalMinor, sale.currency),
+    items: items.map((item) => {
+      const currency = item.currency || sale.currency;
+      return item.unit === 'sats'
+        ? { unit: bitcoin(item.unitSats), line: bitcoin(item.lineSats) }
+        : { unit: money(item.priceMinor, currency), line: money(item.lineMinor, currency) };
+    }),
+    subtotal: bitcoinOnly ? bitcoin(sale.baseSats) : money(sale.subtotalMinor, sale.currency),
+    tip: sale.tipSats || sale.tipMinor ? extra('tip') : null,
+    roundUp: sale.roundUpSats || sale.roundUpMinor ? extra('roundUp') : null,
+  };
+}
+
+/** A paid sale as plain text a customer can keep: items, extras, total and the Bitcoin received. */
+export function kioskReceiptText(sale, { t, money, bitcoin, date }) {
+  const figures = kioskReceiptFigures(sale, { money, bitcoin });
+  const lines = [t('Receipt')];
+  if (date) lines.push(date);
+  lines.push('');
+  (sale.items || []).forEach((item, index) => lines.push(`${item.qty} × ${item.name}  ${figures.items[index].line}`));
+  if (figures.tip || figures.roundUp) {
+    lines.push('', `${t('Items')}  ${figures.subtotal}`);
+    if (figures.tip) lines.push(`${t('Tip')}  ${figures.tip}`);
+    if (figures.roundUp) lines.push(`${t('Round-up')}  ${figures.roundUp}`);
+  }
+  lines.push('', `${t('Total')}  ${figures.total}`);
+  if (!figures.bitcoinOnly) lines.push(`${t('Paid in Bitcoin')}  ${bitcoin(sale.totalSats)}`);
+  return lines.join('\n');
+}
 const csvCell = value => {
   let text = value == null ? '' : String(value);
   if (/^[\s]*[=+\-@]/.test(text)) text = `'${text}`;
