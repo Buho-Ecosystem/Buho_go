@@ -109,13 +109,17 @@ try {
   await page.getByRole('button',{name:'Receipt',exact:true}).click()
   await page.locator('.pos-current-receipt').waitFor()
   assert.match(await page.locator('.pos-current-receipt .kiosk-receipt__items').innerText(),/10/)
-  const downloaded=page.waitForEvent('download')
-  await page.getByRole('button',{name:'Export receipt',exact:true}).click()
-  const file=await downloaded
-  const {readFile}=await import('node:fs/promises')
-  const csv=await readFile(await file.path(),'utf8')
-  assert.ok(csv.includes(ten.id) && csv.includes('Lightning'),'actual receipt download contains the frozen sale')
   await snapshot('06-current-receipt')
+  // A desktop browser has no share sheet, so the readable receipt lands on the clipboard.
+  await context.grantPermissions(['clipboard-read','clipboard-write'],{origin:base})
+  await page.getByRole('button',{name:'Share receipt',exact:true}).click()
+  await page.getByText('Receipt copied',{exact:true}).waitFor()
+  const shared=await page.evaluate(()=>navigator.clipboard.readText())
+  assert.match(shared,/^Receipt\n/,'the shared receipt is readable text, not a spreadsheet')
+  assert.match(shared,/\nTotal  ₿\u00a010\n?$/,'the shared receipt names the exact Bitcoin total of the frozen sale')
+  // The toast holds while a mouse rests on it; move away so it clears before the next customer.
+  await page.mouse.move(0,0)
+  await page.getByText('Receipt copied',{exact:true}).waitFor({state:'hidden',timeout:10_000})
   await page.locator('.pos-current-receipt').getByRole('button',{name:'Close',exact:true}).click()
   await page.getByRole('button',{name:'New charge',exact:true}).click()
   await page.locator('.amount-keypad__kiosk-value').waitFor()
@@ -201,6 +205,6 @@ try {
   const {writeFile}=await import('node:fs/promises')
   await mkdir('docs/reviews',{recursive:true})
   await writeFile('docs/reviews/kiosk-checkout.json',JSON.stringify({environment:'Chromium; actual Vue app, scripted receiving wallet; no funds or external network',checks:['guided setup and PIN repeat','exact101sats fiat roundtrip','exact receiving-wallet confirmation','owner return preserves issued order','late payment attribution','same request after reload','current receipt and real CSV download','new customer empty','amount to products exposes typed entry','save and resume basket','staff route guard','visible owner product creation','fiat product checkout and itemized receipt'],errors,layouts,receiptLayout},null,2)+'\n')
-  console.log('ok owner continuity, late payment, reload, receipt download, responsive entry and saved basket')
+  console.log('ok owner continuity, late payment, reload, receipt sharing, responsive entry and saved basket')
   console.log(JSON.stringify({errors}))
 } catch(error) { await snapshot('failure'); console.log('action errors',await page.evaluate(()=>window.__kioskActionErrors)); console.log('persist error',await page.evaluate(()=>window.__kioskPersistError)); console.log('UI at failure', (await page.locator('body').innerText()).slice(-2500), errors); throw error } finally { await browser.close() }

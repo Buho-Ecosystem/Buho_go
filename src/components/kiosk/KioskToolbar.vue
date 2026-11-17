@@ -108,7 +108,7 @@ export default {
 .kiosk-toolbar { display: flex; align-items: center; gap: 4px; min-height: 52px; flex: 0 0 auto; width: 100%; padding: 0 12px; color: var(--text-primary); }
 .kiosk-toolbar__icon { width: 44px; height: 44px; min-width: 44px; display: grid; place-items: center; padding: 0; border: 0; border-radius: 12px; background: transparent; color: var(--text-secondary); cursor: pointer; }
 .kiosk-toolbar__back { color: var(--brand-accent-text); }
-.kiosk-toolbar__title { flex: 1; min-width: 0; margin: 0; font: 750 21px/1.18 'Manrope', sans-serif; letter-spacing: -.025em; overflow-wrap: anywhere; }
+.kiosk-toolbar__title { flex: 1; min-width: 0; margin: 0; font: 750 21px/1.18 'Manrope', sans-serif; letter-spacing: -.025em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .kiosk-toolbar__actions { display: flex; align-items: center; flex: none; }
 .kiosk-toolbar__find { background: var(--bg-input); }
 .kiosk-toolbar__more { font: 650 12px/1.3 'Manrope', sans-serif; }

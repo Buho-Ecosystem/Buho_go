@@ -19,7 +19,7 @@ Kiosk Mode turns BuhoGO into a local register. Staff can build baskets, accept p
 
 `composables/useKioskPayments.js` is one detached receiving runtime per merchant store, initialized by `boot/kiosk-payments.js`. It survives leaving the register. The durable order and returned request must be saved before displaying a QR. Unknown creation outcomes remain uncertain and cannot be blindly resubmitted. Expired replacements use the same order and require fresh status checks of earlier requests. Late payments remain watched. Multiple paid attempts are retained as an exception while sales totals count the order once.
 
-Success requires the selected wallet's exact invoice/hash confirmation. A card service accepting a withdrawal is not proof of payment. Card and QR share the receiving request, so receipts name the payment method as Lightning without claiming an unverified payer source. Browser payments use QR; supported Android hardware can additionally read Lightning cards through the existing NFC bridge.
+Success requires the selected wallet's exact invoice/hash confirmation. A card service accepting a withdrawal is not proof of payment. Card and QR share the receiving request, so receipts name the payment method as Lightning without claiming an unverified payer source. Browser payments use QR; supported Android hardware can additionally read Bitcoin Cards through the existing NFC bridge.
 
 Only exact transaction IDs from verified lookup results receive transaction annotations. There is no amount/time-based attribution. The local register receipt remains authoritative if no transaction ID is available.
 

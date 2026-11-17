@@ -5,6 +5,7 @@ import { transformSync } from 'esbuild';
 import * as Vue from 'vue';
 import * as merchantUtils from '../../utils/kioskMerchant.js';
 import * as capabilities from '../../utils/walletCapabilities.js';
+import * as amountFormatting from '../../utils/amountFormatting.js';
 
 const script = readFileSync(new URL('../KioskModePage.vue', import.meta.url), 'utf8').match(/<script>([\s\S]*?)<\/script>/)[1];
 const { code } = transformSync(script, { format: 'cjs' });
@@ -37,6 +38,9 @@ async function mountOwner(ctx, { enabled = true, setupCompleted = enabled, walle
   const modules = {
     '@capacitor/core': { Capacitor: { isNativePlatform: () => native } },
     '@iconify/vue': { Icon: stub },
+    quasar: { async copyToClipboard(text) { calls.push(['copy', text]); } },
+    '../utils/amountFormatting.js': amountFormatting,
+    '../utils/share.js': { shareContent: async () => ({ success: false, reason: 'unsupported' }) },
     '../services/fileExport.js': { async saveFile(file) { calls.push(['save', file]); } },
     '../composables/useKioskPayments.js': { useKioskPayments: () => ({ ready: Promise.resolve(), async resume(id) { calls.push(['resume', id]); } }) },
     '../stores/wallet': { useWalletStore: () => wallet },

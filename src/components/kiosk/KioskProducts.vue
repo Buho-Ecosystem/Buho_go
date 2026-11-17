@@ -42,6 +42,7 @@
 
 <script>
 import { Icon } from '@iconify/vue';
+import { kioskCountLabel } from '../../utils/kioskMerchant.js';
 
 const normalize = (value) => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase();
 
@@ -81,7 +82,7 @@ export default {
     category() { this.scrollTo(0); },
     scrollTop(value) { this.scrollTo(value); },
     basketCount(value, old) {
-      if (value !== old && !this.manage) this.announcement = this.$t('{n} items in basket', { n: value });
+      if (value !== old && !this.manage) this.announcement = kioskCountLabel((key, values) => this.$t(key, values), value, '1 item in basket', '{n} items in basket', this.$i18n.locale);
     },
   },
   mounted() { this.scrollTo(this.scrollTop); },
