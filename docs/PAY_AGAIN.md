@@ -2,10 +2,12 @@
 
 A completed payment to a recipient that can be paid again offers Pay again:
 swipe its row in History to the left (a full swipe, about half the row), or
-tap the Pay again row at the end of its Transaction Details. Both hand the
-recipient to the one send pipeline, the same hand-over as a contact tap, with
-the last amount filled in. The user still sees the confirm sheet and always
-confirms on the slide, whatever the amount. Nothing is paid by the swipe.
+tap the Pay again row at the end of its Transaction Details. Both open the
+one send sheet in place, on top of the screen the user is on, as a contact
+tap does, with the last amount filled in. The user still sees the confirm
+sheet and always confirms on the slide, whatever the amount. Nothing is paid
+by the swipe. Closing the sheet leaves History or the receipt as it was:
+the screen underneath never changed.
 
 ## Payments to this recipient
 
@@ -44,8 +46,9 @@ Arkade: the transaction id) and waits for exactly that payment; the History
 row keeps its "Bitcoin sent" title.
 
 The amount is the amount the user entered: what the recipient was sent, not
-the fee-inclusive total (an Arkade on-chain send takes its network fee out of
-that amount).
+the fee-inclusive total. Every on-chain send, Arkade's included, now adds its
+network fee on top of that amount (Arkade's quote is receiver-exact,
+`ArkadeWalletProvider._quoteOffboard`).
 When the user paid in the recipient's own currency (LUD-21) from a wallet
 that sends it as such (Spark, Arkade, LNbits), that amount is kept too, and
 the sheet starts in that currency while the recipient still offers it and
@@ -67,8 +70,9 @@ swipe leaves out because that link can be stamped by time alone.
 
 - `utils/payAgain.js`: the record, its proof, and `payAgainTarget` (the one decision).
 - `stores/transactionMetadata.js`: queues the record with the send, stamps it on proof.
-- `composables/usePayContact.js` `payAgain`: the hand-over (`prefillAmount`, `prefillPayout`, `repeat=1`, return route).
-- `Wallet.vue`: records the send, reads the hand-over, `repeat` forces the slide.
+- `composables/usePayContact.js` `payAgain`: starts the payment in place through `stores/paymentFlow.js`, with the last amount (`amountSats`), the recipient's own currency (`payout`) and `repeat`.
+- `components/ContactPaymentHost.vue` (in the main layout): shows the send pipeline over the current screen; the route does not change, so there is nothing to return to.
+- `Wallet.vue`: records the send, reads the payment it was handed (`payment-intent`), `repeat` forces the slide.
 - `TransactionHistory.vue`: the swipe (Quasar slide item, slot only on rows that qualify).
 - `TransactionDetails.vue`: the Pay again row; the To row and More options open the payments.
 - `services/recipientPayments.js`: the payments to one recipient, shared with a contact's "Between you".
@@ -76,8 +80,8 @@ swipe leaves out because that link can be stamped by time alone.
 
 ## Checks
 
-- Unit: `payAgain`, `transactionMetadata` (proof only), `usePayContact`, `recipientPayments`, `walletFlow` (record, exclusions, hand-over, sheet).
-- Browser: `node scripts/check-pay-again.mjs` against `pnpm dev --port 9036` (or `PAY_AGAIN_BASE_URL`): which rows slide, a short swipe springs back, a full swipe and the Details row open the sheet with the last amount and the slide and come back, light, dark and German.
+- Unit: `payAgain`, `transactionMetadata` (proof only), `usePayContact`, `paymentFlow`, `recipientPayments`, `walletFlow` (record, exclusions, sheet).
+- Browser: `node scripts/check-pay-again.mjs` against `pnpm dev --port 9036` (or `PAY_AGAIN_BASE_URL`): which rows slide, a short swipe springs back, a full swipe and the Details row open the sheet in place with the last amount and the slide, and closing it leaves the screen where it was, light, dark and German. A first run right after the dev server starts can time out waiting for History; run it again.
 - Device: that each wallet type's payments get the record (the ids line up; Arkade's on-chain id is unverified), Android's back-gesture edge.
 
 Screens: `docs/images/pay-again/`, from `scripts/check-pay-again.mjs`.
