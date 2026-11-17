@@ -161,13 +161,21 @@ test('a payment for another hash cannot mark the order paid', async ctx => {
   assert.equal(h.paid.length, 0);
 });
 
-test('a wallet that reports what it credited after its receive fee still confirms the sale at the request amount', async ctx => {
+test('an NWC wallet that reports what it credited after its fee confirms the sale; any other wallet must report the request', async ctx => {
   const h = await durableHarness(ctx, { lookup: async () => ({ paid: true, amount: 995, paymentHash: hash }) });
+  h.walletStore.wallets = [{ id: 'wallet', type: 'nwc' }];
   await h.runtime.createCharge(h.snapshot);
   await h.runtime.checkNow();
   assert.equal(h.runtime.status.value, 'paid');
   assert.equal(h.saved().orders[0].attempts[0].settledSats, 1000);
   assert.equal(h.paid.length, 1);
+
+  const short = harness(ctx, { lookup: async () => ({ paid: true, amount: 1, paymentHash: hash }) });
+  await short.runtime.createCharge(snapshot());
+  await short.runtime.checkNow();
+  assert.equal(short.runtime.status.value, 'waiting');
+  assert.equal(short.runtime.problem.value.code, 'KIOSK_PAYMENT_MISMATCH');
+  assert.equal(short.paid.length, 0);
 });
 
 test('expiry retains monitoring and a later payment belongs to the original detached order', async ctx => {
@@ -636,4 +644,44 @@ test('a recovered connection clears the earlier register problem before displayi
   await h.runtime.createCharge(snapshot());
   assert.equal(h.runtime.problem.value, null);
   assert.equal(h.runtime.status.value, 'waiting');
+});
+
+test('a request closed as unpaid on an out-of-date answer is asked about again before another request exists', async ctx => {
+  let paid = false;
+  const h = await durableHarness(ctx, {
+    now: () => 2_000_000_000_000 + KIOSK_LATE_PAYMENT_GRACE_MS,
+    lookup: async () => ({ paid, paymentHash: hash, amount: 1000 }),
+  });
+  await h.runtime.createCharge(h.snapshot);
+  await h.runtime.checkNow();
+  assert.equal(h.runtime.status.value, 'unpaid');
+  paid = true;
+  await h.runtime.createCharge(h.snapshot);
+  assert.equal(h.runtime.status.value, 'paid');
+  assert.equal(h.calls.length, 1, 'no second request');
+  assert.equal(h.saved().orders[0].attempts.length, 1);
+});
+
+test('a device clock running ahead of the wallet does not end a shown request early', async ctx => {
+  const nowSec = Math.floor(Date.now() / 1000);
+  const h = await durableHarness(ctx, { decodeInvoice: () => ({ paymentHash: hash, amountSats: 1000, expiresAt: nowSec - 3600, issuedAt: nowSec - 7200 }) });
+  h.walletStore.createInvoiceDetailsOnWallet = async () => ({ ...invoice, expiresAt: nowSec - 3600 });
+  await h.runtime.createCharge(h.snapshot);
+  await h.runtime.checkNow();
+  assert.equal(h.runtime.status.value, 'waiting');
+  assert.equal(h.saved().orders[0].attempts[0].status, 'waiting');
+});
+
+test('a wallet that answers again ends the connection problem a failed reconnect left on the register', async ctx => {
+  let offline = false;
+  const h = harness(ctx, { lookup: async () => { if (offline) throw new Error('offline'); return { paid: false, paymentHash: hash }; } });
+  await h.runtime.createCharge(snapshot());
+  offline = true;
+  h.walletStore.ensureWalletConnectedForTransfer = async () => { throw new Error('offline'); };
+  await h.runtime.reconnect().catch(() => {});
+  assert.equal(h.runtime.problem.value?.code, 'KIOSK_CONNECTION_FAILED');
+  offline = false;
+  h.walletStore.ensureWalletConnectedForTransfer = async () => ({});
+  await h.runtime.checkNow();
+  assert.equal(h.runtime.problem.value, null);
 });

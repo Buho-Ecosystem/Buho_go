@@ -435,7 +435,7 @@
                 v-for="basket in merchant.savedBaskets"
                 :key="basket.id"
                 class="pos-saved-row"
-                :disabled="hasDraft"
+                :disabled="basketHasItems"
                 @click="resumeBasket(basket.id)"
               >
                 <span>
@@ -453,7 +453,7 @@
                 v-for="order in pendingOrders"
                 :key="order.id"
                 class="pos-saved-row"
-                :disabled="hasDraft"
+                :disabled="basketHasItems"
                 @click="resumeOrder(order.id)"
               >
                 <span>
@@ -464,7 +464,7 @@
                 <q-icon name="chevron_right" />
               </button>
             </template>
-            <p v-if="hasDraft">{{ $t('Save or clear this basket before opening another.') }}</p>
+            <p v-if="basketHasItems">{{ $t('Save or clear this basket before opening another.') }}</p>
           </div>
         </q-card>
       </q-dialog>
@@ -601,6 +601,7 @@ export default defineComponent({
       freshRate(store.exchangeRates, store.exchangeRateTimes, fiatCurrency.value, now.value)
     )
     const hasDraft = computed(() => kioskDraftHasValue(draft.value))
+    const basketHasItems = computed(() => !!draft.value.items.length)
     const amountSats = computed(
       () => draft.value.exactSats ?? keypadSats(draft.value.amountRaw, { fiat: isFiatMode.value, rate: fiatRate.value })
     )
@@ -716,18 +717,19 @@ export default defineComponent({
       authorize: (...args) => cardAuthorization.value.submit(...args),
       checkPayment: () => payments.checkNow(),
       onError(error) {
-        cardRequest = null
+        if (cardTry) cardTry.failed = true
         cardProblem.value = cardProblemText(error)
         void haptics.error()
       }
     })
-    // The request a card's service was asked to pay. When exactly that
-    // request is paid, the sale was paid by card.
-    let cardRequest = null
+    // How a sale was paid, as far as the register saw it: a card went to the
+    // request that settled and no card error followed (Bitcoin Card), no card
+    // went to it (QR code), or a card failed on it (unknown, no method).
+    let cardTry = null
     watch(
       () => card.phase.value,
       phase => {
-        if (phase === 'submitting') cardRequest = invoiceData.value?.paymentHash || null
+        if (phase === 'submitting') cardTry = { hash: invoiceData.value?.paymentHash || null, failed: false }
       }
     )
     const cardBusy = computed(() => ['loading', 'review', 'submitting', 'waiting'].includes(card.phase.value))
@@ -898,9 +900,18 @@ export default defineComponent({
         showError(error)
       }
     }
+    /** A typed amount alone is not a basket: opening a saved one replaces it, as a new number replaces one on a calculator. */
+    async function dropTypedAmount() {
+      if (!(await draftSave) || basketHasItems.value) return false
+      if (hasDraft.value) {
+        await merchant.clearDraft()
+        syncDraft()
+      }
+      return true
+    }
     async function resumeBasket(id) {
       try {
-        if (!(await draftSave)) return
+        if (!(await dropTypedAmount())) return
         await merchant.resumeBasket(id)
         syncDraft()
         showParkedSheet.value = false
@@ -910,7 +921,7 @@ export default defineComponent({
     }
     async function resumeOrder(id) {
       try {
-        if (hasDraft.value) return
+        if (!(await dropTypedAmount())) return
         await payments.resume(id)
         showParkedSheet.value = false
       } catch (error) {
@@ -1039,14 +1050,15 @@ export default defineComponent({
       const order = activeOrder.value
       if (!order) return
       const again = () => payments.createCharge(cloneKiosk(order))
-      if (payments.status.value === 'expired')
+      // A code that was shown may still be paid: a check can be out of date.
+      if (['expired', 'unpaid'].includes(payments.status.value))
         $q.dialog({
           title: t('Create a new payment request?'),
           message: t('The old code may still be paid. Check with the customer before continuing.'),
           cancel: true,
           ok: { label: t('Create request') }
         }).onOk(again)
-      else if (['unpaid', 'not-charged'].includes(payments.status.value)) void again()
+      else if (payments.status.value === 'not-charged') void again()
     }
     async function resetToInput() {
       try {
@@ -1055,7 +1067,7 @@ export default defineComponent({
         syncDraft()
         localStage.value = 'input'
         card.reset()
-        cardRequest = null
+        cardTry = null
         cardProblem.value = ''
         useRoundUp.value = false
         selectedTipPercent.value = 0
@@ -1153,9 +1165,10 @@ export default defineComponent({
         if (value !== 'paid') return
         void haptics.success()
         const order = activeOrder.value
-        const byCard = cardRequest && order?.attempts.some(a => a.status === 'paid' && a.paymentHash === cardRequest)
-        cardRequest = null
-        if (order) void merchant.setSaleMethod(order.id, byCard ? 'card' : 'qr').catch(() => {})
+        const paidHash = order?.attempts.find(a => a.status === 'paid')?.paymentHash
+        const method = cardTry?.hash !== paidHash ? 'qr' : cardTry.failed ? null : 'card'
+        cardTry = null
+        if (order && method) void merchant.setSaleMethod(order.id, method).catch(() => {})
       }
     )
     watch(
@@ -1286,6 +1299,7 @@ export default defineComponent({
       retryStorage,
       qrDataUrl,
       hasDraft,
+      basketHasItems,
       itemCount,
       quantities,
       basketDisplay,

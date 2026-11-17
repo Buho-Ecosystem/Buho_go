@@ -7,8 +7,6 @@ import { KIOSK_LATE_PAYMENT_GRACE_MS, kioskDraftHasValue, kioskError } from '../
 
 const runtimes = new WeakMap();
 const safeProblem = code => ({ code });
-/** The last moment a shown request can still be settled; null when it names no expiry. */
-const lastMoment = attempt => attempt.expiresAt ? attempt.expiresAt * 1000 + KIOSK_LATE_PAYMENT_GRACE_MS : null;
 
 /** Public request data only. Never retain provider credentials or payment preimages. */
 export function validateKioskInvoice(raw, { walletId, amountSats }, decode = readInvoice) {
@@ -65,6 +63,23 @@ export function createKioskPaymentRuntime({ merchant, walletStore, onPaid,
   let creationTask = null;
   let stopped = false;
   let displayRevision = 0;
+  /**
+   * When a shown request stops being payable, on this device's clock. The
+   * wallet writes its expiry on its own clock; a device clock running ahead
+   * must not end a request early, so its lifetime also counts from when this
+   * register saved it. Null when it names no expiry.
+   */
+  function expiryMs(attempt) {
+    if (!attempt.expiresAt) return null;
+    const issuedAt = decodeInvoice(attempt.paymentRequest)?.issuedAt;
+    const lifetime = issuedAt > 0 && issuedAt < attempt.expiresAt ? (attempt.expiresAt - issuedAt) * 1000 : 0;
+    return Math.max(attempt.expiresAt * 1000, (attempt.createdAt || 0) + lifetime);
+  }
+  /** The last moment a shown request can still be settled: a payment may still be on its way. */
+  function lastMoment(attempt) {
+    const expiry = expiryMs(attempt);
+    return expiry == null ? null : expiry + KIOSK_LATE_PAYMENT_GRACE_MS;
+  }
   const activeOrder = computed(() => merchant.getOrder(merchant.activeOrderId) || null);
   const activeAttempt = computed(() => {
     const order = activeOrder.value;
@@ -93,6 +108,11 @@ export function createKioskPaymentRuntime({ merchant, walletStore, onPaid,
   const pendingOrders = computed(() => merchant.orders.filter(order => order.status !== 'paid' && order.attempts.some(a => a.status !== 'paid' && a.status !== 'failed')));
   function setProblem(orderId, code) { problems.value = { ...problems.value, [orderId || 'register']: code ? safeProblem(code) : null }; }
   function storageFailure(orderId) { setProblem(orderId, 'KIOSK_STORAGE_FAILED'); }
+  /** The wallet answered: its sale has no problem, and a connection problem on the register is over. */
+  function answered(orderId) {
+    setProblem(orderId, null);
+    if (problems.value.register?.code === 'KIOSK_CONNECTION_FAILED') setProblem(null, null);
+  }
   const ready = Promise.resolve().then(async () => {
     await merchant.initialize({ currency: walletStore.preferredFiatCurrency || 'USD', amountUnit: walletStore.kioskDisplayCurrency || 'sats' });
     // A request still being created when the app stopped never came back, so it was never shown.
@@ -222,16 +242,22 @@ export function createKioskPaymentRuntime({ merchant, walletStore, onPaid,
       throw new Error('Payment identity mismatch');
     }
     if (result?.paid === true) {
-      // The receiving wallet and the hash prove which request was paid, and a
-      // paid request was paid at least its own amount. The figure a wallet
-      // reports is not compared: some report the request, some what was
-      // credited after their receive fee.
+      // The receiving wallet and the hash say which request was paid, and it
+      // was paid at least its own amount. Spark and LNbits report the
+      // request's figure; an NWC wallet reports what it credited after its own
+      // receive fee, so there only the wallet and the hash are compared.
+      const reported = result.amount == null ? null : Number(result.amount);
+      const creditsNet = walletStore.wallets.find(w => w.id === attempt.walletId)?.type === 'nwc';
+      if (!creditsNet && reported != null && !(Number.isSafeInteger(reported) && reported >= attempt.amountSats)) {
+        setProblem(attempt.orderId, 'KIOSK_PAYMENT_MISMATCH');
+        throw new Error('Payment amount mismatch');
+      }
       let settled;
       try { settled = await merchant.settleAttempt(attempt.orderId, attempt.attemptId, {
         walletId: attempt.walletId, paymentHash: attempt.paymentHash, paidAt: now(),
         transactionId: typeof (result.transactionId || result.id) === 'string' ? (result.transactionId || result.id) : null,
       }); } catch { storageFailure(attempt.orderId); throw new Error('Register storage unavailable'); }
-      setProblem(attempt.orderId, null);
+      answered(attempt.orderId);
       if (!settled.duplicate && (settled.newlyPaid || settled.duplicatePayment)) {
         for (const callback of listeners) {
           // Metadata and view effects cannot roll back an already durable receipt.
@@ -239,8 +265,9 @@ export function createKioskPaymentRuntime({ merchant, walletStore, onPaid,
         }
       }
     } else {
-      setProblem(attempt.orderId, null);
-      if (attempt.expiresAt && attempt.expiresAt * 1000 <= now() && attempt.status !== 'expired') {
+      answered(attempt.orderId);
+      const expiry = expiryMs(attempt);
+      if (attempt.status === 'waiting' && expiry != null && expiry <= now()) {
         try { await merchant.markAttemptExpired(attempt.orderId, attempt.attemptId); }
         catch { storageFailure(attempt.orderId); throw new Error('Register storage unavailable'); }
       }
@@ -250,8 +277,9 @@ export function createKioskPaymentRuntime({ merchant, walletStore, onPaid,
   async function reconcileBeforeReplacement(order) {
     for (const attempt of order.attempts) {
       if (attempt.status === 'paid') return false;
-      // Closed: never shown, or checked as not paid after its last moment.
-      if (attempt.status === 'failed') continue;
+      // Never shown: nothing can pay it. One closed as unpaid rests on a single
+      // answer, so it is asked about once more before another request exists.
+      if (attempt.status === 'failed' && !attempt.paymentHash) continue;
       if (!attempt.paymentHash || !attempt.paymentRequest) {
         // An interrupted create may have reached the wallet without returning a
         // request identity. It cannot be checked or safely submitted a second time.
@@ -337,8 +365,19 @@ export function createKioskPaymentRuntime({ merchant, walletStore, onPaid,
       throw kioskError('KIOSK_BASKET_CONFLICT', 'Save or clear the current basket before opening another.');
     }
     await merchant.setActiveOrder(orderId);
+    await recheckClosed(orderId);
     await checkNow();
     return activeInvoice.value;
+  }
+  /** Opening a sale again asks once more about a request closed as unpaid: that verdict rests on one answer. */
+  async function recheckClosed(orderId) {
+    const order = merchant.getOrder(orderId);
+    if (!order || order.status === 'paid') return;
+    for (const attempt of order.attempts) {
+      if (attempt.status !== 'failed' || !attempt.paymentHash) continue;
+      try { if ((await lookup({ ...attempt, orderId, attemptId: attempt.id })).paid) return; }
+      catch { return; }
+    }
   }
   // Leaving checkout invalidates unfinished view actions, not the payable basket.
   // Only Next customer releases ownership and clears its draft together.

@@ -25,7 +25,7 @@ function ownerActions(verify) {
   assert.ok(start > 0 && end > start);
   const { code } = transformSync(`module.exports = {${source.slice(start, end)}}`, { format: 'cjs' });
   const module = { exports: {} };
-  new Function('module', 'verifyKioskOwner', code)(module, verify);
+  new Function('module', 'verifyKioskOwner', 'writeKioskPinWait', code)(module, verify, () => {});
   return module.exports;
 }
 test('a delayed recovery result cannot unlock a different register session', async () => {

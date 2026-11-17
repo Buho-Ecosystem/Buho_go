@@ -161,7 +161,11 @@ test('one record that no longer reads is set aside and kept; the register still 
   assert.equal(loaded.orders.length, 1);
   assert.equal(loaded.setAsideCount, 1);
   assert.equal(loaded.activeOrderId, null);
-  assert.equal(JSON.parse(await loaded.exportBundle()).setAside[0].id, 'broken', 'the backup keeps it');
+  const backup = await loaded.exportBundle();
+  assert.equal(JSON.parse(backup).setAside[0].record.id, 'broken', 'the backup keeps it');
+  const { store: fresh } = await register();
+  await fresh.restoreBundle(backup);
+  assert.equal(fresh.setAsideCount, 1, 'a restore keeps it aside');
 });
 
 test('a save in another window brings this one up to date, so its next change is not refused', async () => {

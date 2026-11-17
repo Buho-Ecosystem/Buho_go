@@ -41,3 +41,31 @@ export function kioskPinWaitMs(failures) {
   if (!(failures >= KIOSK_PIN_FREE_TRIES)) return 0;
   return WAITS_MS[Math.min(failures - KIOSK_PIN_FREE_TRIES, WAITS_MS.length - 1)];
 }
+
+/**
+ * Wrong owner PINs live under their own key, read before each try and
+ * written right after it, so no other window's save of the wallet state can
+ * reset them.
+ */
+export const KIOSK_PIN_WAIT_KEY = 'buhoGO_kiosk_pin_wait';
+
+/** The wrong PINs in a row and when the next try may come (ms, 0 = now). */
+export function readKioskPinWait(storage = globalThis.localStorage) {
+  try {
+    const { failures, retryAt } = JSON.parse(storage?.getItem(KIOSK_PIN_WAIT_KEY) || '{}');
+    return {
+      failures: Number.isSafeInteger(failures) && failures > 0 ? failures : 0,
+      retryAt: Number(retryAt) > 0 ? Number(retryAt) : 0,
+    };
+  } catch {
+    return { failures: 0, retryAt: 0 };
+  }
+}
+
+/** Saves the wait; null or no failures clears it. */
+export function writeKioskPinWait(wait, storage = globalThis.localStorage) {
+  try {
+    if (wait?.failures > 0) storage?.setItem(KIOSK_PIN_WAIT_KEY, JSON.stringify({ failures: wait.failures, retryAt: wait.retryAt || 0 }));
+    else storage?.removeItem(KIOSK_PIN_WAIT_KEY);
+  } catch { /* Storage refused: the wait holds for this session. */ }
+}

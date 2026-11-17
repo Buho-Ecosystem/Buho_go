@@ -226,10 +226,12 @@ export function readInvoice(invoice) {
     const decoded = new Invoice({ pr: invoice });
     const hash = String(decoded.paymentHash || '').toLowerCase();
     const expiresAt = decoded.expiryDate instanceof Date ? Math.floor(decoded.expiryDate.getTime() / 1000) : 0;
+    const issuedAt = Number(decoded.timestamp);
     return {
       paymentHash: HASH.test(hash) ? hash : null,
       amountSats: invoiceSats(decoded),
       expiresAt: expiresAt > 0 ? expiresAt : null,
+      issuedAt: issuedAt > 0 ? issuedAt : null,
     };
   } catch {
     return null;

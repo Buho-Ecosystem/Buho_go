@@ -130,6 +130,16 @@ test('QR-first card reuses the durable invoice; unrelated balance changes never 
   await h.vm.payments.checkNow(); assert.equal(h.merchant.sales.length, 1);
 });
 
+test('a card that failed on the request leaves the method open when that request is paid later', async ctx => {
+  const h = await harness(ctx, { authorize: async () => { throw new Error('timeout'); } });
+  await h.charge('100'); h.tap(); await h.settle();
+  assert.equal(h.authorized.length, 1);
+  h.paidHashes.add(h.vm.invoiceData.paymentHash);
+  await h.vm.payments.checkNow(); await h.settle();
+  assert.equal(h.vm.state, 'success');
+  assert.equal(h.merchant.sales[0].method, '', 'neither Bitcoin Card nor QR code is claimed');
+});
+
 for (const [tips, rounding, selected, expected] of [[false, false, false, 100], [true, false, false, 100], [true, false, true, 110], [false, true, true, 500], [true, true, true, 500]]) {
   test(`tip ${tips}, round-up ${rounding}, selected ${selected} keeps exact immutable extras`, async ctx => {
     const h = await harness(ctx, { storeState: { kioskTipEnabled: tips, kioskRoundUpEnabled: rounding } });
@@ -250,6 +260,17 @@ test('a request that never came back is not charged, and Try again makes a new o
   assert.equal(h.dialogs.length, 0, 'nothing could have been paid, so nothing to ask');
   assert.equal(h.created.length, 2);
   assert.equal(h.vm.state, 'payment');
+});
+
+test('a typed amount alone does not block a saved basket; opening one replaces the amount', async ctx => {
+  const h = await harness(ctx);
+  await h.input('100'); await h.vm.addToAccumulated(); await h.settle();
+  await h.vm.saveBasket(); await h.settle();
+  await h.input('12');
+  assert.equal(h.vm.basketHasItems, false);
+  await h.vm.resumeBasket(h.merchant.savedBaskets[0].id); await h.settle();
+  assert.equal(h.vm.draft.items.length, 1);
+  assert.equal(h.vm.draft.amountRaw, '');
 });
 
 test('Clear basket asks first and keeps the basket until confirmed', async ctx => {

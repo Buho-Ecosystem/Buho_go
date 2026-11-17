@@ -192,14 +192,14 @@ export function normalizeKioskOrder(value) {
 /**
  * The register as saved. With `setAside`, a record that no longer reads (an
  * order, basket or product) is set aside instead of closing the whole
- * register: it stays in storage and in the backup, and `setAside` counts it.
+ * register: it stays in storage and in the backup, as `{ kind, record }`.
  */
 export function normalizeKioskMerchant(value, currency = 'USD', { setAside = false } = {}) {
   if (!value || typeof value !== 'object' || value.version !== KIOSK_MERCHANT_VERSION) throw kioskError('KIOSK_STORAGE_UNREADABLE', 'These register records could not be read. Keep a backup before replacing them.');
   const state = emptyKioskMerchant(value.catalogCurrency || currency);
   const aside = [];
   // One unreadable record must not lock the register, nor one twin of a record that read.
-  const readable = (list, read, identity = item => item.id) => {
+  const readable = (kind, list, read, identity = item => item.id) => {
     const seen = new Set();
     return list.flatMap(raw => {
       try {
@@ -209,7 +209,7 @@ export function normalizeKioskMerchant(value, currency = 'USD', { setAside = fal
         return [item];
       } catch (error) {
         if (!setAside) throw error;
-        aside.push(raw);
+        aside.push({ kind, record: raw });
         return [];
       }
     });
@@ -218,16 +218,16 @@ export function normalizeKioskMerchant(value, currency = 'USD', { setAside = fal
   state.setupCompleted = !!value.setupCompleted;
   state.entryMode = value.entryMode === 'products' ? 'products' : 'amount';
   for (const key of ['products', 'categories', 'savedBaskets', 'orders']) if (!Array.isArray(value[key])) fail('The saved register is incomplete.');
-  state.products = readable(value.products, product => normalizeKioskProduct(product, state.catalogCurrency));
+  state.products = readable('products', value.products, product => normalizeKioskProduct(product, state.catalogCurrency));
   state.categories = value.categories.map(category => kioskText(category)).filter(Boolean);
   if (new Set(state.categories).size !== state.categories.length) fail('The saved catalog contains duplicate entries.');
   state.draft = normalizeKioskDraft(value.draft, state.catalogCurrency);
-  state.savedBaskets = readable(value.savedBaskets, basket => {
+  state.savedBaskets = readable('savedBaskets', value.savedBaskets, basket => {
     if (!kioskText(basket.id) || !kioskText(basket.name)) fail('A saved basket is incomplete.');
     return { id: kioskIdentity(basket.id), name: kioskText(basket.name), createdAt: kioskCount(basket.createdAt), draft: normalizeKioskDraft(basket.draft, state.catalogCurrency) };
   });
   const proofs = new Set();
-  state.orders = readable(value.orders, raw => {
+  state.orders = readable('orders', value.orders, raw => {
     const order = normalizeKioskOrder(raw);
     const keys = order.attempts.filter(attempt => attempt.paymentHash).map(attempt => JSON.stringify([attempt.walletId, attempt.paymentHash]));
     if (keys.some(key => proofs.has(key)) || new Set(keys).size !== keys.length) fail('An invoice is assigned to more than one sale.');
@@ -356,5 +356,8 @@ export function readKioskBundle(text) {
   let bundle;
   try { bundle = JSON.parse(text); } catch { fail('This is not a readable register backup.'); }
   if (bundle.kind !== KIOSK_BUNDLE_KIND || bundle.version !== 1) fail('Choose a BuhoGO register backup.');
-  return normalizeKioskMerchant(bundle.data);
+  const data = normalizeKioskMerchant(bundle.data);
+  // Records the backup kept aside come back aside, as they were.
+  const aside = Array.isArray(bundle.setAside) ? bundle.setAside.filter(entry => ['products', 'savedBaskets', 'orders'].includes(entry?.kind)) : [];
+  return aside.length ? { ...data, setAside: aside } : data;
 }

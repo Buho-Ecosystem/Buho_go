@@ -1,7 +1,6 @@
 // Kiosk register: setup, checkout, local catalog, receipts and owner controls.
 export default {
   "Finish or set aside the current payment before changing the receiving wallet.": "Finish or set aside the current payment before changing the receiving wallet.",
-  "Not confirmed": "Not confirmed",
   "Clear basket?": "Clear basket?",
   "This removes the items and entered amount from this basket.": "This removes the items and entered amount from this basket.",
   "Recovered basket": "Recovered basket",
@@ -52,6 +51,7 @@ export default {
   "Existing products keep their pricing currency.": "Existing products keep their pricing currency.",
   "Export": "Export",
   "Export register backup": "Export register backup",
+  "Some records cannot be read here. They stay in the register backup.": "Some records cannot be read here. They stay in the register backup.",
   "Export sales": "Export sales",
   "Export {n} matching sales: {scope}": "Export {n} matching sales: {scope}",
   "Extras": "Extras",

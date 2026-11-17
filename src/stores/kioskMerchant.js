@@ -318,7 +318,7 @@ export const useKioskMerchantStore = defineStore('kioskMerchant', {
       }));
     },
     async markAttemptExpired(orderId, attemptId) {
-      return this._change(data => changeOrder(data, orderId, order => { const attempt = requireAttempt(order, attemptId); if (attempt.status === 'paid') return unchanged(attempt); if (!attempt.paymentHash) throw kioskError('KIOSK_PAYMENT_PENDING', 'This request still needs to be checked.'); attempt.status = 'expired'; return attempt; }));
+      return this._change(data => changeOrder(data, orderId, order => { const attempt = requireAttempt(order, attemptId); if (attempt.status === 'paid' || attempt.status === 'failed') return unchanged(attempt); if (!attempt.paymentHash) throw kioskError('KIOSK_PAYMENT_PENDING', 'This request still needs to be checked.'); attempt.status = 'expired'; return attempt; }));
     },
     async settleAttempt(orderId, attemptId, proof) {
       return this._change(data => changeOrder(data, orderId, order => {
@@ -357,7 +357,8 @@ export const useKioskMerchantStore = defineStore('kioskMerchant', {
       return this._change(data => {
         if (data.products.length || data.orders.length || data.savedBaskets.length || kioskDraftHasValue(data.draft)) throw kioskError('KIOSK_RESTORE_CONFLICT', 'Restore register data into an empty register so existing records stay safe.');
         const revision = data.revision;
-        Object.assign(data, restored, { revision });
+        const setAside = [...(data.setAside || []), ...(restored.setAside || [])];
+        Object.assign(data, restored, { revision }, setAside.length ? { setAside } : {});
         return true;
       });
     },

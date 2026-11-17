@@ -139,6 +139,9 @@
               </section>
             </div>
             <p class="ko-context ko-context--inset">{{ $t('Saved on this device') }}</p>
+            <p v-if="merchant.setAsideCount" class="ko-context ko-context--inset">
+              {{ $t('Some records cannot be read here. They stay in the register backup.') }}
+            </p>
           </template>
           <template #default="{ item: sale }">
             <button :key="sale.id" class="ko-sale-row" type="button" @click="openReceipt(sale)">
@@ -738,7 +741,7 @@ export default {
         })
       if (this.view === 'receipt' && this.selectedSale)
         actions.unshift(
-          ...(['waiting', 'expired'].includes(this.selectedSale.status)
+          ...(this.recheckable
             ? [{ id: 'resume-payment', icon: 'tabler:refresh', label: this.$t('Check payment again') }]
             : []),
           { id: 'details', icon: 'tabler:info-circle', label: this.$t('Payment details') },
@@ -750,6 +753,11 @@ export default {
     },
     selectedSale() {
       return this.merchant.getOrder(String(this.$route.query.sale || ''))
+    },
+    /** A sale whose shown request may still turn out paid: waiting, expired, or closed as unpaid on one answer. */
+    recheckable() {
+      const sale = this.selectedSale
+      return sale?.status !== 'paid' && !!sale?.attempts?.some(a => ['waiting', 'expired'].includes(a.status) || (a.status === 'failed' && a.paymentHash))
     },
     saleMethod() {
       const method = kioskPaymentMethod(this.selectedSale)

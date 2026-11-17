@@ -2,6 +2,8 @@ import { cloneKiosk, kioskError, KIOSK_MERCHANT_VERSION } from '../utils/kioskMe
 
 const DATABASE = 'buhoGO_kiosk_merchant_v1';
 const RECORDS = 'records';
+/** The catalog as saved: a product set aside on load stays in it. */
+const catalog = data => ({ products: [...data.products, ...(data.setAside || []).filter(entry => entry.kind === 'products').map(entry => entry.record)], categories: data.categories });
 const metadata = data => ({ version: data.version, revision: data.revision, setupCompleted: data.setupCompleted, catalogCurrency: data.catalogCurrency, entryMode: data.entryMode, activeOrderId: data.activeOrderId });
 
 /** One merchant repository. Individual records share one atomic transaction; a keypress never rewrites the ledger. */
@@ -46,7 +48,7 @@ export function createKioskMerchantStorage({ indexedDB = globalThis.indexedDB, n
     const db = await open();
     const puts = [{ key: 'meta', value: metadata(next) }];
     const deletes = [];
-    if (!previous || next.products !== previous.products || next.categories !== previous.categories) puts.push({ key: 'catalog', value: { products: next.products, categories: next.categories } });
+    if (!previous || next.products !== previous.products || next.categories !== previous.categories) puts.push({ key: 'catalog', value: catalog(next) });
     if (!previous || next.draft !== previous.draft) puts.push({ key: 'draft', value: next.draft });
     for (const [collection, prefix] of [['orders', 'order:'], ['savedBaskets', 'basket:']]) {
       if (previous && next[collection] === previous[collection]) continue;
@@ -56,6 +58,13 @@ export function createKioskMerchantStorage({ indexedDB = globalThis.indexedDB, n
         old.delete(value.id);
       }
       for (const id of old.keys()) deletes.push(prefix + id);
+    }
+    // Records set aside that arrive with a restored backup are kept as they were.
+    if (next.setAside !== previous?.setAside) {
+      for (const { kind, record } of next.setAside || []) {
+        const prefix = { orders: 'order:', savedBaskets: 'basket:' }[kind];
+        if (prefix && record?.id && !next[kind].some(value => value.id === record.id)) puts.push({ key: prefix + record.id, value: record });
+      }
     }
     // Strip Vue proxies only from changed records, never JSON-serialize the whole history for a draft edit.
     const records = puts.map(cloneKiosk);
@@ -71,7 +80,7 @@ export function createKioskMerchantStorage({ indexedDB = globalThis.indexedDB, n
       request.onsuccess = () => {
         if ((request.result?.value?.revision || 0) !== (previous?.revision || 0)) { conflict = true; tx.abort(); return; }
         if (!request.result) {
-          store.put(cloneKiosk({ key: 'catalog', value: { products: next.products, categories: next.categories } }));
+          store.put(cloneKiosk({ key: 'catalog', value: catalog(next) }));
           store.put(cloneKiosk({ key: 'draft', value: next.draft }));
         }
         for (const record of records) store.put(record);
