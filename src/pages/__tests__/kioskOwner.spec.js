@@ -51,6 +51,7 @@ async function mountOwner(ctx, { enabled = true, setupCompleted = enabled, walle
     '../utils/fiatCurrencies.js': { SELECTABLE_FIAT_CURRENCIES: ['EUR', 'USD'] },
     '../utils/kioskMerchant.js': merchantUtils,
     '../utils/autoTransferCopy.js': { destinationLabel: () => '', statusText: () => ({ text: '' }) },
+    '../directives/balanceUpdating.js': { default: {} },
   };
   const module = { exports: {} };
   new Function('require', 'module', 'exports', code)(name => {

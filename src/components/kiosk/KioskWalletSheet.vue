@@ -19,7 +19,7 @@
       <div class="form-sheet-grabber" aria-hidden="true"></div>
       <header class="form-sheet-header">
         <span aria-hidden="true"></span>
-        <h2 class="form-sheet-title">{{ $t('Receiving Wallet') }}</h2>
+        <h2 class="form-sheet-title">{{ $t('Receiving wallet') }}</h2>
         <button type="button" class="sheet-nav-icon kws-cancel" :aria-label="$t('Cancel')" @click="$emit('update:modelValue', false)"><Icon icon="tabler:x" width="20" height="20" /></button>
       </header>
       <div class="kws-body">

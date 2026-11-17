@@ -22,6 +22,15 @@ const settleLayout = () => page.evaluate(async () => {
   await new Promise(requestAnimationFrame);
   await new Promise(requestAnimationFrame);
 });
+// A long list learns its full height as its rows mount, so one jump to the end
+// can land short of the last row. Jump again, a frame apart, until it is there.
+async function scrollUntil(scroller, edge, row) {
+  for (let tries = 0; tries < 50 && !(await row.isVisible()); tries += 1) {
+    await page.locator(scroller).evaluate((el, end) => { el.scrollTop = end ? el.scrollHeight : 0; }, edge === 'end');
+    await settleLayout();
+  }
+  await row.waitFor();
+}
 try {
   await page.goto(`${base}/#/kiosk-mode`);
   await page.waitForSelector('#q-app .q-page');
@@ -40,10 +49,8 @@ try {
   await page.locator('.kiosk-products__product').first().waitFor();
   await settleLayout();
   const productRows=await page.locator('.kiosk-products__product').count();assert(productRows<100,`product rows ${productRows}`);
-  await page.locator('.kiosk-products__list').evaluate(el=>{el.scrollTop=el.scrollHeight});
-  await page.getByRole('button',{name:'Edit Product 0999',exact:true}).waitFor();
-  await page.locator('.kiosk-products__list').evaluate(el=>{el.scrollTop=0});
-  await page.getByRole('button',{name:'Edit Product 0000',exact:true}).waitFor();
+  await scrollUntil('.kiosk-products__list', 'end', page.getByRole('button',{name:'Edit Product 0999',exact:true}));
+  await scrollUntil('.kiosk-products__list', 'start', page.getByRole('button',{name:'Edit Product 0000',exact:true}));
   await page.getByRole('button',{name:'More actions',exact:true}).click();
   await page.locator('.ko-sheet').getByRole('button',{name:'Close',exact:true}).click();
   await page.locator('.ko-sheet').waitFor({state:'hidden'});
@@ -60,8 +67,7 @@ try {
   await settleLayout();
   const salesRows=await page.locator('.ko-sale-row').count();assert(salesRows<100,`sales rows ${salesRows}`);
   assert.match(await page.locator('.ko-summary').innerText(),/10,?000 paid sales/);
-  await page.locator('.ko-sales-scroll').evaluate(el=>{el.scrollTop=el.scrollHeight});
-  await page.getByRole('button',{name:/Sale 09999/}).waitFor();
+  await scrollUntil('.ko-sales-scroll', 'end', page.getByRole('button',{name:/Sale 09999/}));
   const before=await page.locator('.ko-sales-scroll').evaluate(el=>el.scrollTop);
   await page.getByRole('button',{name:/Sale 09999/}).click();
   await page.getByRole('button',{name:'Back',exact:true}).click();
@@ -73,8 +79,7 @@ try {
   await page.getByRole('button',{name:'Cancel',exact:true}).click();
   await page.getByRole('button',{name:/Sale 09999/}).waitFor();
   assert(Math.abs(await page.locator('.ko-sales-scroll').evaluate(el=>el.scrollTop)-before)<150,'search cancel restores position');
-  await page.locator('.ko-sales-scroll').evaluate(el=>{el.scrollTop=0});
-  await page.getByRole('button',{name:/Sale 00000/}).waitFor();
+  await scrollUntil('.ko-sales-scroll', 'start', page.getByRole('button',{name:/Sale 00000/}));
   await page.screenshot({path:`${output}/owner-sales.png`});
   await page.locator('.ko-sale-row').first().click();
   await page.locator('.kiosk-receipt').waitFor();

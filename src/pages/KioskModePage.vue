@@ -143,7 +143,7 @@
           <template #default="{ item: sale }">
             <button :key="sale.id" class="ko-sale-row" type="button" @click="openReceipt(sale)">
               <span>
-                <strong>{{ sale.label || sale.items[0]?.name || $t('Sale') }}</strong>
+                <strong>{{ saleTitle(sale) }}</strong>
                 <small>
                   {{ date(sale.paidAt || sale.createdAt) }} · {{ statusText(sale) }}<template v-if="sale.duplicatePayment"> · {{ $t('Needs attention') }}</template>
                 </small>
@@ -219,7 +219,7 @@
       <div v-else-if="view === 'settings'" class="ko-scroll ko-body">
         <IdentityGroup :title="$t('Payments')">
           <IdentityRow
-            :label="$t('Receiving Wallet')"
+            :label="$t('Receiving wallet')"
             :caption="receivingWallet?.blocked ? receivingWallet.caption : ''"
             @click="walletSheetOpen = true"
           >
@@ -323,14 +323,36 @@
         />
       </div>
       <div v-else-if="view === 'payouts'" class="ko-scroll ko-body">
-        <IdentityGroup :footer="$t('Your wallet balance includes payments outside this register.')">
-          <IdentityRow
-            :label="receivingWallet?.name || $t('Receiving Wallet')"
-            :caption="receivingWallet?.caption || ''"
-            :interactive="false"
+        <!-- What the register holds, and the one thing to do with it. -->
+        <section class="ko-payout-balance">
+          <span class="ko-payout-wallet">{{ receivingWallet?.name || $t('Receiving wallet') }}</span>
+          <span
+            v-if="!payoutBalance.known"
+            v-balance-updating="payoutBalance.refreshing"
+            class="balance-placeholder"
+            role="img"
+            :aria-label="$t('Balance not loaded yet')"
           />
-          <IdentityRow :label="$t('Withdraw now')" icon="tabler:arrow-up-right" @click="withdrawOpen = true" />
-        </IdentityGroup>
+          <template v-else>
+            <HiddenAmount class="ko-payout-value" :class="{ 'balance-stale': payoutBalance.outdated }">
+              {{ sats(payoutBalance.balance) }}
+            </HiddenAmount>
+            <HiddenAmount
+              v-if="walletStore.fiatValueOf(payoutBalance.balance)"
+              class="ko-payout-fiat"
+              :class="{ 'balance-stale': payoutBalance.outdated }"
+            >
+              {{ walletStore.fiatValueOf(payoutBalance.balance) }}
+            </HiddenAmount>
+          </template>
+        </section>
+        <button class="ko-primary ko-payout-primary" :disabled="busy || !receivingWallet" @click="withdrawOpen = true">
+          <Icon icon="tabler:arrow-up-right" width="20" height="20" />{{ $t('Withdraw now') }}
+        </button>
+        <p class="ko-note">
+          {{ $t('Your wallet balance includes payments outside this register.') }}
+          {{ $t('Review the amount and fees before money moves.') }}
+        </p>
         <IdentityGroup
           :title="$t('Auto-Transfer')"
           :footer="$t('Rules run while BuhoGO is open and connected. Fees are checked at each transfer.')"
@@ -358,6 +380,11 @@
               />
             </template>
           </IdentityRow>
+          <IdentityRow
+            v-if="transferRule"
+            :label="$t('Transfer history')"
+            @click="$router.push(`/auto-transfer/${walletStore.kioskWalletId}`)"
+          />
         </IdentityGroup>
         <p class="ko-note">
           {{
@@ -366,13 +393,6 @@
             )
           }}
         </p>
-        <button
-          v-if="transferRule"
-          class="ko-plain"
-          @click="$router.push(`/auto-transfer/${walletStore.kioskWalletId}`)"
-        >
-          {{ $t('Transfer history and details') }}
-        </button>
       </div>
       <div v-else class="ko-scroll ko-body">
         <button class="ko-primary ko-open" :disabled="busy" @click="openRegister">
@@ -521,14 +541,20 @@
         <dl v-if="selectedSale">
           <dt>{{ $t('Reference') }}</dt>
           <dd>{{ selectedSale.id }}</dd>
-          <dt>{{ $t('Receiving Wallet') }}</dt>
-          <dd>{{ selectedSale.walletName }}</dd>
+          <template v-if="selectedSale.walletName">
+            <dt>{{ $t('Receiving wallet') }}</dt>
+            <dd>{{ selectedSale.walletName }}</dd>
+          </template>
           <dt>{{ $t('Payment status') }}</dt>
           <dd>{{ statusText(selectedSale) }}</dd>
-          <dt>{{ $t('Payment method') }}</dt>
-          <dd>{{ selectedSale.method }}</dd>
-          <dt>{{ $t('Sale label') }}</dt>
-          <dd>{{ selectedSale.label || '—' }}</dd>
+          <template v-if="saleMethod">
+            <dt>{{ $t('Payment method') }}</dt>
+            <dd>{{ saleMethod }}</dd>
+          </template>
+          <template v-if="selectedSale.label">
+            <dt>{{ $t('Sale label') }}</dt>
+            <dd>{{ selectedSale.label }}</dd>
+          </template>
           <template v-for="attempt in selectedSale.attempts" :key="attempt.id">
             <dt>{{ $t('Payment reference') }}</dt>
             <dd>{{ attempt.paymentHash || $t('Waiting for confirmation') }}</dd>
@@ -556,6 +582,8 @@ import KioskWithdraw from '../components/kiosk/KioskWithdraw.vue'
 import AutoTransferSheet from '../components/autoTransfer/AutoTransferSheet.vue'
 import IdentityGroup from '../components/identity/IdentityGroup.vue'
 import IdentityRow from '../components/identity/IdentityRow.vue'
+import HiddenAmount from '../components/HiddenAmount.vue'
+import balanceUpdating from '../directives/balanceUpdating.js'
 import { useWalletStore } from '../stores/wallet'
 import { useKioskMerchantStore } from '../stores/kioskMerchant.js'
 import { useAutoWithdrawStore } from '../stores/autoWithdraw'
@@ -567,7 +595,9 @@ import {
   kioskDraftHasValue,
   kioskError,
   kioskCountLabel,
-  kioskReceiptText
+  kioskReceiptText,
+  kioskSaleTitle,
+  kioskPaymentMethod
 } from '../utils/kioskMerchant.js'
 import { formatAmount } from '../utils/amountFormatting.js'
 import { shareContent } from '../utils/share.js'
@@ -580,6 +610,7 @@ const normalize = value =>
 const VIEWS = ['home', 'products', 'categories', 'sales', 'receipt', 'baskets', 'settings', 'payouts']
 export default {
   name: 'KioskModePage',
+  directives: { balanceUpdating },
   components: {
     Icon,
     KioskToolbar,
@@ -590,6 +621,7 @@ export default {
     KioskPinSheet,
     KioskPinPad,
     KioskWithdraw,
+    HiddenAmount,
     AutoTransferSheet,
     IdentityGroup,
     IdentityRow
@@ -667,6 +699,9 @@ export default {
     setupWallet() {
       return this.walletOptions.find(wallet => wallet.id === this.setupWalletId) || null
     },
+    payoutBalance() {
+      return this.walletStore.getDisplayBalance(this.walletStore.kioskWalletId)
+    },
     receivingWallet() {
       return this.walletOptions.find(wallet => wallet.id === this.walletStore.kioskWalletId) || null
     },
@@ -703,6 +738,9 @@ export default {
         })
       if (this.view === 'receipt' && this.selectedSale)
         actions.unshift(
+          ...(['waiting', 'expired'].includes(this.selectedSale.status)
+            ? [{ id: 'resume-payment', icon: 'tabler:refresh', label: this.$t('Check payment again') }]
+            : []),
           { id: 'details', icon: 'tabler:info-circle', label: this.$t('Payment details') },
           { id: 'label', icon: 'tabler:tag', label: this.$t('Edit label') },
           { id: 'print', icon: 'tabler:printer', label: this.$t('Print receipt') },
@@ -712,6 +750,10 @@ export default {
     },
     selectedSale() {
       return this.merchant.getOrder(String(this.$route.query.sale || ''))
+    },
+    saleMethod() {
+      const method = kioskPaymentMethod(this.selectedSale)
+      return method ? this.$t(method === 'card' ? 'Bitcoin Card' : 'QR code') : ''
     },
     saleCurrencies() {
       return [...new Set(this.merchant.orders.map(sale => sale.currency))].sort()
@@ -734,7 +776,7 @@ export default {
               (this.statusFilter === 'paid' && sale.status === 'paid') ||
               (this.statusFilter === 'waiting' && ['preparing', 'waiting'].includes(sale.status)) ||
               (this.statusFilter === 'attention' &&
-                (['uncertain', 'expired', 'failed'].includes(sale.status) || sale.duplicatePayment))) &&
+                (sale.status === 'expired' || sale.duplicatePayment))) &&
             terms.every(term =>
               normalize(
                 `${sale.label} ${sale.id} ${sale.walletName} ${sale.items.map(item => `${item.name} ${item.category}`).join(' ')}`
@@ -1091,16 +1133,11 @@ export default {
     },
     statusText(sale) {
       return this.$t(
-        sale.status === 'paid'
-          ? 'Paid'
-          : sale.status === 'failed'
-            ? 'Failed'
-            : sale.status === 'expired'
-              ? 'Expired'
-              : sale.status === 'uncertain'
-                ? 'Needs attention'
-                : 'Waiting for confirmation'
+        { paid: 'Paid', failed: 'Not paid', expired: 'Expired' }[sale.status] || 'Waiting for confirmation'
       )
+    },
+    saleTitle(sale) {
+      return kioskSaleTitle(sale, (key, values) => this.$t(key, values))
     },
     async resumePayment(id) {
       await this.run(async () => {
@@ -1370,6 +1407,40 @@ export default {
 .ko-empty {
   min-height: 240px;
 }
+.ko-payout-balance {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 18px 0 22px;
+  text-align: center;
+}
+.ko-payout-wallet {
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 600;
+}
+.ko-payout-value {
+  color: var(--text-primary);
+  font:
+    750 34px/1.15 'Manrope',
+    sans-serif;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+.ko-payout-fiat {
+  color: var(--text-secondary);
+  font-size: 14px;
+}
+.ko-payout-primary {
+  margin-bottom: 10px;
+}
+.ko-payout-balance .balance-placeholder {
+  width: 140px;
+  height: 34px;
+}
+/* The page's one primary action, on the app's primary colours so it stands
+   out in both themes. */
 .ko-primary {
   display: flex;
   align-items: center;
@@ -1378,10 +1449,10 @@ export default {
   width: 100%;
   min-height: 52px;
   padding: 12px 18px;
-  border: 1px solid var(--btn-neutral-border);
+  border: 0;
   border-radius: 15px;
-  background: var(--btn-neutral-bg);
-  color: var(--btn-neutral-fg);
+  background: var(--btn-primary-bg);
+  color: var(--btn-primary-fg);
   font:
     700 14px/1.4 'Manrope',
     sans-serif;

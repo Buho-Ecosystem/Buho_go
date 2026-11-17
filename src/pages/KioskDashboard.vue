@@ -12,7 +12,7 @@
         <div class="kiosk-logo">
           <img src="/buho_logo.svg" alt="Buho" class="kiosk-logo-img" />
         </div>
-        <button :aria-label="$t('Owner settings')" class="kiosk-lock-btn" @click.stop="showUnlockDialog = true">
+        <button :aria-label="$t('Owner settings')" class="kiosk-lock-btn" @click.stop="openUnlock">
           <q-icon name="lock" size="18px" />
         </button>
       </header>
@@ -20,15 +20,15 @@
       <div v-if="storageProblem || merchant.storageError" class="pos-notice" role="alert">
         {{ $t('Register data could not be saved. Keep this screen open and try again.') }}<button @click="retryStorage">{{ $t('Try again') }}</button>
       </div>
-      <button v-if="pendingOrders.length && state === 'input'" class="pos-parked-line" @click="showParkedSheet = true">
+      <button v-if="parkedLine && state === 'input'" class="pos-parked-line" @click="showParkedSheet = true">
         <q-icon name="schedule" size="18px" />
-        <span>{{ count(pendingOrders.length, '1 waiting payment', '{n} waiting payments') }}</span>
+        <span>{{ parkedLine }}</span>
         <q-icon name="chevron_right" size="18px" />
       </button>
       <!-- ═══ Paid ═══ -->
       <div v-if="state === 'success'" class="pos-state-center">
         <div class="pos-paid-ring"><q-icon name="check" size="36px" /></div>
-        <span class="pos-state-title mt-4">{{ $t('kiosk.paymentReceived') }}</span>
+        <span class="pos-state-title mt-4">{{ $t('Bitcoin received') }}</span>
         <div class="pos-amount-pill mt-2">{{ paymentAmount }}</div>
         <small v-if="paymentShowsFiat" class="pos-state-sub">{{ displaySats(activeOrder.totalSats) }}</small>
         <button class="pos-text-btn" @click="showCurrentReceipt = true">{{ $t('Receipt') }}</button>
@@ -119,35 +119,41 @@
           </div>
         </template>
 
-        <p v-if="paymentProblem" role="status">{{ paymentProblem }}</p>
-        <button class="pos-text-btn" @click="payments.checkNow()">{{ $t('Check payment again') }}</button>
+        <template v-if="paymentProblem">
+          <p role="status">{{ paymentProblem }}</p>
+          <button class="pos-text-btn" @click="payments.reconnect()">{{ $t('Check payment again') }}</button>
+        </template>
+        <p v-else-if="!cardBusy && !cardPinActive" class="pos-auto-hint">
+          {{ $t('This screen updates when the payment arrives.') }}
+        </p>
         <div v-if="!cardBusy && !cardPinActive" class="pos-payment-actions">
           <button class="pos-outline-btn" @click.stop="resetToInput">{{ $t('Next customer') }}</button>
         </div>
       </div>
 
+      <div v-else-if="state === 'loading'" class="pos-state-center" role="status">
+        <q-spinner size="28px" />
+        <span class="pos-state-sub">{{ $t('Opening your register…') }}</span>
+      </div>
+
       <!-- ═══ Processing ═══ -->
-      <div v-else-if="state === 'processing'" class="pos-state-center">
+      <div v-else-if="state === 'processing'" class="pos-state-center" role="status">
         <div class="pos-processing-wrap">
           <div class="pos-processing-ring pos-ring-1"></div>
           <div class="pos-processing-ring pos-ring-2"></div>
           <div class="pos-processing-core"><q-icon name="receipt_long" size="26px" /></div>
         </div>
-        <span class="pos-state-title mt-6">{{ $t('kiosk.creatingInvoice') || 'Creating Invoice' }}</span>
-        <span class="pos-state-sub">{{ $t('kiosk.generatingInvoice') || 'Generating payment invoice...' }}</span>
+        <span class="pos-state-title mt-6">{{ $t('kiosk.creatingInvoice') }}</span>
       </div>
 
+      <!-- What stopped the payment, and the one safe way on. -->
       <div v-else-if="state === 'interrupted'" class="pos-state-center" role="status">
-        <q-icon :name="payments.status.value === 'expired' ? 'schedule' : 'help_outline'" size="36px" />
-        <h1 class="pos-state-title">
-          {{ payments.status.value === 'expired' ? $t('Payment request expired') : $t('Payment not confirmed') }}
-        </h1>
-        <p class="pos-state-sub">
-          {{ paymentProblem || $t('We are checking the original payment. Do not ask the customer to pay again yet.') }}
-        </p>
-        <button class="pos-primary-btn" @click="payments.reconnect()">{{ $t('Check payment again') }}</button>
-        <button v-if="payments.status.value === 'expired'" class="pos-secondary-btn" @click="retryExpired">
-          {{ $t('Create a new payment request') }}
+        <q-icon :name="interruption.icon" size="36px" />
+        <h1 class="pos-state-title">{{ interruption.title }}</h1>
+        <p class="pos-state-sub">{{ interruption.text }}</p>
+        <button v-if="interruption.retry" class="pos-primary-btn" @click="retryCharge">{{ interruption.retry }}</button>
+        <button v-if="interruption.check" class="pos-primary-btn" @click="payments.reconnect()">
+          {{ $t('Check payment again') }}
         </button>
         <button class="pos-text-btn" @click="resetToInput">{{ $t('Next customer') }}</button>
       </div>
@@ -157,7 +163,7 @@
         <div class="tip-header">
           <span class="tip-prompt">{{ extrasTitle }}</span>
           <div class="tip-subtotal-pill">
-            <span class="tip-subtotal-label">{{ $t('kiosk.subtotal') || 'Subtotal' }}</span>
+            <span class="tip-subtotal-label">{{ $t('kiosk.subtotal') }}</span>
             <span class="tip-subtotal-val">{{ displaySats(baseAmountSats) }}</span>
           </div>
         </div>
@@ -207,7 +213,7 @@
         <div class="tip-footer">
           <div class="tip-breakdown">
             <div class="tip-break-row">
-              <span>{{ $t('kiosk.subtotal') || 'Subtotal' }}</span>
+              <span>{{ $t('kiosk.subtotal') }}</span>
               <span>{{ displaySats(baseAmountSats) }}</span>
             </div>
             <div v-if="selectedTipAmount > 0 || useRoundUp" class="tip-break-row tip-break-tip">
@@ -224,12 +230,30 @@
             <span>{{ $t('Confirm') }}</span>
             <q-icon name="arrow_forward" size="18px" />
           </button>
-          <button class="pos-secondary-btn" @click.stop="state = 'input'">{{ $t('Back') }}</button>
+          <button class="pos-secondary-btn" @click.stop="leaveTip">{{ $t('Back') }}</button>
         </div>
       </div>
 
       <template v-else>
-        <div class="pos-entry-controls">
+        <!-- Search takes the switch's place while it is open, as a search
+             field does in a navigation bar. -->
+        <form
+          v-if="entryMode === 'products' && productSearchOpen"
+          class="pos-entry-controls pos-product-search"
+          role="search"
+          @submit.prevent="closeSearchKeyboard"
+        >
+          <input
+            ref="productSearchInput"
+            v-model="productSearch"
+            :placeholder="$t('Search products')"
+            :aria-label="$t('Search products')"
+            type="search"
+            enterkeyhint="search"
+          />
+          <button type="button" @click="closeProductSearch">{{ $t('Cancel') }}</button>
+        </form>
+        <div v-else class="pos-entry-controls">
           <div class="pos-entry-switch" role="group" :aria-label="$t('Sale entry')">
             <button
               :aria-pressed="entryMode === 'amount'"
@@ -254,37 +278,7 @@
           >
             <q-icon name="search" size="22px" />
           </button>
-          <button class="pos-icon-btn" :aria-label="$t('Basket actions')">
-            <q-icon name="more_horiz" size="22px" />
-            <q-menu auto-close>
-              <q-list>
-                <q-item clickable :disable="!hasDraft" @click="saveBasket">
-                  <q-item-section>{{ $t('Save basket') }}</q-item-section>
-                </q-item>
-                <q-item clickable @click="showSavedSheet = true">
-                  <q-item-section>{{ $t('Saved baskets') }}</q-item-section>
-                </q-item>
-                <q-item clickable :disable="!hasDraft" @click="clearAll">
-                  <q-item-section>{{ $t('Clear basket') }}</q-item-section>
-                </q-item>
-              </q-list>
-            </q-menu>
-          </button>
         </div>
-        <form
-          v-if="entryMode === 'products' && productSearchOpen"
-          class="pos-product-search"
-          @submit.prevent="closeSearchKeyboard"
-        >
-          <input
-            ref="productSearchInput"
-            v-model="productSearch"
-            :placeholder="$t('Search products')"
-            :aria-label="$t('Search products')"
-            type="search"
-          />
-          <button @click.prevent="closeProductSearch">{{ $t('Cancel') }}</button>
-        </form>
         <button v-if="draft.items.length" class="pos-cart-summary" @click="showCartSheet = true">
           <span>
             {{ itemCount }} {{ itemCount === 1 ? $t('kiosk.item') : $t('kiosk.items') }} · {{ basketDisplay }}
@@ -384,8 +378,8 @@
           </div>
           <div class="pos-basket-items">
             <div v-for="item in draft.items" :key="item.id" class="pos-basket-row">
-              <span>
-                {{ item.name }}<small>{{ itemPrice(item) }}</small>
+              <span class="pos-basket-name">
+                {{ item.name }}<small v-if="item.qty > 1">{{ $t('{price} each', { price: unitPrice(item) }) }}</small>
               </span>
               <div class="pos-quantity">
                 <button :aria-label="$t('Remove one {name}', { name: item.name })" @click="changeQuantity(item, -1)">
@@ -396,67 +390,80 @@
                   <q-icon name="add" />
                 </button>
               </div>
+              <span class="pos-basket-line">{{ itemPrice(item) }}</span>
+            </div>
+            <!-- A typed amount not yet added is charged too, so it is listed. -->
+            <div v-if="typedAmountLine" class="pos-basket-row">
+              <span class="pos-basket-name">{{ $t('Amount') }}</span>
+              <span class="pos-basket-line">{{ typedAmountLine }}</span>
             </div>
           </div>
-          <div class="pos-sheet-total">{{ basketDisplay }}</div>
-          <button class="pos-primary-btn" @click="showCartSheet = false">{{ $t('Done') }}</button>
-        </q-card>
-      </q-dialog>
-      <q-dialog v-model="showSavedSheet" position="bottom">
-        <q-card class="pos-cart-sheet pos-basket-sheet">
-          <div class="pos-sheet-header">
-            <strong>{{ $t('Saved baskets') }}</strong>
-            <button class="pos-icon-btn" :aria-label="$t('Close')" @click="showSavedSheet = false">
-              <q-icon name="close" />
-            </button>
+          <div class="pos-sheet-total">
+            <!-- A tip or round-up is asked after Charge, so then this is the subtotal. -->
+            <span>{{ offersTip || offersRoundUp ? $t('kiosk.subtotal') : $t('kiosk.total') }}</span>
+            <strong>{{ chargeTotalLabel }}</strong>
           </div>
-          <div class="pos-basket-items">
-            <p v-if="!merchant.savedBaskets.length">{{ $t('No saved baskets') }}</p>
-            <button
-              v-for="basket in merchant.savedBaskets"
-              :key="basket.id"
-              class="pos-saved-row"
-              :disabled="hasDraft"
-              @click="resumeBasket(basket.id)"
-            >
-              {{ basket.name }}<q-icon name="chevron_right" />
+          <button
+            class="pos-primary-btn"
+            :class="{ 'pos-btn-disabled': !canCharge }"
+            :disabled="!canCharge"
+            @click="chargeFromBasket"
+          >
+            {{ chargeLabel }}
+          </button>
+          <div class="pos-basket-options">
+            <button class="pos-text-btn" :disabled="!hasDraft" @click="saveBasket">{{ $t('Save for later') }}</button>
+            <button class="pos-text-btn pos-cancel-btn" :disabled="!hasDraft" @click="clearAll">
+              {{ $t('Clear basket') }}
             </button>
-            <p v-if="hasDraft">{{ $t('Save or clear this basket before opening another.') }}</p>
           </div>
         </q-card>
       </q-dialog>
+      <!-- Saved baskets and waiting payments: everything set aside, in one place. -->
       <q-dialog v-model="showParkedSheet" position="bottom">
         <q-card class="pos-cart-sheet pos-basket-sheet">
           <div class="pos-sheet-header">
-            <strong>{{ $t('Waiting payments') }}</strong>
+            <strong>{{ parkedTitle }}</strong>
             <button class="pos-icon-btn" :aria-label="$t('Close')" @click="showParkedSheet = false">
               <q-icon name="close" />
             </button>
           </div>
-          <p>{{ $t('Still checked for payment, even after expiry.') }}</p>
           <div class="pos-basket-items">
-            <button
-              v-for="order in pendingOrders"
-              :key="order.id"
-              class="pos-saved-row"
-              :disabled="hasDraft"
-              @click="resumeOrder(order.id)"
-            >
-              <span>
-                {{ displaySats(order.totalSats) }}<small>
-                  {{
-                    $t(
-                      order.status === 'uncertain'
-                        ? 'Not confirmed'
-                        : order.status === 'expired'
-                          ? 'Expired'
-                          : 'Waiting'
-                    )
-                  }}
-                </small>
-              </span>
-              <q-icon name="chevron_right" />
-            </button>
+            <template v-if="merchant.savedBaskets.length">
+              <h2 v-if="pendingOrders.length" class="pos-sheet-section">{{ $t('Saved baskets') }}</h2>
+              <button
+                v-for="basket in merchant.savedBaskets"
+                :key="basket.id"
+                class="pos-saved-row"
+                :disabled="hasDraft"
+                @click="resumeBasket(basket.id)"
+              >
+                <span>
+                  {{ basket.name }}<small>{{ count(basketItemCount(basket), '1 item', '{n} items') }}</small>
+                </span>
+                <q-icon name="chevron_right" />
+              </button>
+            </template>
+            <template v-if="pendingOrders.length">
+              <h2 v-if="merchant.savedBaskets.length" class="pos-sheet-section">{{ $t('Waiting payments') }}</h2>
+              <p v-if="pendingOrders.some(order => order.status === 'expired')" class="pos-sheet-note">
+                {{ $t('An expired code is still checked for {minutes} minutes.', { minutes: lateMinutes }) }}
+              </p>
+              <button
+                v-for="order in pendingOrders"
+                :key="order.id"
+                class="pos-saved-row"
+                :disabled="hasDraft"
+                @click="resumeOrder(order.id)"
+              >
+                <span>
+                  {{ saleTitle(order) }}<small>
+                    {{ orderAmount(order) }} · {{ $t(order.status === 'expired' ? 'Expired' : 'Waiting') }}
+                  </small>
+                </span>
+                <q-icon name="chevron_right" />
+              </button>
+            </template>
             <p v-if="hasDraft">{{ $t('Save or clear this basket before opening another.') }}</p>
           </div>
         </q-card>
@@ -517,7 +524,9 @@ import {
   kioskDraftHasValue,
   formatKioskMoney,
   kioskCountLabel,
-  kioskReceiptText
+  kioskReceiptText,
+  kioskSaleTitle,
+  KIOSK_LATE_PAYMENT_GRACE_MS
 } from '../utils/kioskMerchant.js'
 import { keypadSats } from '../utils/amountKeypad.js'
 import { freshRate } from '../utils/fiatCurrencies.js'
@@ -569,7 +578,6 @@ export default defineComponent({
     let browsing = null
     const showCurrentReceipt = ref(false)
     const showCartSheet = ref(false),
-      showSavedSheet = ref(false),
       showParkedSheet = ref(false)
     const showUnlockDialog = ref(false),
       unlockPinRef = ref(null),
@@ -661,23 +669,46 @@ export default defineComponent({
     )
     const kioskWalletName = computed(() => store.kioskWallet?.name || t('Register'))
     const state = computed(() => {
-      if (!initialized.value) return 'processing'
+      if (!initialized.value) return 'loading'
       if (activeOrder.value)
         return { paid: 'success', waiting: 'payment', preparing: 'processing' }[payments.status.value] || 'interrupted'
       return localStage.value
     })
     const paymentProblem = computed(() => {
-      if (payments.status.value === 'expired') return t('This code has expired. We still check it for late payments.')
       const code = payments.problem.value?.code
       if (code === 'KIOSK_STORAGE_FAILED')
         return t('Register data could not be saved. Keep this screen open and try again.')
       if (code === 'KIOSK_WALLET_UNAVAILABLE') return t('Ask the owner to check the receiving wallet.')
-      if (payments.status.value === 'uncertain')
-        return t(
-          'The wallet has not confirmed whether a request was created. Check the wallet before asking for another payment.'
-        )
       if (code) return t('No payment confirmed yet. Check your connection and try again.')
       return ''
+    })
+    // A payment that stopped: what happened, and the one safe way on.
+    const interruption = computed(() => {
+      const status = payments.status.value
+      const expired = { icon: 'schedule', title: t('Payment request expired') }
+      if (status === 'not-charged')
+        return {
+          icon: 'info_outline',
+          title: t('Nothing was charged'),
+          text: t('The payment request could not be created.'),
+          retry: t('Try again')
+        }
+      if (status === 'unpaid')
+        return { ...expired, text: t('No payment arrived for this code.'), retry: t('Create a new payment request') }
+      if (status === 'expired' && !paymentProblem.value)
+        return {
+          ...expired,
+          text: t('This code has expired. We still check it for late payments.'),
+          retry: t('Create a new payment request')
+        }
+      if (status === 'expired') return { ...expired, text: paymentProblem.value, check: true }
+      return {
+        icon: 'help_outline',
+        title: t('Payment not confirmed'),
+        text:
+          paymentProblem.value || t('We are checking the original payment. Do not ask the customer to pay again yet.'),
+        check: true
+      }
     })
     const cardSale = computed(() => (state.value === 'payment' && !paymentProblem.value ? invoiceData.value : null))
     const card = useKioskCardPayment({
@@ -685,10 +716,20 @@ export default defineComponent({
       authorize: (...args) => cardAuthorization.value.submit(...args),
       checkPayment: () => payments.checkNow(),
       onError(error) {
+        cardRequest = null
         cardProblem.value = cardProblemText(error)
         void haptics.error()
       }
     })
+    // The request a card's service was asked to pay. When exactly that
+    // request is paid, the sale was paid by card.
+    let cardRequest = null
+    watch(
+      () => card.phase.value,
+      phase => {
+        if (phase === 'submitting') cardRequest = invoiceData.value?.paymentHash || null
+      }
+    )
     const cardBusy = computed(() => ['loading', 'review', 'submitting', 'waiting'].includes(card.phase.value))
     function cardProblemText(error) {
       if (error?.code === 'CARD_BLOCKED') return t('Card locked after too many wrong PINs.')
@@ -798,6 +839,38 @@ export default defineComponent({
           .map(value => (value.id === item.id ? { ...value, qty: value.qty + delta } : value))
       })
     }
+    function leaveTip() {
+      localStage.value = 'input'
+    }
+    async function chargeFromBasket() {
+      showCartSheet.value = false
+      await proceedToTipOrCharge()
+    }
+    function basketItemCount(basket) {
+      return basket.draft.items.reduce((sum, item) => sum + item.qty, 0) || (kioskDraftHasValue(basket.draft) ? 1 : 0)
+    }
+    function saleTitle(order) {
+      return kioskSaleTitle(order, t)
+    }
+    function orderAmount(order) {
+      return order.totalMinor != null && order.items.some(item => item.unit === 'fiat')
+        ? formatKioskMoney(order.totalMinor, order.currency, proxy.$i18n.locale)
+        : displaySats(order.totalSats)
+    }
+    // Saved baskets and waiting payments, one line for both.
+    const parkedLine = computed(() =>
+      [
+        merchant.savedBaskets.length && count(merchant.savedBaskets.length, '1 saved basket', '{n} saved baskets'),
+        pendingOrders.value.length && count(pendingOrders.value.length, '1 waiting payment', '{n} waiting payments')
+      ]
+        .filter(Boolean)
+        .join(' · ')
+    )
+    const parkedTitle = computed(() =>
+      merchant.savedBaskets.length && pendingOrders.value.length
+        ? t('Saved and waiting')
+        : t(merchant.savedBaskets.length ? 'Saved baskets' : 'Waiting payments')
+    )
     function clearAll() {
       $q.dialog({
         title: t('Clear basket?'),
@@ -809,6 +882,7 @@ export default defineComponent({
           await draftSave
           await merchant.clearDraft()
           syncDraft()
+          showCartSheet.value = false
         } catch (error) {
           showError(error)
         }
@@ -819,6 +893,7 @@ export default defineComponent({
         if (!(await draftSave)) return
         await merchant.saveBasket(`${t('Basket')} ${merchant.savedBaskets.length + 1}`)
         syncDraft()
+        showCartSheet.value = false
       } catch (error) {
         showError(error)
       }
@@ -828,7 +903,7 @@ export default defineComponent({
         if (!(await draftSave)) return
         await merchant.resumeBasket(id)
         syncDraft()
-        showSavedSheet.value = false
+        showParkedSheet.value = false
       } catch (error) {
         showError(error)
       }
@@ -861,6 +936,11 @@ export default defineComponent({
     function productPrice(product) {
       return formatKioskMoney(product.priceMinor, product.currency, proxy.$i18n.locale)
     }
+    function unitPrice(item) {
+      return item.unit === 'sats'
+        ? displaySats(item.unitSats)
+        : formatKioskMoney(item.priceMinor, item.currency, proxy.$i18n.locale)
+    }
     function itemPrice(item) {
       return item.unit === 'sats'
         ? displaySats(item.unitSats * item.qty)
@@ -876,6 +956,17 @@ export default defineComponent({
               proxy.$i18n.locale
             )
           : t('Price unavailable')
+    )
+    const typedAmountLine = computed(() => {
+      const item = amountItem()
+      if (!item) return ''
+      return item.unit === 'sats'
+        ? displaySats(item.unitSats)
+        : formatKioskMoney(item.priceMinor, item.currency, proxy.$i18n.locale)
+    })
+    // What Charge takes: the basket and a typed amount not yet added.
+    const chargeTotalLabel = computed(() =>
+      chargeQuote.value ? quotedLabel(chargeQuote.value) : basketDisplay.value
     )
     function displaySats(sats) {
       return formatAmount(sats || 0, store.useBip177Format !== false)
@@ -928,7 +1019,6 @@ export default defineComponent({
           rate: quotedRate.value,
           walletId: store.kioskWalletId,
           walletName: kioskWalletName.value,
-          method: 'Lightning',
           tipSats: selectedTipAmount.value,
           roundUpSats: finalAmountSats.value - totalBeforeRoundUp.value,
           tipPercent: selectedTipPercent.value || null
@@ -943,14 +1033,20 @@ export default defineComponent({
       }
     }
     const confirmTip = () => createCharge()
-    async function retryExpired() {
-      if (payments.status.value !== 'expired' || !activeOrder.value) return
-      $q.dialog({
-        title: t('Create a new payment request?'),
-        message: t('The old code may still be paid. Check with the customer before continuing.'),
-        cancel: true,
-        ok: { label: t('Create request') }
-      }).onOk(() => payments.createCharge(cloneKiosk(activeOrder.value)))
+    // A new request for the same sale. Only an expired code that is still
+    // checked may yet be paid, so only that one asks first.
+    function retryCharge() {
+      const order = activeOrder.value
+      if (!order) return
+      const again = () => payments.createCharge(cloneKiosk(order))
+      if (payments.status.value === 'expired')
+        $q.dialog({
+          title: t('Create a new payment request?'),
+          message: t('The old code may still be paid. Check with the customer before continuing.'),
+          cancel: true,
+          ok: { label: t('Create request') }
+        }).onOk(again)
+      else if (['unpaid', 'not-charged'].includes(payments.status.value)) void again()
     }
     async function resetToInput() {
       try {
@@ -959,6 +1055,7 @@ export default defineComponent({
         syncDraft()
         localStage.value = 'input'
         card.reset()
+        cardRequest = null
         cardProblem.value = ''
         useRoundUp.value = false
         selectedTipPercent.value = 0
@@ -981,12 +1078,26 @@ export default defineComponent({
         showError(error)
       }
     }
+    // After a few wrong PINs the next try waits; the pad says how long.
+    function pinWait() {
+      const ms = store.kioskPinRetryIn()
+      if (!ms) return ''
+      return count(
+        Math.ceil(ms / 60000),
+        'Too many tries. Try again in 1 minute.',
+        'Too many tries. Try again in {n} minutes.'
+      )
+    }
+    function openUnlock() {
+      showUnlockDialog.value = true
+      unlockError.value = pinWait()
+    }
     async function handleUnlockPin(pin) {
       if (store.unlockToOwnerMode(pin)) {
         showUnlockDialog.value = false
         await router.push('/kiosk-mode')
       } else {
-        unlockError.value = t('kiosk.incorrectPin')
+        unlockError.value = pinWait() || t('kiosk.incorrectPin')
         unlockPinRef.value?.fail()
       }
     }
@@ -1039,7 +1150,12 @@ export default defineComponent({
     watch(
       () => payments.status.value,
       value => {
-        if (value === 'paid') void haptics.success()
+        if (value !== 'paid') return
+        void haptics.success()
+        const order = activeOrder.value
+        const byCard = cardRequest && order?.attempts.some(a => a.status === 'paid' && a.paymentHash === cardRequest)
+        cardRequest = null
+        if (order) void merchant.setSaleMethod(order.id, byCard ? 'card' : 'qr').catch(() => {})
       }
     )
     watch(
@@ -1189,9 +1305,22 @@ export default defineComponent({
       productSearchInput,
       productList,
       showCartSheet,
-      showSavedSheet,
       showParkedSheet,
+      parkedLine,
+      parkedTitle,
+      lateMinutes: KIOSK_LATE_PAYMENT_GRACE_MS / 60000,
+      basketItemCount,
+      saleTitle,
+      orderAmount,
+      unitPrice,
+      typedAmountLine,
+      chargeTotalLabel,
+      chargeFromBasket,
+      leaveTip,
+      interruption,
+      retryCharge,
       showUnlockDialog,
+      openUnlock,
       unlockPinRef,
       unlockError,
       paymentProblem,
@@ -1236,7 +1365,6 @@ export default defineComponent({
       proceedToTipOrCharge,
       createCharge,
       confirmTip,
-      retryExpired,
       resetToInput,
       handleUnlockPin,
       resetUnlock,
@@ -1330,9 +1458,7 @@ export default defineComponent({
   cursor: pointer;
 }
 .pos-product-search {
-  display: flex;
   gap: 8px;
-  padding: 0 16px 8px;
 }
 .pos-product-search input {
   width: 0;
@@ -1348,10 +1474,14 @@ export default defineComponent({
     sans-serif;
 }
 .pos-product-search button {
+  min-height: 44px;
+  padding: 0 4px;
   border: 0;
   background: transparent;
-  color: var(--text-primary);
-  min-height: 44px;
+  color: var(--brand-accent-text);
+  font:
+    500 16px 'Manrope',
+    sans-serif;
 }
 .pos-products-actions {
   padding: 12px 16px calc(16px + var(--safe-bottom, 16px));
@@ -1395,9 +1525,49 @@ export default defineComponent({
   padding: 12px 0;
   border-bottom: 1px solid var(--border-card);
 }
-.pos-basket-row > span {
+.pos-basket-name {
+  flex: 1;
   min-width: 0;
   overflow-wrap: anywhere;
+}
+.pos-basket-line {
+  flex: none;
+  min-width: 72px;
+  text-align: right;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+.pos-saved-row > span {
+  min-width: 0;
+}
+.pos-sheet-section {
+  margin: 14px 0 2px;
+  color: var(--text-secondary);
+  font:
+    650 13px/1.4 'Manrope',
+    sans-serif;
+}
+.pos-sheet-note {
+  margin: 2px 0 6px;
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.45;
+}
+.pos-basket-options {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.pos-basket-options .pos-text-btn {
+  min-height: 44px;
+  margin: 0;
+  padding: 10px 12px;
+}
+.pos-basket-options .pos-text-btn:disabled {
+  opacity: 0.45;
+}
+.pos-basket-options .pos-cancel-btn {
+  color: var(--color-negative);
 }
 .pos-basket-row small,
 .pos-saved-row small {
@@ -1793,7 +1963,7 @@ input:focus-visible {
 .pos-qr-label {
   font-size: 0.8125rem;
   font-weight: 600;
-  color: #9ca3af;
+  color: var(--text-secondary);
   text-transform: uppercase;
   letter-spacing: 1px;
   margin: 0 0 6px;
@@ -1886,7 +2056,19 @@ input:focus-visible {
   border-color: var(--border-card);
 }
 .pos-sheet-total {
-  color: #059573;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 17px;
+}
+.pos-sheet-total span {
+  color: var(--text-secondary);
+  font-size: 15px;
+}
+.pos-sheet-total strong {
+  font-weight: 750;
+  font-variant-numeric: tabular-nums;
 }
 .pos-cart-sheet-dark .pos-sheet-remove {
   color: rgba(255, 255, 255, 0.4);
@@ -1961,10 +2143,15 @@ input:focus-visible {
 }
 
 /* ─── Cards ─── */
-.pos-qr-hint {
+.pos-qr-hint,
+.pos-auto-hint {
   font-size: 0.8125rem;
-  color: #9ca3af;
+  color: var(--text-secondary);
   margin: -4px 0 0;
+}
+.pos-auto-hint {
+  margin: 14px 0 0;
+  text-align: center;
 }
 .pos-contactless {
   width: 20px;
@@ -2452,6 +2639,24 @@ input:focus-visible {
   }
   .pos-primary-btn {
     height: 48px;
+  }
+  /* A small phone keeps Next customer on screen under the code. */
+  .pos-qr-amount-lg {
+    margin-bottom: 12px;
+  }
+  .pos-qr-img {
+    width: 176px;
+    height: 176px;
+  }
+  .pos-qr-area {
+    margin-bottom: 10px;
+  }
+  .pos-card-lane,
+  .pos-auto-hint {
+    margin-top: 10px;
+  }
+  .pos-payment-actions {
+    margin-top: 12px;
   }
 }
 .pos-state-sub,

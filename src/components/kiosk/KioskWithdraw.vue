@@ -1,5 +1,5 @@
 <template>
-  <SendModal v-model="open" @payment-detected="review" @open-batch-send="explainSinglePayment" />
+  <SendModal v-model="open" withdraw @payment-detected="review" />
 </template>
 
 <script setup>
