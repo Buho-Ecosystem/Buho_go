@@ -1,4 +1,5 @@
 import { boot } from 'quasar/wrappers';
+import { watch } from 'vue';
 import { useWalletStore } from 'stores/wallet';
 import { useKioskMerchantStore } from 'stores/kioskMerchant';
 import { useTransactionMetadataStore } from 'stores/transactionMetadata';
@@ -18,9 +19,30 @@ export async function annotateKioskReceipt(metadata, order, attempt, lookupResul
   });
 }
 
+/**
+ * Start the register's payment checks once Kiosk is on. Someone who never
+ * turns Kiosk on never opens the register's records or checks its payments.
+ * Turning Kiosk off leaves running checks alone until the app restarts, so a
+ * customer who pays late is still recorded.
+ */
+export function startWhenKioskIsOn(walletStore, start, watchFlag = watch) {
+  if (walletStore.kioskEnabled) return start();
+  const stopWatching = watchFlag(() => walletStore.kioskEnabled, (on) => {
+    if (!on) return;
+    stopWatching();
+    start();
+  });
+  return undefined;
+}
+
 export default boot(() => {
-  const metadata = useTransactionMetadataStore();
-  const runtime = useKioskPayments({ merchant: useKioskMerchantStore(), walletStore: useWalletStore() });
-  const unsubscribe = runtime.subscribePaid((order, attempt, lookupResult) => annotateKioskReceipt(metadata, order, attempt, lookupResult));
-  if (import.meta.hot) import.meta.hot.dispose(() => { unsubscribe(); runtime.dispose(); });
+  const walletStore = useWalletStore();
+  let stop = null;
+  startWhenKioskIsOn(walletStore, () => {
+    const metadata = useTransactionMetadataStore();
+    const runtime = useKioskPayments({ merchant: useKioskMerchantStore(), walletStore });
+    const unsubscribe = runtime.subscribePaid((order, attempt, lookupResult) => annotateKioskReceipt(metadata, order, attempt, lookupResult));
+    stop = () => { unsubscribe(); runtime.dispose(); };
+  });
+  if (import.meta.hot) import.meta.hot.dispose(() => stop?.());
 });

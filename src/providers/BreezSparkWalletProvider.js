@@ -756,11 +756,13 @@ export class BreezSparkWalletProvider extends WalletProvider {
     const amountSats = Number(amount) > 0 ? Math.round(Number(amount)) : undefined;
 
     try {
-      // A lost reply does not prove that no invoice was created. Let the caller
-      // retain the unresolved intent instead of silently minting another request.
-      const response = await this.sdk.receivePayment({
-        paymentMethod: bolt11ReceiveMethod({ description: memo, amountSats, expiry })
-      });
+      // A request whose reply was lost never reached the screen, so nobody can
+      // pay it. Asking again is safe for every caller, the register included.
+      const response = await this._withTransportRetry(() =>
+        this.sdk.receivePayment({
+          paymentMethod: bolt11ReceiveMethod({ description: memo, amountSats, expiry })
+        })
+      );
 
       const paymentRequest = response?.paymentRequest;
       if (!paymentRequest) {

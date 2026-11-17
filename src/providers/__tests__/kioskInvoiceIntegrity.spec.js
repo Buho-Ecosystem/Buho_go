@@ -12,11 +12,13 @@ const paid = { id: 'authoritative-history-id', paymentType: 'receive', amount: 9
   details: { type: 'lightning', htlcDetails: { paymentHash: hash, preimage: 'not-persisted' } } };
 function provider(sdk) { const p = new BreezSparkWalletProvider('kiosk-integrity-test', { _testSdk: sdk }); p.isConnected = true; return p; }
 
-test('lost invoice-creation reply is never automatically retried', async () => {
+test('a lost invoice-creation reply is asked again, and only the returned request is used', async () => {
+  const request = profileInvoiceFixture(21, 1_800_000_000_000);
   let calls = 0;
-  const p = provider({ receivePayment: async () => { calls++; throw new Error('Failed to fetch'); } });
-  await assert.rejects(() => p.createInvoice({ amount: 21, description: 'Sale' }), /Failed to fetch/);
-  assert.equal(calls, 1, 'the remote wallet may already have created the first request');
+  const p = provider({ receivePayment: async () => { calls++; if (calls === 1) throw new Error('Failed to fetch'); return { paymentRequest: request }; } });
+  const result = await p.createInvoice({ amount: 21, description: 'Sale' });
+  assert.equal(calls, 2, 'Receive, Auto-Transfer and vouchers keep their retry; the lost request was never shown');
+  assert.equal(result.paymentRequest, request);
 });
 test('successful invoice creation retains the exact signed request hash', async () => {
   const request = profileInvoiceFixture(21, 1_800_000_000_000);
