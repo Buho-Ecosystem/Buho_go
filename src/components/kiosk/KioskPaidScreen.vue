@@ -1,10 +1,16 @@
 <template>
   <!-- A paid sale fills the screen in green, to be read from across the
        counter. It grows out of the payment code and goes back to the register
-       on its own after a short while, or at a tap anywhere. -->
+       on its own after a short while, or at a tap anywhere. For keyboards and
+       screen readers it is a dialog named by what it says, and it takes focus
+       itself; the register keeps what lies behind it out of reach. -->
   <div
     class="kiosk-paid"
     :class="{ 'kiosk-paid--dark': dark }"
+    role="dialog"
+    tabindex="-1"
+    :aria-labelledby="`${id}-title ${id}-amount`"
+    :aria-describedby="description"
     @pointerdown.capture="pressed"
     @click="tapAnywhere"
   >
@@ -12,16 +18,14 @@
       <span v-if="growsFromCode" class="kiosk-paid__veil" />
       <span class="kiosk-paid__sheen" />
     </div>
-    <!-- Filled just after the screen appears: a live region that arrives
-         together with its text is often not read out. -->
-    <span class="kiosk-paid__announce" role="status">{{ announcement }}</span>
     <section class="kiosk-paid__body">
       <svg class="kiosk-paid__mark" viewBox="0 0 112 112" aria-hidden="true">
         <circle class="kiosk-paid__ring" cx="56" cy="56" r="53" pathLength="1" transform="rotate(-90 56 56)" />
         <path class="kiosk-paid__check" d="M35 57.5 L49.5 72 L77 43" pathLength="1" />
       </svg>
-      <p class="kiosk-paid__title">{{ $t('Bitcoin received') }}</p>
+      <p :id="`${id}-title`" class="kiosk-paid__title">{{ $t('Bitcoin received') }}</p>
       <p
+        :id="`${id}-amount`"
         ref="amount"
         class="kiosk-paid__amount"
         :class="{ 'kiosk-paid__amount--travels': travels }"
@@ -29,8 +33,8 @@
       >
         {{ amount }}
       </p>
-      <p v-if="secondary" class="kiosk-paid__secondary">{{ secondary }}</p>
-      <p v-if="duplicate" class="kiosk-paid__alert" role="alert">
+      <p v-if="secondary" :id="`${id}-secondary`" class="kiosk-paid__secondary">{{ secondary }}</p>
+      <p v-if="duplicate" :id="`${id}-alert`" class="kiosk-paid__alert" role="alert">
         {{ $t('More than one payment arrived for this sale. Ask the owner to review it.') }}
       </p>
     </section>
@@ -93,12 +97,18 @@ export default {
       pressedAt: null,
       seen: onScreen(),
       left: false,
-      announcement: '',
-      announceTimer: null,
       still: typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches,
     }
   },
   computed: {
+    id() {
+      return `kiosk-paid-${this.$.uid}`
+    },
+    /** The Bitcoin figure and a second payment's warning, read after the dialog's name. */
+    description() {
+      const parts = [this.secondary && `${this.id}-secondary`, this.duplicate && `${this.id}-alert`]
+      return parts.filter(Boolean).join(' ') || undefined
+    },
     /** The wait runs only while someone can see the screen: a phone that slept through the sale shows it on waking. */
     counting() {
       return !this.duplicate && !this.paused && this.seen && !this.left
@@ -121,17 +131,21 @@ export default {
     this.systemBars(SystemBarsStyle?.Dark)
     this.grow()
     this.restartCountdown()
-    this.announceTimer = setTimeout(() => {
-      this.announcement = `${this.$t('Bitcoin received')} ${this.amount}`
-    }, 100)
+    this.focus()
   },
   beforeUnmount() {
     clearTimeout(this.timer)
-    clearTimeout(this.announceTimer)
     globalThis.document?.removeEventListener('visibilitychange', this.onVisibility)
     this.systemBars(SystemBarsStyle?.Default)
   },
   methods: {
+    /**
+     * Focus on the screen itself, not on a button: a screen reader reads what
+     * it says, and a key pressed as it appears cannot end it unseen.
+     */
+    focus() {
+      this.$el?.focus?.({ preventScroll: true })
+    },
     /** Starts the wait again from the full time, or stops it while the screen must stay. */
     restartCountdown() {
       clearTimeout(this.timer)
@@ -222,6 +236,10 @@ export default {
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
 }
+/* It holds focus for screen readers but is no control, so it draws no ring. */
+.kiosk-paid:focus {
+  outline: none;
+}
 .kiosk-paid--dark {
   --paid-flood: #0e3b2c;
   --paid-mark: #15de72;
@@ -273,14 +291,6 @@ export default {
 }
 .kiosk-paid__body > :last-child {
   margin-bottom: auto;
-}
-.kiosk-paid__announce {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
 }
 .kiosk-paid__mark {
   width: 112px;
