@@ -19,8 +19,8 @@ const showPage = visibilityState => {
 function mounted(props = {}) {
   const emitted = []
   const focused = []
-  const next = { focus: options => focused.push(options) }
-  const vm = { amount: '$15.50', secondary: '', duplicate: false, paused: false, origin: null, ...props, $refs: { next } }
+  const $el = { focus: options => focused.push(options) }
+  const vm = { amount: '$15.50', secondary: '', duplicate: false, paused: false, origin: null, ...props, $el, $refs: {} }
   Object.assign(vm, screen.data.call(vm), { $t: key => key, $emit: event => emitted.push(event) })
   for (const [key, method] of Object.entries(screen.methods)) vm[key] = method.bind(vm)
   for (const [key, compute] of Object.entries(screen.computed)) Object.defineProperty(vm, key, { get: () => compute.call(vm) })
@@ -85,12 +85,11 @@ test('the paid screen goes back after ten seconds on screen, and waits for the r
   twice.unmount()
 })
 
-test('New charge has focus when the paid screen appears, so Enter starts the next sale', ctx => {
+test('the paid screen takes focus itself, so it is read out and a stray key cannot end it unseen', ctx => {
   mock.timers.enable({ apis: ['setTimeout', 'Date'] })
   ctx.after(() => mock.timers.reset())
   const paid = mounted()
-  assert.deepEqual(paid.focused, [{ preventScroll: true }])
-  assert.equal(paid.vm.began({ detail: 0 }), true, 'a key press has no pointer to begin elsewhere')
+  assert.deepEqual(paid.focused, [{ preventScroll: true }], 'the screen, not New charge')
   paid.unmount()
 })
 

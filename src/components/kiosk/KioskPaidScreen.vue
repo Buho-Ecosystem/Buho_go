@@ -2,14 +2,15 @@
   <!-- A paid sale fills the screen in green, to be read from across the
        counter. It grows out of the payment code and goes back to the register
        on its own after a short while, or at a tap anywhere. For keyboards and
-       screen readers it is a dialog named by what it says, with New charge
-       focused; the register keeps what lies behind it out of reach. -->
+       screen readers it is a dialog named by what it says, and it takes focus
+       itself; the register keeps what lies behind it out of reach. -->
   <div
     class="kiosk-paid"
     :class="{ 'kiosk-paid--dark': dark }"
     role="dialog"
-    aria-modal="true"
+    tabindex="-1"
     :aria-labelledby="`${id}-title ${id}-amount`"
+    :aria-describedby="description"
     @pointerdown.capture="pressed"
     @click="tapAnywhere"
   >
@@ -32,8 +33,8 @@
       >
         {{ amount }}
       </p>
-      <p v-if="secondary" class="kiosk-paid__secondary">{{ secondary }}</p>
-      <p v-if="duplicate" class="kiosk-paid__alert" role="alert">
+      <p v-if="secondary" :id="`${id}-secondary`" class="kiosk-paid__secondary">{{ secondary }}</p>
+      <p v-if="duplicate" :id="`${id}-alert`" class="kiosk-paid__alert" role="alert">
         {{ $t('More than one payment arrived for this sale. Ask the owner to review it.') }}
       </p>
     </section>
@@ -41,7 +42,7 @@
       <button type="button" class="kiosk-paid__receipt" @click.stop="began($event) && $emit('receipt')">
         {{ $t('Receipt') }}
       </button>
-      <button ref="next" type="button" class="kiosk-paid__next" @click.stop="began($event) && leave()">
+      <button type="button" class="kiosk-paid__next" @click.stop="began($event) && leave()">
         <!-- Fills while the screen waits, so going back on its own is no surprise. -->
         <span
           v-if="counting"
@@ -103,6 +104,11 @@ export default {
     id() {
       return `kiosk-paid-${this.$.uid}`
     },
+    /** The Bitcoin figure and a second payment's warning, read after the dialog's name. */
+    description() {
+      const parts = [this.secondary && `${this.id}-secondary`, this.duplicate && `${this.id}-alert`]
+      return parts.filter(Boolean).join(' ') || undefined
+    },
     /** The wait runs only while someone can see the screen: a phone that slept through the sale shows it on waking. */
     counting() {
       return !this.duplicate && !this.paused && this.seen && !this.left
@@ -125,8 +131,7 @@ export default {
     this.systemBars(SystemBarsStyle?.Dark)
     this.grow()
     this.restartCountdown()
-    // Enter starts the next sale, and a screen reader reads the dialog's name.
-    this.$refs.next?.focus({ preventScroll: true })
+    this.focus()
   },
   beforeUnmount() {
     clearTimeout(this.timer)
@@ -134,6 +139,13 @@ export default {
     this.systemBars(SystemBarsStyle?.Default)
   },
   methods: {
+    /**
+     * Focus on the screen itself, not on a button: a screen reader reads what
+     * it says, and a key pressed as it appears cannot end it unseen.
+     */
+    focus() {
+      this.$el?.focus?.({ preventScroll: true })
+    },
     /** Starts the wait again from the full time, or stops it while the screen must stay. */
     restartCountdown() {
       clearTimeout(this.timer)
@@ -223,6 +235,10 @@ export default {
   text-align: center;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
+}
+/* It holds focus for screen readers but is no control, so it draws no ring. */
+.kiosk-paid:focus {
+  outline: none;
 }
 .kiosk-paid--dark {
   --paid-flood: #0e3b2c;

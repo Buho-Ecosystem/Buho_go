@@ -28,6 +28,7 @@
       <!-- ═══ Paid ═══ -->
       <KioskPaidScreen
         v-if="state === 'success'"
+        ref="paidScreen"
         :amount="paymentAmount"
         :secondary="paymentShowsFiat ? displaySats(activeOrder.totalSats) : ''"
         :duplicate="!!activeOrder?.duplicatePayment"
@@ -489,7 +490,7 @@
       <!-- ═══ Unlock ═══
            The lock goes straight to the PIN, as Guided Access does: the right
            PIN ends the register (owner area), Resume goes back to it. -->
-      <q-dialog v-model="showUnlockDialog" persistent @hide="resetUnlock">
+      <q-dialog v-model="showUnlockDialog" persistent @hide="closeUnlock">
         <div class="kiosk-dialog">
           <div class="kiosk-dialog-body">
             <KioskPinPad
@@ -678,6 +679,7 @@ export default defineComponent({
     })
     // Where the payment code and its amount sit when the sale is paid, read
     // before the payment screen goes: the paid screen grows out of them.
+    const paidScreen = ref(null)
     const qrCardEl = ref(null)
     const paymentAmountEl = ref(null)
     const paidOrigin = ref(null)
@@ -1148,6 +1150,12 @@ export default defineComponent({
       unlockError.value = ''
       unlockPinRef.value?.reset()
     }
+    // A sale paid while the owner PIN was open: focus returns to the sale, not
+    // to the lock button now out of reach behind it.
+    function closeUnlock() {
+      resetUnlock()
+      paidScreen.value?.focus()
+    }
     async function recoverOwner() {
       try {
         if (await store.recoverKioskOwnerAccess()) {
@@ -1416,6 +1424,8 @@ export default defineComponent({
       resetToInput,
       handleUnlockPin,
       resetUnlock,
+      closeUnlock,
+      paidScreen,
       recoverOwner,
       confirmHeldCard,
       cancelCardPin

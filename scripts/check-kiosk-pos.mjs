@@ -74,12 +74,15 @@ try {
   assert.equal(invoice,'counter')
   const pending=[...ledger._byHash.values()][0];assert.equal(pending.amountSats,101)
   ledger.pay(pending.bolt11)
+  // A key press first makes the browser draw focus rings, as after a restart; the paid screen still draws none.
+  await page.keyboard.press('Shift')
   await checkPayments()
   await page.getByText('Bitcoin received',{exact:true}).waitFor()
   await snapshot('05-confirmed')
-  // Keyboards and screen readers: New charge has focus, the register behind the green is out of reach.
+  // Keyboards and screen readers: the sale has focus and is named by what it says, without a ring; the register behind the green is out of reach.
   const headerInert=()=>page.locator('.kiosk-header').evaluate(header=>header.inert)
-  assert.equal(await page.evaluate(()=>document.activeElement?.textContent.trim()),'New charge')
+  const paidFocus=await page.evaluate(()=>{const screen=document.activeElement;return{dialog:screen.matches('.kiosk-paid[role=dialog]'),name:screen.getAttribute('aria-labelledby').split(' ').map(id=>document.getElementById(id).textContent.trim()).join(' ').replace(/\s+/g,' '),ring:getComputedStyle(screen).outlineStyle}})
+  assert.deepEqual(paidFocus,{dialog:true,name:'Bitcoin received ₿ 101',ring:'none'})
   assert.equal(await headerInert(),true,'the owner control is out of reach behind the paid screen')
   await page.getByRole('button',{name:'New charge',exact:true}).click()
   await page.locator('.amount-keypad__kiosk-value').waitFor()
