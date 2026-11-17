@@ -139,6 +139,10 @@
               </span>
               <span v-else>{{ $t('Type the number, or pick the country first') }}</span>
             </template>
+            <!-- A withdrawal lists no contacts to match a name against: say what the field takes. -->
+            <span v-else-if="withdraw && manualInput.trim() && !detectedInputType && !ctaBusy">
+              {{ $t('Enter an invoice or address') }}
+            </span>
           </div>
           <transition name="type-pill">
             <div

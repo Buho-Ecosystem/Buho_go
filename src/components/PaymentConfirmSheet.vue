@@ -720,6 +720,9 @@ export default {
       displayAmount: this.payment?.amount?.mode === 'fixed' ? String(this.payment.amount.fixedSats || 0) : '',
       currentCurrency: 'sats',
       amountFocused: false,
+      // Whether the parent fills the `extras` slot; $slots is not reactive,
+      // so this is read again before every render (beforeUpdate).
+      extrasFilled: !!this.$slots?.extras,
       comment: '',
       // Whether the rates were asked for since the sheet was first shown,
       // how often, and the moment their age is judged at (read again on
@@ -1291,7 +1294,7 @@ export default {
     // fee panel). Slot content owns its own fee display then, so the
     // generic "Network fees apply" footnote stays out of the way.
     hasExtras() {
-      return !!this.$slots.extras
+      return this.extrasFilled
     },
     extrasTotal() {
       return this.hasExtras && this.extrasHaveTotal
@@ -1428,6 +1431,9 @@ export default {
       if (wasReading && !reading && this.show) this.resetForFreshOpen()
     }
   },
+  beforeUpdate() {
+    this.extrasFilled = !!this.$slots?.extras
+  },
   mounted() {
     // The contextual host can mount directly into its first visible payment.
     if (this.show) {
@@ -1548,6 +1554,7 @@ export default {
     },
 
     resetForFreshOpen() {
+      this.amountFocused = false
       this.walletPickerOpen = false
       this.detailsOpen = false
       this.brantaDetailsOpen = false
