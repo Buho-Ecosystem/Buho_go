@@ -19,7 +19,7 @@ import { transformSync } from 'esbuild'
 import * as Vue from 'vue'
 import * as ServerRenderer from 'vue/server-renderer'
 import * as amountFormatting from '../../utils/amountFormatting.js'
-import { normalizePaymentAmountInput } from '../../utils/paymentAmountInput.js'
+import * as paymentAmountInput from '../../utils/paymentAmountInput.js'
 import * as payingWallets from '../../utils/payingWallets.js'
 import { safeBrantaUrl, brantaAvatar } from '../../utils/branta.js'
 import '../../__tests__/memoryStorage.js'
@@ -68,7 +68,7 @@ const baseDeps = {
   '../stores/wallet': { useWalletStore: () => walletState },
   '../providers/WalletFactory': { WALLET_TYPE_LABELS: { spark: 'Spark', nwc: 'NWC', lnbits: 'LNbits', arkade: 'Arkade' } },
   '../utils/amountFormatting.js': amountFormatting,
-  '../utils/paymentAmountInput.js': { normalizePaymentAmountInput },
+  '../utils/paymentAmountInput.js': paymentAmountInput,
   '../utils/payingWallets.js': payingWallets,
 }
 
@@ -1059,7 +1059,10 @@ test('partial and payout drafts keep their precision without enabling a differen
 
 test('committed amount, denomination and note cannot change through native or stray events', () => {
   for (const busy of ['isSending', 'isComplete']) {
-    const vm = { [busy]: true, amountMode: 'free', displayAmount: '2400', currentCurrency: 'sats', comment: 'Coffee', walletCanPay: true, isAmountAcceptable: true, commitGate: true }
+    const vm = {
+      [busy]: true, amountMode: 'free', amountFocused: true, displayAmount: '2400', currentCurrency: 'sats', comment: 'Coffee', walletCanPay: true, isAmountAcceptable: true, commitGate: true,
+      get amountFieldValue() { return ConfirmSheet.computed.amountFieldValue.call(this) },
+    }
     const amountEvent = { target: { value: '9999' } }, noteEvent = { target: { value: 'Changed' } }
     ConfirmSheet.methods.onAmountChange.call(vm, amountEvent)
     ConfirmSheet.methods.toggleCurrency.call(vm)

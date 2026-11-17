@@ -117,7 +117,9 @@ async function expectSheet(from) {
   const sheet = page.locator('.sheet-card:not(.sheet-card--redeem)');
   await sheet.waitFor({ timeout: 20000 });
   await pause(500);
-  assert.equal(await sheet.locator('.amount-input').first().inputValue(), '1500', 'the last amount, as sats');
+  // A prefilled amount rests grouped the way this phone writes numbers.
+  const phone1500 = await page.evaluate(() => new Intl.NumberFormat().format(1500));
+  assert.equal(await sheet.locator('.amount-input').first().inputValue(), phone1500, 'the last amount, as sats');
   assert.equal(await sheet.locator('.slide-track').count(), 1, 'a payment made again ends on the slide');
   assert.equal(invoiceRequests.length, 0, 'nothing is requested, let alone paid, before the slide');
   await page.screenshot({ path: `${output}/${from}-sheet.png` });

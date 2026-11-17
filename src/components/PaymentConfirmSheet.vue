@@ -116,7 +116,7 @@
             <input
               :value="amountFieldValue"
               @input="onAmountChange($event)"
-              @focus="amountFocused = true"
+              @focus="onAmountFocus"
               @blur="onAmountBlur"
               type="text"
               inputmode="decimal"
@@ -555,7 +555,7 @@ import { useWalletStore } from '../stores/wallet'
 import { mapState } from 'pinia'
 import { fiatRatesService } from '../utils/fiatRates.js'
 import { formatAmount, formatFiatAmount, formatPaymentAmount, paymentAmountParts, fiatDecimals } from '../utils/amountFormatting.js'
-import { normalizePaymentAmountInput } from '../utils/paymentAmountInput.js'
+import { normalizePaymentAmountInput, formatPaymentAmountDraft, caretAcrossGrouping, decimalOf } from '../utils/paymentAmountInput.js'
 import { FIAT_SYMBOLS } from '../utils/fiatCurrencies.js'
 import SlideToSend from './SlideToSend.vue'
 import BrantaVerificationDetails from './BrantaVerificationDetails.vue'
@@ -1325,14 +1325,13 @@ export default {
       return parts.approximate ? `≈\u00a0${parts.number}` : parts.number
     },
     formattedConfirmAmount() { return reviewAmount(this, this.amountInSats) },
-    /** The amount field: grouped like every other figure here, except while it is being typed in. */
+    /**
+     * The amount field, in the phone's number format: always its decimal mark,
+     * grouped like every other figure here except while it is being typed in.
+     */
     amountFieldValue() {
       if (this.amountMode === 'fixed') return this.fixedAmountDisplay
-      const value = String(this.displayAmount || '')
-      const match = !this.amountFocused && /^\d+(?:\.(\d+))?$/.exec(value)
-      if (!match) return value
-      const digits = (match[1] || '').length
-      return new Intl.NumberFormat(undefined, { minimumFractionDigits: digits, maximumFractionDigits: digits }).format(Number(value))
+      return formatPaymentAmountDraft(this.displayAmount, { grouped: !this.amountFocused })
     },
 
     // ───── Verb-aware copy ─────
@@ -1747,7 +1746,7 @@ export default {
 
     onAmountChange(event) {
       if (this.isSending || this.isComplete || this.amountMode === 'fixed') {
-        if (event?.target) event.target.value = this.amountMode === 'fixed' ? this.fixedAmountDisplay : this.displayAmount
+        if (event?.target) event.target.value = this.amountFieldValue
         return
       }
       // A rate ages while the sheet is open: each keystroke reads the clock.
@@ -1762,7 +1761,7 @@ export default {
         : this.isLocalDenomination ? this.payoutCurrency.decimals || 0 : fiatPrecision(this)
       const input = event?.target
       const result = normalizePaymentAmountInput(this.displayAmount, {
-        locales: amountLocales(this), precision, caret: input?.selectionStart, canonicalDecimal: decimalEdit,
+        locales: amountLocales(this), precision, caret: input?.selectionStart, decimalMark: decimalEdit ? decimalOf() : null,
       })
       this.amountInputError = !!result.error
       this.amountInputPartial = !result.error && !result.complete
@@ -1777,6 +1776,22 @@ export default {
       if (this.isSending || this.isComplete) { event.target.value = this.comment; return }
       this.comment = event.target.value
       this.commentEdited = true
+    },
+    /**
+     * Editing drops the grouping. The field is rewritten here, before anything
+     * selects in it, so a caret or a selection made as it gains focus stays on
+     * the same digits and typing replaces what was selected.
+     */
+    onAmountFocus(event) {
+      const input = event?.target
+      const resting = input?.value ?? ''
+      this.amountFocused = true
+      const editing = this.amountFieldValue
+      if (!input || resting === editing) return
+      const at = index => caretAcrossGrouping(resting, editing, index ?? resting.length)
+      const [start, end] = [at(input.selectionStart), at(input.selectionEnd)]
+      input.value = editing
+      input.setSelectionRange?.(start, end)
     },
     onAmountBlur() {
       this.amountFocused = false
