@@ -620,7 +620,7 @@
             :disable="!batchCost.ready"
             @click="startBatch"
           >
-            {{ $t('Send {count} Payments', { count: selectedContacts.length }) }}
+            {{ $t('Send {count} payments', { count: selectedContacts.length }) }}
           </q-btn>
         </template>
 
@@ -952,7 +952,7 @@ const batchCost = computed(() => {
 // ─────────────────────────────────────────────────────────────
 const stepTitle = computed(() => {
   const titles = {
-    1: t('Select Contacts'),
+    1: t('Select contacts'),
     2: t('Set amount'),
     3: t('Review'),
     4: t('Sending…'),

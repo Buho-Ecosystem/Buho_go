@@ -17,7 +17,6 @@ export default {
   "Pay another way": "Pay another way",
   "Paying…": "Paying…",
   "Scan the code to pay instead.": "Scan the code to pay instead.",
-  "Hold a Bolt Card here": "Hold a Bolt Card here",
   "Against the back of this phone": "Against the back of this phone",
   "Card held · enter the amount": "Card held · enter the amount",
   "Paid by card": "Paid by card",

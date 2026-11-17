@@ -77,7 +77,7 @@ export default {
   props: {
     amountDisplay: { type: String, required: true },
     fiatAmount: { type: String, default: '' },
-    cardName: { type: String, default: 'Bolt Card' },
+    cardName: { type: String, default: 'Bitcoin Card' },
     cardHost: { type: String, default: '' },
     cardLogo: { type: String, default: '/Social_Wallet_logos/BoltCard.png' },
     /** "Into Main" in the wallet; empty at the kiosk, where the header names the shop. */

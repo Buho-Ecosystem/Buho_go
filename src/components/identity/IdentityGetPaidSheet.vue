@@ -449,7 +449,7 @@ export default {
      */
     addressFooter() {
       if (this.usingOwnWallet) {
-        return this.$t('Payments to your name land in your {name} wallet.', {
+        return this.$t('Payments to your name land in {name}.', {
           name: this.ownWallet.name || this.$t('Wallet'),
         });
       }

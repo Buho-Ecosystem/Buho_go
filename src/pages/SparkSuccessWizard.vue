@@ -126,7 +126,7 @@
                 {{ $t('Tap to Pay with NFC') }}
               </h2>
               <p class="slide-text" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'">
-                {{ $t('Accept Bolt Card payments with a single tap. Customers hold their card to your phone and pay instantly.') }}
+                {{ $t('Accept Bitcoin Card payments with a single tap. Customers hold their card to your phone and pay instantly.') }}
               </p>
             </div>
           </q-carousel-slide>

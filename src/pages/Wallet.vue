@@ -459,6 +459,8 @@
       :is-complete="sendDidSucceed"
       :commit-gate="sendSheetCommitGate"
       :takeover="brantaTampered"
+      :title="paymentIntent?.context === 'kiosk-withdraw' ? $t('Withdraw') : ''"
+      :extras-have-total="isSparkL1Payment"
       @amount-changed="sendSheetAmountSats = $event"
       @update:sending-wallet-id="onSendingWalletChange"
       @retry-preparation="prepareContextualPayment"
@@ -786,7 +788,7 @@ import BatchSendModal from '../components/BatchSendModal.vue';
 import BackupBanner from '../components/BackupBanner.vue';
 import BackupShortcut from '../components/BackupShortcut.vue';
 import SparkStatusLine from '../components/spark/SparkStatusLine.vue';
-import { formatSats } from '../utils/autoTransferCopy.js';
+import { formatSats, whenText } from '../utils/autoTransferCopy.js';
 import AutoTransferStatusLine from '../components/autoTransfer/AutoTransferStatusLine.vue';
 import ClipboardSuggestion from '../components/ClipboardSuggestion.vue';
 import IdentityAuthDialog from '../components/IdentityAuthDialog.vue';
@@ -2254,7 +2256,7 @@ export default {
      */
     withdrawSheetProps() {
       if (this.withdrawReading) {
-        return { reading: true, card: { name: 'Bolt Card', host: this.withdrawReading.host }, amount: { mode: 'free' } };
+        return { reading: true, card: { name: 'Bitcoin Card', host: this.withdrawReading.host }, amount: { mode: 'free' } };
       }
       const p = this.pendingPayment;
       if (!p || p.type !== 'lnurl_withdraw') return null;
@@ -2397,14 +2399,15 @@ export default {
       if (this.currentDisplayMode === 'fiat') {
         return fiatSymbol(this.preferredFiatCurrency);
       }
-      if (this.walletStore.useBip177Format) return '₿';
+      // "₿ 1,234" with a no-break space, as every other Bitcoin figure is written.
+      if (this.walletStore.useBip177Format) return '₿\u00a0';
       return '';
     },
 
     balanceSuffix() {
       if (this.currentDisplayMode === 'fiat') return '';
       if (this.walletStore.useBip177Format) return '';
-      return ' sats';
+      return '\u00a0sats';
     },
     preferredFiatCurrency() {
       return (this.walletStore.preferredFiatCurrency || 'USD').toUpperCase();
@@ -3357,7 +3360,7 @@ export default {
     onNfcBadge() {
       this.$q.notify({
         message: this.$t('NFC ready'),
-        caption: this.$t('Hold a Bolt Card or NFC tag to your phone to pay or redeem'),
+        caption: this.$t('Hold a Bitcoin Card or NFC tag to your phone to pay or redeem'),
         timeout: 3500,
         position: 'top',
       });
@@ -3925,22 +3928,10 @@ export default {
       const diffMs = Date.now() - ts;
       if (diffMs < 0) return this.$t('just now');
       const minute = 60 * 1000;
-      const hour = 60 * minute;
-      const day = 24 * hour;
-      const week = 7 * day;
+      const week = 7 * 24 * 60 * minute;
       if (diffMs < minute) return this.$t('just now');
-      if (diffMs < hour) {
-        const n = Math.floor(diffMs / minute);
-        return `${n} ${n === 1 ? this.$t('min ago') : this.$t('mins ago')}`;
-      }
-      if (diffMs < day) {
-        const n = Math.floor(diffMs / hour);
-        return `${n} ${n === 1 ? this.$t('hr ago') : this.$t('hrs ago')}`;
-      }
-      if (diffMs < week) {
-        const n = Math.floor(diffMs / day);
-        return `${n} ${n === 1 ? this.$t('day ago') : this.$t('days ago')}`;
-      }
+      // "5 minutes ago", "yesterday": the words every other screen uses, in the person's language.
+      if (diffMs < week) return whenText(ts, { locale: this.$i18n.locale });
       // Older than a week: show a short absolute date, localised.
       try {
         return new Date(ts).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });

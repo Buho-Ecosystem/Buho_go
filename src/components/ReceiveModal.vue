@@ -1507,7 +1507,7 @@ export default {
             amountSats: data.amount || this.generatedInvoice?.amount,
           });
           noteReceiptShown(receiveWalletId, this.generatedInvoice?.payment_hash);
-          this.paymentStatusMessage = this.$t('Payment received!');
+          this.paymentStatusMessage = this.$t('Bitcoin received');
           haptics.success();
 
           // Stop monitoring
