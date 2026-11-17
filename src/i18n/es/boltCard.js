@@ -17,7 +17,6 @@ export default {
   "Pay another way": "Pagar de otra forma",
   "Paying…": "Pagando…",
   "Scan the code to pay instead.": "Escanea el código para pagar.",
-  "Hold a Bolt Card here": "Acerca una Bolt Card aquí",
   "Against the back of this phone": "A la parte trasera de este teléfono",
   "Card held · enter the amount": "Tarjeta lista · introduce el importe",
   "Paid by card": "Pagado con tarjeta",

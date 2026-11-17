@@ -89,7 +89,7 @@
                   {{ kindLabel(c.kind) }}
                 </span>
                 <span class="item-amount" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-6'">
-                  {{ formatSats(c.priceSats) }} {{ $t('sats') }}
+                  {{ formatSats(c.priceSats) }}
                 </span>
               </div>
               <div class="item-sub" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-6'">
@@ -177,6 +177,7 @@
 <script>
 import { Icon } from '@iconify/vue';
 import { useWalletStore } from '../../stores/wallet';
+import { formatAmountWithPrefix } from '../../utils/amountFormatting.js';
 import { useNadanadaOrdersStore } from '../../stores/nadanadaOrders';
 import { normalizeTx } from '../../services/txNormalizer.js';
 import {
@@ -489,10 +490,10 @@ export default {
       }
     },
 
-    formatSats(n) {
-      if (!Number.isFinite(n)) return '';
-      try { return new Intl.NumberFormat(this.$i18n?.locale || undefined).format(n); }
-      catch { return String(n); }
+    /** An amount with its unit, as Settings writes it: "₿ 1,234" or "1,234 sats". */
+    formatSats(n, sign = '') {
+      if (n == null || !Number.isFinite(Number(n))) return '';
+      return formatAmountWithPrefix(Math.max(0, Math.floor(Number(n) || 0)), this.walletStore.useBip177Format !== false, sign);
     },
 
     formatDate(ms) {

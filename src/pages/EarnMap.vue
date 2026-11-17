@@ -8,7 +8,7 @@
       </q-btn>
       <div class="earn-sats-pill" @click="$router.push('/learn/summary')">
         <Icon icon="tabler:bolt" width="14" height="14" />
-        <span>{{ earnStore.totalEarned }} sats</span>
+        <span>{{ amountText(earnStore.totalEarned) }}</span>
       </div>
     </div>
 
@@ -143,6 +143,7 @@
 <script>
 import { useEarnStore } from '../stores/earn'
 import { useWalletStore } from '../stores/wallet'
+import { formatAmount } from '../utils/amountFormatting.js'
 import { findEarnPayoutWallet, getEarnPayoutWallets } from '../utils/earnWallets'
 import EarnBottomNav from '../components/EarnBottomNav.vue'
 
@@ -190,6 +191,10 @@ export default {
     })
   },
   methods: {
+    /** An amount with its unit, as Settings writes it: "₿ 1,234" or "1,234 sats". */
+    amountText(sats) {
+      return formatAmount(sats || 0, this.walletStore.useBip177Format !== false)
+    },
     getChapterState(chapter) {
       if (this.earnStore.isChapterComplete(chapter.id)) return 'completed'
       if (!this.earnStore.isGroupUnlocked(chapter.groupId)) return 'locked'

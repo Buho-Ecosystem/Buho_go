@@ -65,7 +65,7 @@ export default {
   "Can't be paid from {name}": "No se puede pagar desde {name}",
   "Rules run while BuhoGO is open.": "Las reglas funcionan mientras BuhoGO está abierto.",
   "Move money on its own": "Mueve dinero por sí solo",
-  "Like shop takings into savings, once they pass an amount.": "Como las ventas de la tienda a tus ahorros, al pasar una cantidad.",
+  "Like shop takings into savings, once they pass an amount.": "Como las ventas de la tienda a tus ahorros, al superar un importe.",
   "Change Destination": "Cambiar destino",
   "Progress": "Progreso",
   "Remove Rule": "Quitar regla",

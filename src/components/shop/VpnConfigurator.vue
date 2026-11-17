@@ -73,7 +73,7 @@
               {{ d.priceSatsEstimate ? `≈ ${formatSats(d.priceSatsEstimate)}` : formatUsd(d.priceUsd) }}
             </span>
             <span v-if="d.priceSatsEstimate" class="bundle-price-sub" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'">
-              {{ $t('sats') }} · {{ formatUsd(d.priceUsd) }}
+              {{ formatUsd(d.priceUsd) }}
             </span>
           </span>
         </button>
@@ -116,6 +116,8 @@
 
 <script>
 import { Icon } from '@iconify/vue';
+import { useWalletStore } from '../../stores/wallet';
+import { formatAmountWithPrefix } from '../../utils/amountFormatting.js';
 import LocationPickerSheet from './LocationPickerSheet.vue';
 import ShopInfoTooltip from './ShopInfoTooltip.vue';
 
@@ -184,7 +186,7 @@ export default {
       if (!this.canContinue) return this.$t('Continue');
       const d = this.selectedDuration;
       const price = d.priceSatsEstimate
-        ? `≈ ${this.formatSats(d.priceSatsEstimate)} ${this.$t('sats')}`
+        ? `≈ ${this.formatSats(d.priceSatsEstimate)}`
         : this.formatUsd(d.priceUsd);
       return `${this.$t('Continue')} · ${price}`;
     },
@@ -201,10 +203,10 @@ export default {
   },
 
   methods: {
-    formatSats(n) {
-      if (n == null || !Number.isFinite(n)) return '';
-      try { return new Intl.NumberFormat(this.$i18n?.locale || undefined).format(n); }
-      catch { return String(n); }
+    /** An amount with its unit, as Settings writes it: "₿ 1,234" or "1,234 sats". */
+    formatSats(n, sign = '') {
+      if (n == null || !Number.isFinite(Number(n))) return '';
+      return formatAmountWithPrefix(Math.max(0, Math.floor(Number(n) || 0)), useWalletStore().useBip177Format !== false, sign);
     },
     formatUsd(n) {
       if (n == null || !Number.isFinite(n)) return '';
@@ -243,7 +245,7 @@ export default {
       const days = this.durationDays(d);
       if (days <= 0) return '';
       if (d.priceSatsEstimate) {
-        return `≈ ${this.$t('{n} sats/day', { n: this.formatSats(Math.round(d.priceSatsEstimate / days)) })}`;
+        return `≈ ${this.$t('{n}/day', { n: this.formatSats(Math.round(d.priceSatsEstimate / days)) })}`;
       }
       if (Number.isFinite(d.priceUsd)) {
         return `≈ ${this.$t('{usd}/day', { usd: this.formatUsd(d.priceUsd / days) })}`;

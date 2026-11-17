@@ -252,13 +252,11 @@ export default {
   border-radius: 20px 20px 0 0;
   padding-bottom: max(16px, env(safe-area-inset-bottom));
 }
-.lnaddr-light {
-  background: #ffffff;
-  color: #1a1a1a;
-}
+/* The paper every other sheet is drawn on, in both themes. */
+.lnaddr-light,
 .lnaddr-dark {
-  background: #1e1e1e;
-  color: #f0f0f0;
+  background: var(--bg-card);
+  color: var(--text-primary);
 }
 
 .lnaddr-grabber {

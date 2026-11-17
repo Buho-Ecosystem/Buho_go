@@ -93,6 +93,7 @@
               :fiat-rate="rate"
               :disabled="submitting"
               :locale="$i18n.locale"
+              :bip177="bip177"
               :exact-sats="totalSats"
               scroll-content
               @update:model-value="draft.amount = $event"
@@ -146,8 +147,8 @@
                 {{ $t(repayment ? 'Expense total' : 'Total to receive') }}
               </p>
               <p class="shared-request__amount" aria-live="polite">
-                {{ draft.inFiat ? fiat(displayTotal) : decimal(displayTotal)
-                }}<small v-if="!draft.inFiat">sats</small>
+                {{ draft.inFiat ? fiat(displayTotal) : bip177 ? money(displayTotal) : decimal(displayTotal)
+                }}<small v-if="!draft.inFiat && !bip177">sats</small>
               </p>
               <button
                 class="shared-request__currency"

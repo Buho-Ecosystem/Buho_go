@@ -143,6 +143,7 @@
           :fiat-code="keypad.currency.toLowerCase()"
           :fiat-rate="rateFor(keypad.currency)"
           :locale="$i18n.locale"
+          :bip177="walletStore.useBip177Format !== false"
         >
           <div v-if="view === 'threshold' && !keypad.fiat && suggestions.length" class="at-chips">
             <button v-for="n in suggestions" :key="n" type="button" class="at-chip" :class="{ 'is-on': keypadSatsValue === n }" @click="keypad.value = String(n)">

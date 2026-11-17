@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import { reactive, nextTick } from 'vue';
 import { profileInvoiceFixture } from '../../../scripts/fixtures/profileInvoice.mjs';
 import { createKioskPaymentRuntime, useKioskPayments, validateKioskInvoice } from '../useKioskPayments.js';
+import { KIOSK_LATE_PAYMENT_GRACE_MS } from '../../utils/kioskMerchant.js';
 
 const hash = 'a'.repeat(64), otherHash = 'b'.repeat(64);
 const invoice = { paymentRequest: 'lnbc10u1qqqq', paymentHash: hash, preimage: 'NEVER-PERSIST', accessToken: 'NEVER-PERSIST', invoice_id: 'receive-id' };
@@ -15,9 +16,9 @@ function fakeMerchant(events) {
     async initialize() {}, getOrder(id) { return this.orders.find(o => o.id === id); },
     get pendingAttempts() { return this.orders.flatMap(order => order.attempts.filter(a => a.status !== 'paid' && a.status !== 'failed').map(a => ({ ...a, orderId: order.id, attemptId: a.id }))); },
     async createOrder(value) { const order = { ...value, id: `order-${this.orders.length}`, status: 'preparing', attempts: [], activeAttemptId: null }; events.push('persist-order'); this.orders.push(order); this.activeOrderId = order.id; return this.getOrder(order.id); },
-    async beginAttempt(id) { const o = this.getOrder(id); assert.ok(!o.attempts.some(a => ['creating', 'uncertain', 'waiting'].includes(a.status))); const a = { id: `${id}-attempt-${o.attempts.length}`, walletId: o.walletId, amountSats: o.totalSats, status: 'creating' }; events.push('persist-intent'); o.attempts.push(a); o.activeAttemptId = a.id; return a; },
-    async attachInvoice(id, aid, value) { if (this.failAttach) throw Object.assign(new Error('quota'), { code: 'KIOSK_STORAGE_FAILED' }); const o = this.getOrder(id); Object.assign(o.attempts.find(a => a.id === aid), value, { status: 'waiting' }); o.status = 'waiting'; events.push('persist-invoice'); },
-    async markCreationUncertain(id, aid, reason) { const o = this.getOrder(id), a = o.attempts.find(a => a.id === aid); if (a.status !== 'creating' && a.status !== 'uncertain') return; a.status = 'uncertain'; a.reason = reason; o.status = 'uncertain'; },
+    async beginAttempt(id) { const o = this.getOrder(id); assert.ok(!o.attempts.some(a => ['creating', 'waiting'].includes(a.status))); const a = { id: `${id}-attempt-${o.attempts.length}`, walletId: o.walletId, amountSats: o.totalSats, status: 'creating' }; events.push('persist-intent'); o.attempts.push(a); o.activeAttemptId = a.id; return a; },
+    async attachInvoice(id, aid, value) { if (this.failAttach) throw Object.assign(new Error('quota'), { code: 'KIOSK_STORAGE_FAILED' }); const o = this.getOrder(id), a = o.attempts.find(a => a.id === aid); if (a.status === 'failed') return null; Object.assign(a, value, { status: 'waiting' }); o.status = 'waiting'; events.push('persist-invoice'); return a; },
+    async markAttemptFailed(id, aid, reason) { const o = this.getOrder(id), a = o.attempts.find(a => a.id === aid); assert.ok(!a.paymentHash, 'a shown request is never closed as not charged'); a.status = 'failed'; a.reason = reason; o.status = 'failed'; },
     async markAttemptExpired(id, aid) { const o = this.getOrder(id); o.attempts.find(a => a.id === aid).status = 'expired'; o.status = 'expired'; },
     async settleAttempt(id, aid, proof) { if (this.failSettle) throw new Error('storage'); const o = this.getOrder(id), a = o.attempts.find(a => a.id === aid); assert.equal(proof.walletId, a.walletId); assert.equal(proof.paymentHash, a.paymentHash); if (proof.settledSats != null) assert.equal(proof.settledSats, o.totalSats); const newlyPaid = o.status !== 'paid', duplicate = a.status === 'paid'; a.status = 'paid'; o.status = 'paid'; events.push('persist-paid'); return { order: o, attempt: a, newlyPaid, duplicate, duplicatePayment: !newlyPaid && !duplicate }; },
     async setActiveOrder(id) { this.activeOrderId = id; }, async startNextSale() { this.activeOrderId = null; events.push('clear-draft'); },
@@ -72,29 +73,33 @@ test('intent is durable before provider creation and only the exact public reque
   assert.equal(h.calls.length, 1, 'unresolved request cannot be blindly recreated');
 });
 
-test('an unknown creation error keeps an unresolved durable attempt and does not retry', async ctx => {
-  const h = harness(ctx, { create: async () => { throw new Error('token=PRIVATE'); } });
+test('a request that never came back was never shown: it closes as not charged and staff can try again', async ctx => {
+  let fail = true;
+  const h = harness(ctx, { create: async () => { if (fail) throw new Error('token=PRIVATE'); return invoice; } });
   await h.runtime.createCharge(snapshot());
-  assert.equal(h.runtime.status.value, 'uncertain');
+  assert.equal(h.runtime.status.value, 'not-charged');
   assert.equal(h.runtime.activeInvoice.value, null);
+  assert.equal(h.runtime.pendingOrders.value.length, 0);
   assert.ok(!JSON.stringify(h.merchant.orders).includes('PRIVATE'));
+  fail = false;
   await h.runtime.createCharge(snapshot());
-  assert.equal(h.calls.length, 1);
+  assert.equal(h.calls.length, 2);
+  assert.equal(h.merchant.orders.length, 1, 'the retry keeps the same sale');
+  assert.equal(h.runtime.status.value, 'waiting');
 });
 
-test('a creation timeout retains a late returned invoice without paying or attaching it to another customer', async ctx => {
+test('a request that comes back after the timeout is dropped, never shown or attached to another customer', async ctx => {
   const pending = deferred();
   const h = harness(ctx, { creationTimeoutMs: 5, create: () => pending.promise });
   await h.runtime.createCharge(snapshot());
-  assert.equal(h.runtime.status.value, 'uncertain');
+  assert.equal(h.runtime.status.value, 'not-charged');
   await h.runtime.nextCustomer();
   pending.resolve(invoice);
   await flush();
-  assert.equal(h.merchant.orders[0].attempts[0].paymentHash, hash);
+  assert.equal(h.merchant.orders[0].attempts[0].paymentHash, undefined);
   assert.equal(h.runtime.activeInvoice.value, null);
+  assert.equal(h.runtime.problem.value, null);
   assert.equal(h.paid.length, 0);
-  await h.runtime.resume(h.merchant.orders[0].id);
-  assert.equal(h.runtime.activeInvoice.value.paymentHash, hash);
 });
 
 test('source context change retains the current order and an already-created late request', async ctx => {
@@ -142,21 +147,36 @@ test('only a receiving wallet settlement confirms; a receiving fee does not chan
   await h.runtime.checkNow();
   assert.equal(h.runtime.status.value, 'paid');
   assert.equal(h.paid.length, 1);
-  assert.deepEqual(lookups[0], ['wallet', hash, { createdAt: undefined, strict: true }]);
+  assert.deepEqual(lookups[0], ['wallet', hash, { createdAt: undefined, expiresAt: 2_000_000_000, strict: true }]);
   assert.deepEqual(h.events.slice(-2), ['persist-paid', 'callback-paid']);
   assert.equal(h.paid[0][2].receivedSats, 995);
 });
 
-for (const badProof of [{ paid: true, amount: 999 }, { paid: true, amount: 1000, payment_hash: otherHash }]) {
-  test('mismatched settlement proof cannot mark the order paid', async ctx => {
-    const h = harness(ctx, { lookup: async () => badProof });
-    await h.runtime.createCharge(snapshot());
-    await h.runtime.checkNow();
-    assert.equal(h.runtime.status.value, 'waiting');
-    assert.equal(h.runtime.problem.value.code, 'KIOSK_PAYMENT_MISMATCH');
-    assert.equal(h.paid.length, 0);
-  });
-}
+test('a payment for another hash cannot mark the order paid', async ctx => {
+  const h = harness(ctx, { lookup: async () => ({ paid: true, amount: 1000, payment_hash: otherHash }) });
+  await h.runtime.createCharge(snapshot());
+  await h.runtime.checkNow();
+  assert.equal(h.runtime.status.value, 'waiting');
+  assert.equal(h.runtime.problem.value.code, 'KIOSK_PAYMENT_MISMATCH');
+  assert.equal(h.paid.length, 0);
+});
+
+test('an NWC wallet that reports what it credited after its fee confirms the sale; any other wallet must report the request', async ctx => {
+  const h = await durableHarness(ctx, { lookup: async () => ({ paid: true, amount: 995, paymentHash: hash }) });
+  h.walletStore.wallets = [{ id: 'wallet', type: 'nwc' }];
+  await h.runtime.createCharge(h.snapshot);
+  await h.runtime.checkNow();
+  assert.equal(h.runtime.status.value, 'paid');
+  assert.equal(h.saved().orders[0].attempts[0].settledSats, 1000);
+  assert.equal(h.paid.length, 1);
+
+  const short = harness(ctx, { lookup: async () => ({ paid: true, amount: 1, paymentHash: hash }) });
+  await short.runtime.createCharge(snapshot());
+  await short.runtime.checkNow();
+  assert.equal(short.runtime.status.value, 'waiting');
+  assert.equal(short.runtime.problem.value.code, 'KIOSK_PAYMENT_MISMATCH');
+  assert.equal(short.paid.length, 0);
+});
 
 test('expiry retains monitoring and a later payment belongs to the original detached order', async ctx => {
   let paid = false;
@@ -185,14 +205,13 @@ test('settlement write failure cannot show success; a subsequent verified check 
   assert.equal(h.paid.length, 1);
 });
 
-test('interrupted creating intent becomes uncertain on hydration without creating another request', async ctx => {
+test('a request interrupted while being created closes as not charged on start, without creating another', async ctx => {
   const merchant = fakeMerchant([]);
   const o = await merchant.createOrder(snapshot());
   await merchant.beginAttempt(o.id);
   const h = harness(ctx, { merchant });
   await h.runtime.ready;
-  assert.equal(h.runtime.status.value, 'uncertain');
-  await h.runtime.createCharge(snapshot());
+  assert.equal(h.runtime.status.value, 'not-charged');
   assert.equal(h.calls.length, 0);
 });
 
@@ -400,16 +419,31 @@ test('a retry cannot replace a paid original whose receipt write fails', async c
   assert.equal(h.paid.length, 1);
 });
 
-test('a hashless uncertain request cannot issue a replacement after restoring the register', async ctx => {
+test('a request still being created cannot be replaced', async ctx => {
   const h = await durableHarness(ctx);
   await h.runtime.ready;
   const order = await h.merchant.createOrder(h.snapshot);
-  const attempt = await h.merchant.beginAttempt(order.id);
-  await h.merchant.markCreationUncertain(order.id, attempt.id, 'CREATION_INTERRUPTED');
+  await h.merchant.beginAttempt(order.id);
   await h.runtime.createCharge(h.snapshot);
   assert.equal(h.calls.length, 0);
   assert.equal(h.merchant.orders[0].attempts.length, 1);
   assert.equal(h.runtime.problem.value.code, 'KIOSK_REQUEST_UNRESOLVED');
+});
+
+test('after expiry and the grace period one strict check closes an unpaid request, then checking stops', async ctx => {
+  const lookups = [];
+  const h = await durableHarness(ctx, {
+    now: () => 2_000_000_000_000 + KIOSK_LATE_PAYMENT_GRACE_MS,
+    lookup: async (...args) => { lookups.push(args); return { paid: false, paymentHash: hash }; },
+  });
+  await h.runtime.createCharge(h.snapshot);
+  await h.runtime.checkNow();
+  assert.equal(h.runtime.status.value, 'unpaid');
+  assert.equal(h.runtime.pendingOrders.value.length, 0);
+  assert.equal(lookups.length, 1);
+  assert.equal(lookups[0][2].expiresAt, 2_000_000_000);
+  await h.runtime.checkNow();
+  assert.equal(lookups.length, 1, 'a closed request is not checked again');
 });
 
 test('entering staff mode before resuming an owner-selected request retains its exact QR', async ctx => {
@@ -610,4 +644,44 @@ test('a recovered connection clears the earlier register problem before displayi
   await h.runtime.createCharge(snapshot());
   assert.equal(h.runtime.problem.value, null);
   assert.equal(h.runtime.status.value, 'waiting');
+});
+
+test('a request closed as unpaid on an out-of-date answer is asked about again before another request exists', async ctx => {
+  let paid = false;
+  const h = await durableHarness(ctx, {
+    now: () => 2_000_000_000_000 + KIOSK_LATE_PAYMENT_GRACE_MS,
+    lookup: async () => ({ paid, paymentHash: hash, amount: 1000 }),
+  });
+  await h.runtime.createCharge(h.snapshot);
+  await h.runtime.checkNow();
+  assert.equal(h.runtime.status.value, 'unpaid');
+  paid = true;
+  await h.runtime.createCharge(h.snapshot);
+  assert.equal(h.runtime.status.value, 'paid');
+  assert.equal(h.calls.length, 1, 'no second request');
+  assert.equal(h.saved().orders[0].attempts.length, 1);
+});
+
+test('a device clock running ahead of the wallet does not end a shown request early', async ctx => {
+  const nowSec = Math.floor(Date.now() / 1000);
+  const h = await durableHarness(ctx, { decodeInvoice: () => ({ paymentHash: hash, amountSats: 1000, expiresAt: nowSec - 3600, issuedAt: nowSec - 7200 }) });
+  h.walletStore.createInvoiceDetailsOnWallet = async () => ({ ...invoice, expiresAt: nowSec - 3600 });
+  await h.runtime.createCharge(h.snapshot);
+  await h.runtime.checkNow();
+  assert.equal(h.runtime.status.value, 'waiting');
+  assert.equal(h.saved().orders[0].attempts[0].status, 'waiting');
+});
+
+test('a wallet that answers again ends the connection problem a failed reconnect left on the register', async ctx => {
+  let offline = false;
+  const h = harness(ctx, { lookup: async () => { if (offline) throw new Error('offline'); return { paid: false, paymentHash: hash }; } });
+  await h.runtime.createCharge(snapshot());
+  offline = true;
+  h.walletStore.ensureWalletConnectedForTransfer = async () => { throw new Error('offline'); };
+  await h.runtime.reconnect().catch(() => {});
+  assert.equal(h.runtime.problem.value?.code, 'KIOSK_CONNECTION_FAILED');
+  offline = false;
+  h.walletStore.ensureWalletConnectedForTransfer = async () => ({});
+  await h.runtime.checkNow();
+  assert.equal(h.runtime.problem.value, null);
 });

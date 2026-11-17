@@ -90,7 +90,7 @@
               <strong>{{ tx.type === 'incoming' ? $t('Received') : $t('Sent') }}</strong>
               <small>{{ formatTxDate(tx) }}</small>
             </span>
-            <span class="profile-tx-amt">{{ tx.type === 'incoming' ? '+' : '' }}{{ formatSats(tx.amountSats) }} {{ $t('sats') }}</span>
+            <span class="profile-tx-amt">{{ formatSats(tx.amountSats, tx.type === 'incoming' ? '+' : '') }}</span>
           </div>
         </div>
         <p class="profile-history-note">{{ $t('Payments between you and {name}.', { name: entry.name }) }}</p>
@@ -324,8 +324,9 @@ export default {
       }
     },
 
-    formatSats(n) {
-      return new Intl.NumberFormat().format(Math.max(0, Math.floor(n || 0)))
+    /** An amount with its unit, as Settings writes it: "₿ 1,234" or "1,234 sats". */
+    formatSats(n, sign = '') {
+      return formatAmountWithPrefix(Math.max(0, Math.floor(Number(n) || 0)), this.walletStore.useBip177Format !== false, sign)
     },
   },
 }

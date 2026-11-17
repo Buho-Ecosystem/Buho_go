@@ -70,7 +70,7 @@
           <div class="kiosk-onboarding__copy"><h1>{{ $t('Your counter is ready.') }}</h1><p>{{ $t('Take your first payment whenever you are ready.') }}</p></div>
         </div>
         <IdentityGroup class="kiosk-onboarding__choices">
-          <IdentityRow :label="wallet?.name || $t('Receiving Wallet')" :caption="$t('Receives your sales')" :interactive="false"><template #leading><span class="kiosk-onboarding__tile"><Icon icon="tabler:wallet" width="21" height="21" /></span></template><template #trailing><Icon icon="tabler:check" width="20" height="20" class="kiosk-onboarding__check" /></template></IdentityRow>
+          <IdentityRow :label="wallet?.name || $t('Receiving wallet')" :caption="$t('Receives your sales')" :interactive="false"><template #leading><span class="kiosk-onboarding__tile"><Icon icon="tabler:wallet" width="21" height="21" /></span></template><template #trailing><Icon icon="tabler:check" width="20" height="20" class="kiosk-onboarding__check" /></template></IdentityRow>
           <IdentityRow :label="$t('Owner PIN set')" :interactive="false"><template #leading><span class="kiosk-onboarding__tile"><Icon icon="tabler:lock" width="21" height="21" /></span></template><template #trailing><Icon icon="tabler:check" width="20" height="20" class="kiosk-onboarding__check" /></template></IdentityRow>
         </IdentityGroup>
         <p v-if="error" class="kiosk-onboarding__error" role="alert">{{ error }}</p>
@@ -156,7 +156,7 @@ export default {
 .kiosk-onboarding__copy h1 { margin: 0; color: var(--text-primary); font: 780 29px/1.16 'Manrope', sans-serif; letter-spacing: -.9px; text-wrap: balance; }
 .kiosk-onboarding__copy p { max-width: 310px; margin: 12px auto 0; color: var(--text-secondary); font-size: 14px; line-height: 1.6; text-wrap: pretty; }
 .kiosk-onboarding__actions { display: flex; flex-direction: column; gap: 6px; flex: none; padding: 0 24px max(16px,var(--safe-bottom,16px)); }
-.kiosk-onboarding__primary { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; min-height: 52px; padding: 12px 16px; border: 1px solid var(--btn-neutral-border); border-radius: 15px; background: var(--btn-neutral-bg); color: var(--btn-neutral-fg); font: 700 14px/1.4 'Manrope', sans-serif; cursor: pointer; }
+.kiosk-onboarding__primary { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; min-height: 52px; padding: 12px 16px; border: 0; border-radius: 15px; background: var(--btn-primary-bg); color: var(--btn-primary-fg); font: 700 14px/1.4 'Manrope', sans-serif; cursor: pointer; }
 .kiosk-onboarding__secondary { min-height: 44px; padding: 9px 10px; border: 0; border-radius: 11px; background: transparent; color: var(--text-secondary); font: 650 13px/1.4 'Manrope', sans-serif; cursor: pointer; }
 .kiosk-onboarding button:disabled { opacity: .45; cursor: default; }
 .kiosk-onboarding button:focus-visible, .kiosk-onboarding select:focus-visible { outline: 2px solid var(--brand-accent-text); outline-offset: -2px; }

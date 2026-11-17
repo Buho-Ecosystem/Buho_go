@@ -42,7 +42,7 @@ async function harness(ctx, options = {}) {
       invoices.set(result.paymentRequest, { paymentHash: hash, expiresAt: Math.floor(Date.now() / 1000) + 900 });
       return options.create ? options.create(request, result) : result;
     },
-    async lookupInvoice(hash) { h.lookups.push(hash); return { paid: h.paidHashes.has(hash), paymentHash: hash }; },
+    async lookupInvoice(hash) { h.lookups.push(hash); if (h.offline) throw new Error('offline'); return { paid: h.paidHashes.has(hash), paymentHash: hash }; },
   };
   h.store = Vue.reactive({
     kioskEnabled: true, kioskOwnerAccess: false, kioskWalletId: 'merchant',
@@ -126,7 +126,18 @@ test('QR-first card reuses the durable invoice; unrelated balance changes never 
   const hash = h.vm.invoiceData.paymentHash; h.paidHashes.add(hash);
   await h.vm.payments.checkNow(); await h.settle();
   assert.equal(h.vm.state, 'success'); assert.equal(h.merchant.sales.length, 1); assert.equal(h.merchant.sales[0].totalSats, 100); assert.ok(h.lookups.every(value => value === hash));
+  assert.equal(h.merchant.sales[0].method, 'card', 'the card paid its own request');
   await h.vm.payments.checkNow(); assert.equal(h.merchant.sales.length, 1);
+});
+
+test('a card that failed on the request leaves the method open when that request is paid later', async ctx => {
+  const h = await harness(ctx, { authorize: async () => { throw new Error('timeout'); } });
+  await h.charge('100'); h.tap(); await h.settle();
+  assert.equal(h.authorized.length, 1);
+  h.paidHashes.add(h.vm.invoiceData.paymentHash);
+  await h.vm.payments.checkNow(); await h.settle();
+  assert.equal(h.vm.state, 'success');
+  assert.equal(h.merchant.sales[0].method, '', 'neither Bitcoin Card nor QR code is claimed');
 });
 
 for (const [tips, rounding, selected, expected] of [[false, false, false, 100], [true, false, false, 100], [true, false, true, 110], [false, true, true, 500], [true, true, true, 500]]) {
@@ -220,4 +231,66 @@ test('fiat checkout keeps its quoted currency visible and never reprices the pay
   h.store.exchangeRates = { usd: 200000 }; await h.settle();
   assert.equal(h.vm.paymentAmount, '$12.50');
   assert.equal(h.vm.invoiceData.amountSats, 12500);
+});
+
+test('the register shows amounts in the Bitcoin format chosen in Settings (#453)', async ctx => {
+  const h = await harness(ctx);
+  const n = (1234).toLocaleString('en-US');
+  assert.equal(h.vm.displaySats(1234), `₿\u00a0${n}`, 'the default format puts ₿ in front');
+  h.store.useBip177Format = false; await h.settle();
+  assert.equal(h.vm.displaySats(1234), `${n}\u00a0sats`, 'only the legacy format says sats');
+});
+
+test('Back on the tip screen returns to the amount without creating a request', async ctx => {
+  const h = await harness(ctx, { storeState: { kioskTipEnabled: true } });
+  await h.input('1000'); await h.vm.proceedToTipOrCharge(); await h.settle();
+  assert.equal(h.vm.state, 'tipping');
+  h.vm.leaveTip(); await h.settle();
+  assert.equal(h.vm.state, 'input');
+  assert.equal(h.created.length, 0);
+});
+
+test('a request that never came back is not charged, and Try again makes a new one without asking', async ctx => {
+  let calls = 0;
+  const h = await harness(ctx, { create: (request, result) => { if (++calls === 1) throw new Error('HTTP 500'); return result; } });
+  await h.charge('100');
+  assert.equal(h.vm.payments.status.value, 'not-charged');
+  assert.ok(h.vm.interruption.retry, 'offers a new request');
+  h.vm.retryCharge(); await h.settle();
+  assert.equal(h.dialogs.length, 0, 'nothing could have been paid, so nothing to ask');
+  assert.equal(h.created.length, 2);
+  assert.equal(h.vm.state, 'payment');
+});
+
+test('a typed amount alone does not block a saved basket; opening one replaces the amount', async ctx => {
+  const h = await harness(ctx);
+  await h.input('100'); await h.vm.addToAccumulated(); await h.settle();
+  await h.vm.saveBasket(); await h.settle();
+  await h.input('12');
+  assert.equal(h.vm.basketHasItems, false);
+  await h.vm.resumeBasket(h.merchant.savedBaskets[0].id); await h.settle();
+  assert.equal(h.vm.draft.items.length, 1);
+  assert.equal(h.vm.draft.amountRaw, '');
+});
+
+test('Clear basket asks first and keeps the basket until confirmed', async ctx => {
+  const h = await harness(ctx);
+  await h.input('100'); await h.vm.addToAccumulated(); await h.settle();
+  h.vm.clearAll();
+  assert.equal(h.dialogs.length, 1);
+  assert.equal(h.vm.hasDraft, true);
+  await h.dialogs[0].ok(); await h.settle();
+  assert.equal(h.vm.hasDraft, false);
+});
+
+test('Check payment again after an outage confirms the original request instead of making another', async ctx => {
+  const h = await harness(ctx);
+  await h.charge('100');
+  h.offline = true; await h.vm.payments.checkNow().catch(() => {}); await h.settle();
+  assert.ok(h.vm.paymentProblem, 'the screen says no payment is confirmed yet');
+  h.offline = false; h.paidHashes.add(h.vm.invoiceData.paymentHash);
+  await h.vm.payments.reconnect(); await h.settle();
+  assert.equal(h.vm.payments.status.value, 'paid');
+  assert.equal(h.created.length, 1);
+  assert.equal(h.merchant.currentOrder.method, 'qr', 'the details say how it was paid, as the register saw it');
 });

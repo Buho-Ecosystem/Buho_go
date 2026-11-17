@@ -45,7 +45,7 @@
       <!-- Always-reachable way out. While busy it cancels the whole Send
            flow (the backdrop is persistent then, so this is the one exit).
            Hidden in Mobile Money mode, whose header owns the back slot. -->
-      <q-btn v-if="!mobileMoneyMode" flat round dense class="sheet-close glass-back-btn" :aria-label="$t('Back')" @click="closeModal">
+      <q-btn v-if="!mobileMoneyMode && !withdraw" flat round dense class="sheet-close glass-back-btn" :aria-label="$t('Back')" @click="closeModal">
         <Icon icon="tabler:chevron-left" width="20" height="20" />
       </q-btn>
 
@@ -57,6 +57,13 @@
           <Icon icon="tabler:chevron-left" width="20" height="20" />
         </q-btn>
         <span class="mm-title">{{ $t('Mobile Money') }}</span>
+      </header>
+      <!-- A withdrawal names itself: one destination, nobody else's. -->
+      <header v-else-if="withdraw" class="mm-head">
+        <q-btn flat round dense class="mm-back" :aria-label="$t('Back')" @click="closeModal">
+          <Icon icon="tabler:chevron-left" width="20" height="20" />
+        </q-btn>
+        <h2 class="mm-title">{{ $t('Withdraw') }}</h2>
       </header>
 
       <!-- ─────────────  ENTRY FIELD  ───────────── -->
@@ -82,7 +89,7 @@
           v-model="manualInput"
           class="manual-textarea"
           :class="{ 'manual-textarea--error': !!resolveError }"
-          :placeholder="mobileMoneyMode ? $t('Enter a mobile number') : $t('Enter a name, invoice, or address')"
+          :placeholder="mobileMoneyMode ? $t('Enter a mobile number') : withdraw ? $t('Enter an invoice or address') : $t('Enter a name, invoice, or address')"
           rows="3"
           autocapitalize="off"
           autocorrect="off"
@@ -132,6 +139,10 @@
               </span>
               <span v-else>{{ $t('Type the number, or pick the country first') }}</span>
             </template>
+            <!-- A withdrawal lists no contacts to match a name against: say what the field takes. -->
+            <span v-else-if="withdraw && manualInput.trim() && !detectedInputType && !ctaBusy">
+              {{ $t('Enter an invoice or address') }}
+            </span>
           </div>
           <transition name="type-pill">
             <div
@@ -207,7 +218,7 @@
       </section>
 
       <!-- ─────────────  METHOD ROWS  ───────────── -->
-      <div v-if="showMethods" class="method-block">
+      <div v-if="showMethods && !withdraw" class="method-block">
         <button type="button" class="method-row" data-audit="send-mobile-money" @click="enterMobileMoney">
           <span class="method-icon">
             <Icon icon="tabler:device-mobile" width="20" height="20" />
@@ -232,7 +243,7 @@
       </div>
 
       <!-- ─────────────  CONTACTS  ───────────── -->
-      <section v-if="awaitingDestination" class="contacts-section">
+      <section v-if="awaitingDestination && !withdraw" class="contacts-section">
         <div class="section-head">
           <span class="section-label">{{ $t('Send to a contact') }}</span>
           <button type="button" class="manage-btn" data-audit="send-manage-contacts" @click="goToAddressBook">
@@ -445,6 +456,12 @@ export default {
     resolveErrorSource: {
       type: String,
       default: ''
+    },
+    // Money out of the register to the owner's own invoice or address:
+    // the field, Paste and Scan only.
+    withdraw: {
+      type: Boolean,
+      default: false
     }
   },
   emits: ['update:modelValue', 'payment-detected', 'update:resolveError', 'open-batch-send'],
@@ -1487,6 +1504,7 @@ export default {
 }
 
 .mm-title {
+  margin: 0;
   font-size: 16px;
   font-weight: 700;
   color: var(--text-primary);

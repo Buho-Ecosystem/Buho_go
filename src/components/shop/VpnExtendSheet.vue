@@ -52,7 +52,7 @@
                     {{ d.priceSatsEstimate ? `≈ ${formatSats(d.priceSatsEstimate)}` : formatUsd(d.priceUsd) }}
                   </span>
                   <span v-if="d.priceSatsEstimate" class="plan-price-sub" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'">
-                    {{ $t('sats') }} · {{ formatUsd(d.priceUsd) }}
+                    {{ formatUsd(d.priceUsd) }}
                   </span>
                 </span>
               </button>
@@ -70,6 +70,8 @@
 
 <script>
 import { Icon } from '@iconify/vue';
+import { useWalletStore } from '../../stores/wallet';
+import { formatAmountWithPrefix } from '../../utils/amountFormatting.js';
 
 /**
  * Duration picker for extending a VPN subscription.
@@ -109,10 +111,10 @@ export default {
         default: return d?.label || '';
       }
     },
-    formatSats(n) {
-      if (!Number.isFinite(n)) return '';
-      try { return new Intl.NumberFormat(this.$i18n?.locale || undefined).format(n); }
-      catch { return String(n); }
+    /** An amount with its unit, as Settings writes it: "₿ 1,234" or "1,234 sats". */
+    formatSats(n, sign = '') {
+      if (n == null || !Number.isFinite(Number(n))) return '';
+      return formatAmountWithPrefix(Math.max(0, Math.floor(Number(n) || 0)), useWalletStore().useBip177Format !== false, sign);
     },
     formatUsd(n) {
       if (!Number.isFinite(n)) return '';

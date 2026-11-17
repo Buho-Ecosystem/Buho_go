@@ -9,9 +9,11 @@ test('available max budgets the entire enforced fee allowance and recipient maxi
     assert.ok(max + 1 + unquotedFeeLimitSats(max + 1) > balance)
   }
   assert.equal(boundedPaymentMax(100000, { walletType: 'spark', destinationType: 'lnurl', recipientMax: 100 }),100)
+  // The send sheet names a Spark address 'spark' (Wallet.vue pendingDestinationType).
+  assert.ok(boundedPaymentMax(1000, { walletType: 'spark', destinationType: 'spark' }) > 0)
 })
 test('unknown fees, invalid balances and native Bitcoin quotes never get a fabricated Max', () => {
   for (const walletType of ['nwc','lnbits','arkade']) assert.equal(boundedPaymentMax(1000,{walletType,destinationType:'lightning_address'}),null)
-  assert.equal(boundedPaymentMax(1000,{walletType:'spark',destinationType:'bitcoin_address'}),null)
+  assert.equal(boundedPaymentMax(1000,{walletType:'spark',destinationType:'bitcoin'}),null)
   assert.equal(boundedPaymentMax(NaN,{walletType:'spark',destinationType:'lnurl'}),null)
 })

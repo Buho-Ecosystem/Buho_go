@@ -41,7 +41,9 @@ test('every NWC failure has a sentence with a next step', () => {
   assert.match(nwcErrorText(sdk('', 'UNAUTHORIZED'), t, ctx), /removed or has expired/);
   assert.match(nwcErrorText(sdk('', 'RATE_LIMITED'), t, ctx), /Wait a moment/);
   assert.match(nwcErrorText(nwcError(NWC_ERROR.UNCONFIRMED), t, ctx), /pay twice/);
-  assert.match(nwcErrorText(nwcError(NWC_ERROR.LIMIT_TOO_LOW, '', { remainingSats: 2400, renewsAt: Date.UTC(2026, 10, 1) }), t, ctx), /2,400 sats left until/);
+  const limit = nwcError(NWC_ERROR.LIMIT_TOO_LOW, '', { remainingSats: 2400, renewsAt: Date.UTC(2026, 10, 1) });
+  assert.match(nwcErrorText(limit, t, ctx), /has ₿\u00a02,400 left until/, 'the amount is written as Settings says');
+  assert.match(nwcErrorText(limit, t, { ...ctx, useBip177Format: false }), /has 2,400\u00a0sats left until/);
   assert.match(nwcErrorText(sdk('reply timeout: x', 'INTERNAL'), t, ctx), /Alby Hub did not answer/);
   assert.match(nwcErrorText(sdk('Failed to connect to wss://x', 'OTHER'), t, ctx), /relay could not be reached/);
   assert.match(nwcErrorText(sdk('', 'QUOTA_EXCEEDED'), t), /your wallet app/, 'a fallback name');

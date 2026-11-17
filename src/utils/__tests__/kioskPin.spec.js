@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { hashKioskPin, kioskPinMatches, savedKioskPinHash } from '../kioskPin.js';
+import { hashKioskPin, kioskPinMatches, kioskPinWaitMs, savedKioskPinHash } from '../kioskPin.js';
 
 test('the saved PIN never contains the PIN, and only the right PIN matches', () => {
   const stored = hashKioskPin('2468');
@@ -18,4 +18,8 @@ test('a PIN saved in plain text by an earlier version is read as a hash', () => 
   const stored = hashKioskPin('1357');
   assert.equal(savedKioskPinHash({ kioskPinHash: stored, kioskPin: '9999' }), stored, 'a hash wins');
   assert.equal(savedKioskPinHash({}), '');
+});
+
+test('wrong owner PINs: five are free, then each next try waits longer', () => {
+  assert.deepEqual([4, 5, 6, 7, 8, 20].map(kioskPinWaitMs), [0, 60_000, 300_000, 900_000, 3_600_000, 3_600_000]);
 });

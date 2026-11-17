@@ -114,8 +114,9 @@
                Locked, range, or free depending on mode. -->
           <section class="amount-stage" :class="{ 'amount-stage--locked': amountMode === 'fixed' }">
             <input
-              :value="amountMode === 'fixed' ? fixedAmountDisplay : displayAmount"
+              :value="amountFieldValue"
               @input="onAmountChange($event)"
+              @focus="amountFocused = true"
               @blur="onAmountBlur"
               type="text"
               inputmode="decimal"
@@ -541,7 +542,7 @@
             <div v-if="isSending && statusMessage && statusMessage !== sendingLabel" class="fee-footnote status-line">
               {{ statusMessage }}
             </div>
-            <div v-else-if="!isSending && !isComplete && !feeSlotVisible && !hasExtras && verb === 'send'" class="fee-footnote">
+            <div v-else-if="!isSending && !isComplete && !feeSlotVisible && !extrasTotal && verb === 'send'" class="fee-footnote">
               {{ $t('Network fees apply') }}
             </div>
         </div>
@@ -676,6 +677,16 @@ export default {
       default: 'send',
       validator: (v) => ['send', 'redeem', 'charge'].includes(v)
     },
+    /** The sheet's own name when the verb's is not the one ("Withdraw"). */
+    title: {
+      type: String,
+      default: ''
+    },
+    /** Whether the extras slot shows its own total (the on-chain panel does). */
+    extrasHaveTotal: {
+      type: Boolean,
+      default: true
+    },
     /**
      * Optional status text shown alongside the spinner while
      * `isSending` is true. Useful for multi-stage operations like
@@ -708,6 +719,10 @@ export default {
       addressCopied: false,
       displayAmount: this.payment?.amount?.mode === 'fixed' ? String(this.payment.amount.fixedSats || 0) : '',
       currentCurrency: 'sats',
+      amountFocused: false,
+      // Whether the parent fills the `extras` slot; $slots is not reactive,
+      // so this is read again before every render (beforeUpdate).
+      extrasFilled: !!this.$slots?.extras,
       comment: '',
       // Whether the rates were asked for since the sheet was first shown,
       // how often, and the moment their age is judged at (read again on
@@ -1221,7 +1236,7 @@ export default {
     },
     /** What is paid in all, under the fee, whenever the fee slot shows (the on-chain panel has its own breakdown). */
     totalRowVisible() {
-      return this.verb === 'send' && this.feeSlotVisible && !this.hasExtras && this.amountInSats > 0
+      return this.verb === 'send' && this.feeSlotVisible && !this.extrasTotal && this.amountInSats > 0
     },
     /** The total waits with the fee it depends on. */
     totalRowPending() {
@@ -1279,7 +1294,10 @@ export default {
     // fee panel). Slot content owns its own fee display then, so the
     // generic "Network fees apply" footnote stays out of the way.
     hasExtras() {
-      return !!this.$slots.extras
+      return this.extrasFilled
+    },
+    extrasTotal() {
+      return this.hasExtras && this.extrasHaveTotal
     },
 
     fiatEquivalent() {
@@ -1307,6 +1325,15 @@ export default {
       return parts.approximate ? `≈\u00a0${parts.number}` : parts.number
     },
     formattedConfirmAmount() { return reviewAmount(this, this.amountInSats) },
+    /** The amount field: grouped like every other figure here, except while it is being typed in. */
+    amountFieldValue() {
+      if (this.amountMode === 'fixed') return this.fixedAmountDisplay
+      const value = String(this.displayAmount || '')
+      const match = !this.amountFocused && /^\d+(?:\.(\d+))?$/.exec(value)
+      if (!match) return value
+      const digits = (match[1] || '').length
+      return new Intl.NumberFormat(undefined, { minimumFractionDigits: digits, maximumFractionDigits: digits }).format(Number(value))
+    },
 
     // ───── Verb-aware copy ─────
     // Centralized so the rest of the template stays oblivious to the
@@ -1317,6 +1344,7 @@ export default {
     topTitle() {
       if (this.isCard || this.isReading) return this.$t('Receive from card')
       if (this.verb === 'charge') return this.$t('Charge card')
+      if (this.title) return this.title
       return this.isRedeem ? this.$t('Redeem from') : this.$t('Send')
     },
 
@@ -1402,6 +1430,9 @@ export default {
     isReading(reading, wasReading) {
       if (wasReading && !reading && this.show) this.resetForFreshOpen()
     }
+  },
+  beforeUpdate() {
+    this.extrasFilled = !!this.$slots?.extras
   },
   mounted() {
     // The contextual host can mount directly into its first visible payment.
@@ -1523,6 +1554,7 @@ export default {
     },
 
     resetForFreshOpen() {
+      this.amountFocused = false
       this.walletPickerOpen = false
       this.detailsOpen = false
       this.brantaDetailsOpen = false
@@ -1747,6 +1779,7 @@ export default {
       this.commentEdited = true
     },
     onAmountBlur() {
+      this.amountFocused = false
       if (this.isSending || this.isComplete || this.amountMode === 'fixed' || this.amountInputError) return
       const value = String(this.displayAmount || '')
       if (!value) return
@@ -1970,6 +2003,14 @@ export default {
 .sheet-card--send .payment-summary .payment-total-row { margin: 0 16px; padding: 16px 0; font-size: 1rem; }
 .sheet-card--send .payment-summary .payment-total-row strong { font-weight: 700; }
 .sheet-card--send .payment-summary .note-row { min-height: 52px; padding: 12px 16px; border-radius: 0; background: transparent; flex-wrap: wrap; }
+/* In the summary the refund row is one more of its rows: no shading of its
+   own, the same padding, and the summary's inset hairline above it. */
+.sheet-card--send .payment-summary :deep(.refund-row) { position: relative; min-height: 52px; padding: 14px 16px; border-radius: 0; background: transparent; box-shadow: none; font-size: .875rem; }
+.sheet-card--send .payment-summary :deep(.refund-row--joined)::before { content: ''; position: absolute; top: 0; left: 16px; right: 16px; border-top: 1px solid var(--border-card); }
+.sheet-card--send .payment-summary :deep(.refund-row:active:not(:disabled)),
+.sheet-card--send .payment-summary :deep(.refund-row--open) { background: var(--brand-accent-soft); }
+.sheet-card--send .payment-summary :deep(.refund-hint),
+.sheet-card--send .payment-summary :deep(.refund-panel) { margin: 0 12px 12px; }
 .note-label { color: var(--text-secondary); font-size: .8125rem; line-height: 1.5; }
 .sheet-card--send .payment-summary .note-input { flex: 1 1 140px; text-align: right; font-size: 1rem; }
 .branta-current-check { display: flex; align-items: center; gap: 9px; min-height: 48px; padding: 10px 0; border: 0; background: transparent; font: inherit; font-size: .875rem; color: var(--brand-accent-text); cursor: pointer; text-align: left; }

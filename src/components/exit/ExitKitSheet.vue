@@ -89,7 +89,8 @@ import { useWalletStore } from '../../stores/wallet';
 import { useExitKitStore } from '../../stores/exitKit';
 import { exitKitService } from '../../services/exitKit.js';
 import { kitState, kitCopies } from '../../utils/exitKit.js';
-import { formatSats, relativeDay } from '../../composables/useExitFormat.js';
+import { relativeDay } from '../../composables/useExitFormat.js';
+import { formatAmount } from '../../utils/amountFormatting.js';
 import { WALLET_TYPES } from '../../providers/WalletFactory';
 import { isCloudBackupPlatform } from '../../services/cloudStorage.js';
 
@@ -159,7 +160,7 @@ export default {
         const reason = meta.lastError ? ` (${String(meta.lastError).slice(0, 80)})` : '';
         return this.$t('Could not refresh since {date}. Payments after that date are not covered yet.', { date: this.day(meta.failedSince) }) + reason;
       }
-      if (state === 'checked') return this.$t('{amount} sats could leave without Spark', { amount: formatSats(meta.recoverableSat, this.$i18n.locale) });
+      if (state === 'checked') return this.$t('{amount} could leave without Spark', { amount: formatAmount(Math.round(meta.recoverableSat || 0), this.wallet.useBip177Format !== false) });
       if (state === 'none' && !this.connected(entry)) return this.$t('This wallet is offline. Reconnect it in Manage Wallets to save its kit.');
       return '';
     },

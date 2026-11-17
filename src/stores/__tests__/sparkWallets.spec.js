@@ -14,7 +14,7 @@ import { transformSync } from 'esbuild';
 import { parse, compileScript } from '@vue/compiler-sfc';
 import * as Vue from 'vue';
 import * as userErrors from '../../utils/userErrors.js';
-import { hashKioskPin } from '../../utils/kioskPin.js';
+import { KIOSK_PIN_WAIT_KEY, hashKioskPin } from '../../utils/kioskPin.js';
 import * as walletNames from '../../utils/walletNames.js';
 import * as sparkAccountRules from '../../utils/sparkAccounts.js';
 import * as backupStatus from '../../utils/backupStatus.js';
@@ -1015,6 +1015,26 @@ test('a kiosk PIN saved in plain text leaves storage on the next start and still
   assert.equal(h.saved().kioskPinHash, h.store.kioskPinHash);
   assert.equal(h.store.unlockToOwnerMode('1111'), false);
   assert.equal(h.store.unlockToOwnerMode('2468'), true);
+});
+
+test('after five wrong owner PINs even the right one waits; a restart does not lift the wait, and a wrong clock cannot lock the owner out', async () => {
+  const h = reloaded([await savedSpark('B', 1, { group: null })]);
+  await h.store.initialize();
+  await h.store.enableKiosk('2468', 'B');
+  h.store.kioskOwnerAccess = false;
+  const now = Date.now();
+  for (let i = 0; i < 5; i += 1) assert.equal(h.store.unlockToOwnerMode('1111', now), false);
+  assert.equal(h.store.unlockToOwnerMode('2468', now + 1000), false, 'refused while waiting');
+  await tick();
+  assert.doesNotMatch(h.local.getItem(STORE_KEY), /kioskPin(Failures|RetryAt)/, 'no save of the whole wallet state carries the wait');
+  const again = reloaded(h.saved().wallets, { state: h.saved() });
+  again.local.setItem(KIOSK_PIN_WAIT_KEY, h.local.getItem(KIOSK_PIN_WAIT_KEY));
+  await again.store.initialize();
+  assert.equal(again.store.kioskPinRetryIn(now), 60_000);
+  again.local.setItem(KIOSK_PIN_WAIT_KEY, JSON.stringify({ failures: 5, retryAt: now + 365 * 86_400_000 }));
+  assert.equal(again.store.kioskPinRetryIn(now), 60_000, 'a wait set while the clock ran ahead starts again from now');
+  assert.equal(again.store.unlockToOwnerMode('2468', now + 60_000), true);
+  assert.equal(again.local.getItem(KIOSK_PIN_WAIT_KEY), null);
 });
 
 test('turning kiosk off removes only the PIN; its wallet, tips and display stay for next time', async () => {

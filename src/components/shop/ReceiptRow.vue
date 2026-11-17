@@ -38,6 +38,8 @@
 
 <script>
 import { Icon } from '@iconify/vue';
+import { useWalletStore } from '../../stores/wallet';
+import { formatAmount } from '../../utils/amountFormatting.js';
 import { orderReference, orderReceiptText } from '../../services/nadanada/orders.js';
 import { writeClipboardCrossPlatform } from '../../utils/shopClipboard.js';
 import ShopInfoTooltip from './ShopInfoTooltip.vue';
@@ -89,7 +91,7 @@ export default {
       if (o.iccid) lines.push({ label: this.$t('ICCID'), value: o.iccid });
       if (o.publicKey) lines.push({ label: this.$t('Public key'), value: o.publicKey });
       if (Number.isFinite(o.priceSats)) {
-        lines.push({ label: this.$t('Paid'), value: `${o.priceSats} ${this.$t('sats')}` });
+        lines.push({ label: this.$t('Paid'), value: formatAmount(o.priceSats, useWalletStore().useBip177Format !== false) });
       }
       return lines;
     },

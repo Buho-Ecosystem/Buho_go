@@ -56,6 +56,7 @@
         class="request-sheet__keypad"
         :fiat-code="keypadCurrency"
         :fiat-rate="keypadRate"
+        :bip177="bip177"
       >
         <input
           v-if="noteOpen"

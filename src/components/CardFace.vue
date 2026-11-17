@@ -38,7 +38,7 @@
 import { ref, watch } from 'vue'
 
 const props = defineProps({
-  name: { type: String, default: 'Bolt Card' },
+  name: { type: String, default: 'Bitcoin Card' },
   host: { type: String, default: '' },
   logo: { type: String, default: '/Social_Wallet_logos/BoltCard.png' },
   reading: { type: Boolean, default: false },
