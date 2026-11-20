@@ -1,26 +1,31 @@
 /**
  * Normalize a payment draft, never a formatted amount from a balance/receipt.
  * Grouping must be structural; a separator must never silently multiply the
- * payment. Canonical dot decimals remain accepted while editing in DE/ES.
+ * payment. A dot stays a decimal candidate in every language (a hardware
+ * keyboard's period).
  *
  * `locales` lists every language whose separators the person may mean: the
  * app language and the device's (`undefined` is the device). A decimal keypad
  * follows the device, not the app language, so both count.
+ *
+ * `decimalMark` is the mark the field itself wrote as this draft's decimal:
+ * while that decimal is being edited, three digits after it stay a fraction
+ * instead of turning ambiguous. A new or pasted value never carries it.
  */
-function decimalOf(locale) {
+/** The decimal mark a language writes (`undefined` is the device). */
+export function decimalOf(locale) {
   try { return new Intl.NumberFormat(locale).formatToParts(1.1).find(part => part.type === 'decimal')?.value || '.' } catch { return '.' }
 }
 const escaped = token => token === '.' ? '\\.' : token
 const grouped = (value, token) => new RegExp(`^[1-9]\\d{0,2}(?:${escaped(token)}\\d{3})+$`).test(value)
 
-export function normalizePaymentAmountInput(input, { locale, locales, precision = 0, caret, canonicalDecimal = false } = {}) {
+export function normalizePaymentAmountInput(input, { locale, locales, precision = 0, caret, decimalMark = null } = {}) {
   const raw = String(input ?? '')
   const fail = reason => ({ value: raw, error: reason, complete: false, caret })
   const text = raw.trim()
   if (!text) return { value: '', error: null, complete: false, caret: 0 }
   if (!Number.isInteger(precision) || precision < 0 || precision > 8 || !/^[\d.,   ]+$/u.test(text)) return fail('invalid')
   const spoken = new Set((Array.isArray(locales) && locales.length ? locales : [locale]).map(decimalOf))
-  // A canonical dot stays a decimal while editing in every language.
   const decimals = new Set([...spoken, '.'])
   const groups = new Set([...spoken].map(mark => mark === ',' ? '.' : ','))
   const dots = (text.match(/\./g) || []).length
@@ -41,9 +46,8 @@ export function normalizePaymentAmountInput(input, { locale, locales, precision 
       const canGroup = groups.has(mark), canDecimal = decimals.has(mark)
       if (precision === 0) { if (canGroup) group = mark; else separator = mark }
       else if (canGroup && canDecimal) {
-        // Only a known decimal being edited may retain canonical dot meaning.
-        // New/pasted ambiguous values never get this provenance.
-        if (mark === '.' && canonicalDecimal) separator = mark
+        // Only the decimal the field itself wrote keeps its meaning.
+        if (mark === decimalMark) separator = mark
         else return fail('ambiguous')
       } else if (canGroup) group = mark
       else separator = mark
@@ -75,6 +79,35 @@ export function normalizePaymentAmountInput(input, { locale, locales, precision 
   const position = typeof caret === 'number'
     ? Math.max(0, Math.min(value.length, caret - offset - [...removed].filter(index => index < caret - offset).length + (!plainInteger ? 1 : 0))) : undefined
   return { value, error: null, complete: !separator || fraction.length > 0, caret: position }
+}
+
+/**
+ * A draft ("1234.5", "1.", "0.00000029") written the way `locale` writes
+ * numbers (`undefined` is the device): its decimal mark always, its thousands
+ * grouping only when `grouped`. The digits are never read through a float, so
+ * a large Bitcoin amount keeps its last satoshi. Text that is not a draft (a
+ * refused entry) is returned as typed.
+ */
+export function formatPaymentAmountDraft(draft, { locale, grouped = false } = {}) {
+  const text = String(draft ?? '')
+  const match = /^(\d+)(?:\.(\d*))?$/.exec(text)
+  if (!match) return text
+  const [, whole, fraction] = match
+  const integer = grouped ? new Intl.NumberFormat(locale, { maximumFractionDigits: 0 }).format(BigInt(whole)) : whole
+  return fraction === undefined ? integer : `${integer}${decimalOf(locale)}${fraction}`
+}
+
+/**
+ * Where a caret at `index` in `from` belongs in `to`, when both write the same
+ * draft and differ only in grouping: after the same digits and decimal mark.
+ */
+export function caretAcrossGrouping(from, to, index, { locale } = {}) {
+  const decimal = decimalOf(locale)
+  const counts = char => /\d/.test(char) || char === decimal
+  let remaining = [...from.slice(0, index)].filter(counts).length
+  let position = 0
+  while (remaining > 0 && position < to.length) if (counts(to[position++])) remaining--
+  return position
 }
 
 /**
