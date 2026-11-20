@@ -100,7 +100,7 @@ export default {
   font-weight: 600;
   letter-spacing: 0.16em;
   text-transform: uppercase;
-  color: var(--text-muted);
+  color: var(--text-secondary);
   padding: 0 18px 8px;
 }
 

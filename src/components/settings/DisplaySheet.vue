@@ -22,33 +22,8 @@
       </header>
 
       <div class="display-body">
-        <SettingsSection :title="$t('Appearance')" role="radiogroup" :aria-label="$t('Appearance')">
-            <SettingsRow
-              v-for="option in themeOptions"
-              :key="option.value"
-              :label="option.label"
-              role="radio"
-              :show-chevron="false"
-              :aria-checked="String(option.value === (dark ? 'dark' : 'light'))"
-              @click="option.value !== (dark ? 'dark' : 'light') && $emit('toggle-theme')"
-            >
-              <template #right><Icon v-if="option.value === (dark ? 'dark' : 'light')" icon="tabler:check" width="20" height="20" class="display-check" /></template>
-            </SettingsRow>
-        </SettingsSection>
-
-        <SettingsSection :title="$t('Main unit')" role="radiogroup" :aria-label="$t('Main unit')">
-            <SettingsRow
-              v-for="option in unitOptions"
-              :key="option.value"
-              :label="option.label"
-              role="radio"
-              :show-chevron="false"
-              :aria-checked="String(option.value === mainUnit)"
-              @click="option.value !== mainUnit && $emit('main-unit', option.value)"
-            >
-              <template #right><Icon v-if="option.value === mainUnit" icon="tabler:check" width="20" height="20" class="display-check" /></template>
-            </SettingsRow>
-        </SettingsSection>
+        <SettingsChoiceGroup :title="$t('Appearance')" :options="themeOptions" :model-value="dark ? 'dark' : 'light'" @update:model-value="$emit('toggle-theme')" />
+        <SettingsChoiceGroup :title="$t('Main unit')" :options="unitOptions" :model-value="mainUnit" @update:model-value="$emit('main-unit', $event)" />
 
         <SettingsSection>
           <SettingsRow :label="$t('Hide balances')" :interactive="false">
@@ -64,19 +39,7 @@
           <template #footer>{{ $t('Home opens on the main unit. Tapping the balance on Home switches the unit or hides it.') }}</template>
         </SettingsSection>
 
-        <SettingsSection :title="$t('Amount format')" role="radiogroup" :aria-label="$t('Amount format')">
-            <SettingsRow
-              v-for="option in formatOptions"
-              :key="String(option.value)"
-              :label="option.label"
-              role="radio"
-              :show-chevron="false"
-              :aria-checked="String(option.value === bip177)"
-              @click="option.value !== bip177 && $emit('amount-format', option.value)"
-            >
-              <template #right><Icon v-if="option.value === bip177" icon="tabler:check" width="20" height="20" class="display-check" /></template>
-            </SettingsRow>
-        </SettingsSection>
+        <SettingsChoiceGroup :title="$t('Amount format')" :options="formatOptions" :model-value="bip177" @update:model-value="$emit('amount-format', $event)" />
       </div>
     </q-card>
   </q-dialog>
@@ -85,10 +48,11 @@
 <script>
 import SettingsSection from './SettingsSection.vue';
 import SettingsRow from './SettingsRow.vue';
+import SettingsChoiceGroup from './SettingsChoiceGroup.vue';
 
 export default {
   name: 'DisplaySheet',
-  components: { SettingsSection, SettingsRow },
+  components: { SettingsSection, SettingsRow, SettingsChoiceGroup },
   props: {
     modelValue: { type: Boolean, default: false },
     dark: { type: Boolean, default: false },
@@ -133,5 +97,4 @@ export default {
 .display-card { width: 100%; max-width: 560px; margin: 0 auto; border-radius: 24px 24px 0 0; padding-bottom: max(20px, var(--safe-bottom, 0px)); max-height: min(90dvh, calc(100dvh - var(--safe-top, 0px) - 8px)); overflow-y: auto; }
 .display-body { padding: 4px 16px 0; }
 .display-done { justify-self: end; font-weight: 600; }
-.display-check { color: var(--brand-accent-text); }
 </style>

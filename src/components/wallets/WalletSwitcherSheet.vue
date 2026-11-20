@@ -24,15 +24,18 @@
         </div>
         <!-- With several wallets, the one figure people look for first. While
              wallets refresh it pulses; built on missing figures it reads "at
-             least" and is dimmed, like every other balance. -->
+             least" and is dimmed, like every other balance. Until the first
+             figure is in, the same placeholder as a wallet's balance. -->
         <div v-if="wallets.length > 1" class="switcher-total">
           <span class="switcher-total-label">{{ $t('Total') }}</span>
+          <span v-if="!totalInfo.known" v-balance-updating="anyRefreshing" class="switcher-total-value balance-placeholder" role="img" :aria-label="$t('Balance not loaded yet')" />
           <HiddenAmount
+            v-else
             v-balance-updating="anyRefreshing"
             class="switcher-total-value"
             :class="{ 'balance-stale': totalInfo.outdated }"
           >{{ totalInfo.complete ? '' : '≥ ' }}{{ formatBalance(totalInfo.total) }}</HiddenAmount>
-          <HiddenAmount v-if="fiatOf(totalInfo.total)" class="switcher-total-fiat" :class="{ 'balance-stale': totalInfo.outdated }">{{ totalInfo.complete ? '' : '≥ ' }}{{ fiatOf(totalInfo.total) }}</HiddenAmount>
+          <HiddenAmount v-if="totalInfo.known && fiatOf(totalInfo.total)" class="switcher-total-fiat" :class="{ 'balance-stale': totalInfo.outdated }">{{ totalInfo.complete ? '' : '≥ ' }}{{ fiatOf(totalInfo.total) }}</HiddenAmount>
         </div>
       </q-card-section>
 
@@ -94,8 +97,8 @@
             <!-- What the wallet received since the user last looked at it
                  (stores/unseenReceipts). The balance already includes it. -->
             <span v-else-if="unseenOf(wallet.id)" class="switch-unseen-pill">
-              <HiddenAmount aria-hidden="true">+ {{ formatBalance(unseenOf(wallet.id).sats) }}</HiddenAmount>
-              <span class="switch-sr-only">{{ $t('Received {amount} since you last looked', { amount: formatBalance(unseenOf(wallet.id).sats) }) }}</span>
+              <span class="switch-sr-only">{{ $t('Received since you last looked') }}</span>
+              <HiddenAmount>+ {{ formatBalance(unseenOf(wallet.id).sats) }}</HiddenAmount>
             </span>
           </div>
         </div>

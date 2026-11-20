@@ -20,7 +20,7 @@ const WALLETS = [
   { id: 'shop', type: 'lnbits', name: 'Shop', connectionData: { serverUrl: 'https://pay.example.org', walletId: 'w', adminKey: 'k' }, metadata: { cachedBalance: 18250, lud16: 'shop@pay.example.org' } },
 ];
 
-async function open(theme) {
+async function open(theme, wallets = WALLETS) {
   const context = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
   const page = await context.newPage();
   page.setDefaultTimeout(15000);
@@ -41,7 +41,7 @@ async function open(theme) {
     window.__AUDIT__ = { theme, noExitMonitor: true };
     localStorage.setItem('buhoGO_language', 'en-US');
     localStorage.setItem('buhoGO_wallet_store', JSON.stringify({ wallets, activeWalletId: 'main', biometricsEnabled: false, sparkModelVersion: 2, preferredFiatCurrency: 'EUR', defaultDisplayCurrency: 'bitcoin' }));
-  }, { theme, wallets: WALLETS });
+  }, { theme, wallets });
   await page.goto(`${base}/#/settings`);
   await page.locator('.settings-page').waitFor();
   // Every wallet answers except the NWC one, so the rows and the total show both states.
@@ -58,6 +58,25 @@ async function open(theme) {
 }
 
 const shot = (page, name) => page.screenshot({ path: `${output}/${name}.png` });
+/** The lowest contrast of the matched text against the first opaque background behind it. */
+const weakestContrast = (page, selector) => page.evaluate((selector) => {
+  const rgba = (value) => value.match(/[\d.]+/g).map(Number);
+  const luminance = ([r, g, b]) => [r, g, b]
+    .map((c) => { c /= 255; return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4; })
+    .reduce((sum, c, i) => sum + c * [0.2126, 0.7152, 0.0722][i], 0);
+  const background = (el) => {
+    for (let node = el; node; node = node.parentElement) {
+      const color = rgba(getComputedStyle(node).backgroundColor);
+      if (color[3] !== 0) return color;
+    }
+    return [255, 255, 255];
+  };
+  return Math.min(...[...document.querySelectorAll(selector)].map((el) => {
+    const [high, low] = [luminance(rgba(getComputedStyle(el).color)), luminance(background(el))].sort((a, b) => b - a);
+    return (high + 0.05) / (low + 0.05);
+  }));
+}, selector);
+const bip177 = page => page.evaluate(async () => (await import('/src/stores/wallet.js')).useWalletStore().useBip177Format);
 const sheet = page => page.locator('.q-dialog .q-card').last();
 
 try {
@@ -80,6 +99,13 @@ try {
     // One test for online (the wallet page's): the row, the total and the page agree.
     assert.match(await page.locator('[data-wallet-id="hub"]').innerText(), /NWC · Offline/);
     assert.equal(await page.locator('[data-audit="settings-add-wallet"]').count(), 1);
+    // Small text reads at 4.5:1 or more: captions and group titles.
+    const weakest = await weakestContrast(page, '.settings-row-caption, .settings-section-label');
+    assert.ok(weakest >= 4.5, `captions and group titles reach 4.5:1 (weakest ${weakest.toFixed(2)}:1)`);
+    // What came in since the user last looked is spoken through the privacy gate.
+    await page.evaluate(() => window.__audit.app.config.globalProperties.$pinia._s.get('unseenReceipts').commit({ savings: { sats: 2000, count: 1, since: Date.now() } }));
+    await page.waitForTimeout(200);
+    assert.match(await page.locator('[data-wallet-id="savings"]').textContent(), /Received since you last looked.*2,000/);
     // App lock says what it falls back to.
     assert.match(await page.locator('.settings-content').innerText(), /phone's PIN, pattern or password/);
     await shot(page, `01-settings-${theme}`);
@@ -109,11 +135,26 @@ try {
     await page.locator('[data-audit="settings-display-sheet"]').waitFor();
     await page.waitForTimeout(350);
     assert.equal(await page.locator('[data-audit="settings-display-sheet"] [role="radio"][aria-checked="true"]').count(), 3, 'one check per pick-one group');
+    // A radio group each: Tab reaches it once, on its choice, and the arrows move the choice.
+    assert.equal(await page.locator('[data-audit="settings-display-sheet"] [role="radio"][tabindex="0"]').count(), 3, 'one Tab stop per group');
+    const formats = page.locator('[data-audit="settings-display-sheet"] [role="radiogroup"][aria-label="Amount format"] [role="radio"]');
+    await formats.first().focus();
+    await page.keyboard.press('ArrowDown');
+    await page.waitForTimeout(150);
+    assert.equal(await bip177(page), false, 'ArrowDown picks the next format');
+    assert.equal(await formats.nth(1).evaluate(el => el === document.activeElement && el.tabIndex === 0), true, 'focus and the Tab stop move with the choice');
+    await page.keyboard.press('ArrowDown');
+    await page.waitForTimeout(150);
+    assert.equal(await bip177(page), true, 'the arrows wrap around');
     await shot(page, `04-display-${theme}`);
     await page.locator('[data-audit="settings-display-sheet"]').getByRole('switch', { name: 'Hide balances' }).click().catch(async () => {
       await page.locator('[data-audit="settings-display-sheet"] .q-toggle').first().click();
     });
     assert.equal(await page.evaluate(async () => (await import('/src/stores/wallet.js')).useWalletStore().balanceHidden), true, 'Hide balances hides them');
+    // Hidden from speech too: a screen reader hears "Amount hidden", never the figure.
+    const savingsRow = page.locator('[data-wallet-id="savings"]');
+    assert.ok(await savingsRow.locator('[role="img"][aria-label="Amount hidden"]').count() >= 1, 'a hidden amount is announced as hidden');
+    assert.doesNotMatch(await savingsRow.textContent(), /\d/, 'no figure is left for a screen reader to read');
     await page.locator('[data-audit="settings-display-sheet"] .q-toggle').first().click();
     await sheet(page).getByRole('button', { name: 'Done' }).click();
     await page.locator('[data-audit="settings-display-sheet"]').waitFor({ state: 'detached' });
@@ -168,6 +209,13 @@ try {
 
     await context.close();
   }
+  // 8 · Before any balance is in, the total is the wallet rows' placeholder, never "≥ ₿ 0".
+  const fresh = await open('light', WALLETS.map(({ metadata, ...wallet }) => ({ ...wallet, metadata: { ...metadata, cachedBalance: undefined } })));
+  const totalRow = fresh.page.locator('[data-audit="settings-wallets-total"]');
+  assert.equal(await totalRow.locator('.balance-placeholder').getAttribute('aria-label'), 'Balance not loaded yet');
+  assert.doesNotMatch(await totalRow.innerText(), /≥|₿/, 'no figure until one is in');
+  await fresh.context.close();
+
   assert.deepEqual(errors, [], 'no page errors or Vue warnings');
   console.log(`✓ Settings and Security as grouped lists (light + dark); pictures in ${output}/`);
 } finally {
