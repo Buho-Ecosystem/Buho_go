@@ -23,7 +23,7 @@ Branta's wordmark (`public/images/branta/wordmark-on-light.svg`) is the original
 
 ## SDK and destination binding
 
-The public, read-only adapter uses pinned Branta JavaScript SDK 4.3.0 and its verify API. No publishing key or merchant backend is included.
+The public, read-only adapter uses Branta JavaScript SDK 4.4 (`~4.4.0`: patch releases only) and its verify API. No publishing key or merchant backend is included. Since 4.4 every SDK request gives up after 30 seconds; a verify that times out comes back `incomplete`, which BuhoGO treats like any payment without a match.
 
 Original request/proof parameters remain intact. Duplicate proof or destination keys, including encoded spellings, are rejected instead of normalized into a different payment. A match qualifies only when a decrypted matched destination belongs to the payment supplying the business identity. Conflicting owners and incomplete responses remain ordinary.
 

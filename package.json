@@ -40,7 +40,7 @@
   },
   "dependencies": {
     "@arkade-os/sdk": "0.4.79",
-    "@branta-ops/branta": "4.3.0",
+    "@branta-ops/branta": "~4.4.0",
     "@breeztech/breez-sdk-spark": "0.26.1",
     "@capacitor-mlkit/barcode-scanning": "8.0.1",
     "@capacitor/app": "^8.1.0",

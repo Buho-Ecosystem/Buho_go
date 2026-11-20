@@ -1,4 +1,4 @@
-// Local Guardrail wire fixtures encrypted by the public Branta 4.3 API.
+// Local Guardrail wire fixtures encrypted by the public Branta 4.3 API; SDK 4.4 must read the same wire.
 // Publishing is intercepted in-memory; no service, API key or funds are used.
 import assert from 'node:assert/strict';
 import { BrantaService } from '@branta-ops/branta';

@@ -128,7 +128,7 @@ test('unknown and incomplete SDK answers stay ordinary; aborted work cannot cach
   const result = await checkWithBranta({ qrText: INVOICE, signal: controller.signal, service: { verify: async () => { controller.abort(); return match() } } })
   assert.equal(result.status, 'unknown')
 })
-test('real SDK4.3 encrypted wire binds the exact Bitcoin proof and detects encoded-key tampering', async () => {
+test('real SDK encrypted wire binds the exact Bitcoin proof and detects encoded-key tampering', async () => {
   const fixture = await brantaFixture({ destinations: [{ type: 'bitcoin_address', value: ADDRESS }] })
   const verified = await fixture.verify(proofUri(ADDRESS, { encoded: true }))
   assert.equal(normalizeBrantaResult(verified, target).name, 'Kaffeehaus Lindgren')
