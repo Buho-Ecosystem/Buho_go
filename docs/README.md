@@ -53,6 +53,7 @@ How each feature works and the rules that keep it right, written for developers 
 | Record | What it covers |
 |---|---|
 | [Launch](LAUNCH.md) | From tapping the icon to holding the wallet |
+| [Settings and Security as grouped lists](SETTINGS_LAYOUT.md) | Where every setting sits, the wallet rows and pages, the Security tab |
 | [Quick access](QUICK_ACCESS.md) | Quick Settings tiles and Home screen shortcuts that open one screen |
 | [App updates](APP_UPDATES.md) | How native builds find and offer updates |
 | [Toasts](TOAST_INTERACTIONS.md) | When the app speaks up, and how |

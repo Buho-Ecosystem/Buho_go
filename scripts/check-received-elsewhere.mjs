@@ -1,6 +1,6 @@
 /** Controlled browser check for Bitcoin that arrives in a wallet other than
- * the active one (#434, #435): the Switch Wallet pill, the Manage Wallets
- * line, the toast's chevron and the wallet named on the Home screen. Start
+ * the active one (#434, #435): the Switch Wallet pill, the wallet's row on
+ * Settings, the toast's chevron and the wallet named on the Home screen. Start
  * `npx quasar dev --port 9412` first (or set INCOMING_BASE_URL). Every
  * external request is blocked; receipts are put in the wallet store the way
  * the Spark lifecycle does. */
@@ -107,7 +107,7 @@ const openSwitcher = async (page) => {
   await page.close();
 }
 
-// 2. The mark survives a restart; dark switcher and Manage Wallets show it.
+// 2. The mark survives a restart; the dark switcher and the Settings wallet row show it.
 {
   let page = await open('dark');
   await page.evaluate(() => window.__go('/settings'));
@@ -129,11 +129,14 @@ const openSwitcher = async (page) => {
   await shot(page, '05-switcher-pill-dark');
   await page.keyboard.press('Escape');
   await page.waitForTimeout(600);
+  // Home's Manage link lands on Settings, the wallets on top.
   await page.evaluate(() => window.__go('/settings?section=wallets'));
-  await page.locator('[data-wallet-id="w2"] .row-sub-unseen').waitFor();
-  assert.match(await page.locator('[data-wallet-id="w2"] .row-sub-unseen').innerText(), /\+ ₿\s13/);
-  await shot(page, '06-manage-wallets-dark');
-  pass('after a restart the mark is still on Savings, in the switcher and in Manage Wallets');
+  const unseen = page.locator('#settings-wallets [data-wallet-id="w2"] .wallet-row-state--unseen');
+  await unseen.waitFor();
+  assert.match(await unseen.innerText(), /\+ ₿\s13/);
+  assert.equal(await page.locator('#settings-wallets [data-wallet-id="w1"] .wallet-row-state--unseen').count(), 0);
+  await shot(page, '06-settings-wallets-dark');
+  pass('after a restart the mark is still on Savings, in the switcher and on its Settings row');
   await page.close();
 }
 

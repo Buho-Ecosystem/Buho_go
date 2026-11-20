@@ -159,11 +159,20 @@ export default {
   another clickable row.
 
   A row that is the literal last child of the card draws no
-  border (clean bottom edge). A row followed by a non-row
-  helper still draws its border — that's the right read,
-  because there is more content directly below it.
+  divider (clean bottom edge). A row followed by a non-row
+  helper still draws its divider, because there is more content
+  directly below it. The divider starts where the row's text
+  starts (the row sets --settings-row-inset), so the icon column
+  stays unbroken, as in grouped lists.
 */
-.settings-section-card > :deep(.settings-row):not(:last-child) {
-  border-bottom: 1px solid var(--border-card);
+.settings-section-card > :deep(.settings-row:not(:last-child)::after) {
+  content: '';
+  position: absolute;
+  left: var(--settings-row-inset, 0px);
+  right: 0;
+  bottom: 0;
+  height: 1px;
+  background: var(--border-card);
+  pointer-events: none;
 }
 </style>

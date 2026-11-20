@@ -1,4 +1,6 @@
-/** Browser regression using public test words. Run with the local Quasar dev server on port 9000. */
+/** Browser regression using public test words. Run with the local Quasar dev server on port 9000.
+ * Security lists one row per set of recovery words (Spark wallets, Arkade,
+ * Identity), each with its checked state, then the exit kit and Restore. */
 import { chromium } from '@playwright/test';
 // Published BIP-39 all-zero test vector, sealed with a fixed test-only AES key.
 // Never substitute real recovery words or credentials here.
@@ -114,8 +116,9 @@ try {
  await route('/wallet');
  await page.locator('.backup-shortcut').click();
  await expectSecurityPage();
- await page.getByRole('button',{name:/^Bitcoin Backup/}).first().waitFor();
- assert.equal(await page.getByRole('button',{name:/^Identity backup/}).count(),1);
+ await page.getByRole('button',{name:/^Spark wallets Personal and Business/}).waitFor();
+ assert.equal(await page.getByRole('button',{name:/^Arkade/}).count(),1);
+ assert.equal(await page.getByRole('button',{name:/^Identity Name, photo and contacts/}).count(),1);
  assert.equal(await page.getByRole('button',{name:/^Restore from backup/}).count(),1);
  await shot('01-security-light');
  await choose('Spark');
@@ -140,22 +143,22 @@ try {
  await shot('04-wallet-success-light');
  await page.getByRole('button',{name:'Done',exact:true}).click();
  await page.locator('.backup-choices').waitFor();
- assert.equal(await page.locator('.backup-choice').filter({hasText:'Spark'}).getByText('Words checked',{exact:true}).count(),1);
- assert.equal(await page.locator('.backup-choice').filter({hasText:'Identity backup'}).getByText('Not checked yet',{exact:true}).count(),1);
+ assert.equal(await page.locator('.backup-choice').filter({hasText:'Spark'}).getByText('Checked',{exact:true}).count(),1);
+ assert.equal(await page.locator('.backup-choice').filter({hasText:/^Identity/}).getByText('Not checked yet',{exact:true}).count(),1);
  await choose('Arkade');
  await writeAndCheck(); await finish();
  await page.getByRole('button',{name:'Done',exact:true}).click();
- await choose('Identity backup');
+ await choose(/^Identity/);
  await shot('05-identity-prepare-light');
  await writeAndCheck(); await finish();
  await shot('06-identity-success-light');
  await page.getByRole('button',{name:'Done',exact:true}).click();
  await page.locator('.backup-choices').waitFor();
- assert.equal(await page.locator('.backup-choice').filter({hasText:'Identity backup'}).getByText('Words checked',{exact:true}).count(),1);
+ assert.equal(await page.locator('.backup-choice').filter({hasText:/^Identity/}).getByText('Checked',{exact:true}).count(),1);
  // Every set checked: the reminder leaves the home screen entirely.
  await route('/wallet');
  assert.equal(await page.locator('.backup-shortcut').count(),0,'keyring hides once every backup is checked');
- // Settings carries no backup rows any more; Screen Privacy sits in Preferences.
+ // Settings carries no backup rows any more; Screen Privacy is a row of its own.
  await route('/settings');
  assert.equal(await page.locator('.settings-attention-strip').count(),0);
  assert.equal(await page.getByRole('button',{name:/^Backups/}).count(),0);
@@ -238,7 +241,7 @@ try {
  await route('/identity/words');
  await expectSecurityPage();
  await shot('07-security-all-checked');
- await page.locator('.backup-choice').filter({hasText:'Identity backup'}).click();
+ await page.locator('.backup-choice').filter({hasText:/^Identity/}).click();
  await page.locator('.recovery-acknowledgement').click();
  await page.locator('.recovery-primary').click();
  await page.locator('.recovery-words').waitFor();

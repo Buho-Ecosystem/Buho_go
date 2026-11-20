@@ -23,3 +23,16 @@ export function walletBackupGroups(wallets, legacySparkBackedUp = false) {
   }
   return groups;
 }
+
+/**
+ * What is still open, in the Home reminder's words ("Bitcoin & identity",
+ * "Bitcoin", "Identity"), or '' when every set of recovery words is checked.
+ * One owner: the Home reminder and the Security tab both read it.
+ */
+export function pendingBackupLabel(groups, identity, t) {
+  const walletOpen = groups.some((group) => !group.saved);
+  const identityOpen = !!identity?.bootstrapped && !identity.backupConfirmed;
+  if (walletOpen && identityOpen) return t('Bitcoin & identity');
+  if (walletOpen) return t('Bitcoin');
+  return identityOpen ? t('Identity') : '';
+}

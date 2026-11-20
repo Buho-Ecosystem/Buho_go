@@ -266,16 +266,12 @@ try {
   await page.locator('.nwc-found__input').waitFor();
   console.log('✓ wallet app: named row, one tap opens it with a way back, a return resumes the wait, the answer is found');
 
-  // 9 · Add the wallet; Settings has one row for connecting.
+  // 9 · Add the wallet; Settings' Add wallet row offers one row for connecting.
   await page.getByRole('button', { name: 'Add wallet', exact: true }).click();
   await page.waitForFunction(() => location.hash.includes('/wallet'), null, { timeout: 30000 });
   await go(page, '/settings');
-  await page.getByText('Manage Wallets', { exact: true }).waitFor({ timeout: 30000 });
-  await page.evaluate(() => {
-    let c = document.querySelector('.q-page').__vueParentComponent;
-    while (c && !('showAddWalletDialog' in (c.proxy?.$data || {}))) c = c.parent;
-    c.proxy.showAddWalletDialog = true;
-  });
+  await page.locator('[data-audit="settings-add-wallet"]').waitFor({ timeout: 30000 });
+  await page.locator('[data-audit="settings-add-wallet"]').click();
   await page.locator('[data-audit="add-connect-wallet"]').waitFor();
   assert.equal(await page.getByText('Connect NWC Wallet').count(), 0);
   await shot(page, 'settings-add-wallet');

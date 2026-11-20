@@ -102,10 +102,10 @@ Runs in `initialize()` until it completes once (`sparkModelVersion` 2):
 ## UI
 
 - **Home:** the name chip with the wallet's mark and a disclosure chevron opens `WalletSwitcherSheet`. It shows the total across wallets, one row per wallet, Transfer and Manage. While a restore keeps looking for wallets it says so, and Home announces wallets the restore found.
-- **Settings > Manage Wallets:**
+- **Settings > Wallets** (one row per wallet, see [Settings layout](SETTINGS_LAYOUT.md)):
   - Add Wallet offers "New Spark wallet" with how many of six are left. At the limit the row stays, disabled, and says all six are in use. The sheet is `AddSparkWalletSheet`.
-  - A row pushes `WalletDetailPanel`: rename, balance, use, reconnect and remove. For Spark it also shows the wallet's Lightning address, with change and "Move to another wallet" (`MoveLightningAddressSheet`).
-- **Balances follow one rule everywhere** (switcher, Manage Wallets, detail):
+  - A row opens `WalletDetailPanel` as the wallet's own page: rename, balance, use, reconnect and remove. For Spark it also shows the wallet's Lightning address, with change and "Move to another wallet" (`MoveLightningAddressSheet`).
+- **Balances follow one rule everywhere** (switcher, Settings, detail):
   - an unknown figure is a placeholder, never a dash or a zero;
   - a figure known to be out of date (its last refresh failed) is dimmed, its fiat line too;
   - a placeholder pulses while its first figure loads;

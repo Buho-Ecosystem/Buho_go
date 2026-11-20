@@ -1,8 +1,9 @@
 <template>
   <q-page class="security-page">
     <!-- Hub chrome: a peer of Settings, You and Spend, so the same header
-         (title, home icon) and the same floating tab bar. -->
-    <SettingsHubHeader :title="$t('Security')" />
+         (home icon) and the same floating tab bar. No title: the keyring
+         at the top of the list and the tab bar already say where you are. -->
+    <SettingsHubHeader title="" />
 
     <div class="security-content">
       <BackupChoices @select="onSelect" />
@@ -309,7 +310,7 @@ export default {
   width: 100%;
   max-width: 520px;
   margin: 0 auto;
-  padding: 0.75rem 1rem calc(104px + var(--safe-bottom, 0px));
+  padding: 0 1rem calc(104px + var(--safe-bottom, 0px));
 }
 
 .restore-sheet {

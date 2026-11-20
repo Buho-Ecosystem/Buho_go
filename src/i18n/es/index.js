@@ -20,6 +20,7 @@ import payRequests from './payRequests.js';
 import refundAddress from './refundAddress.js';
 import tillCodes from './tillCodes.js';
 import kioskPos from './kioskPos.js';
+import settingsLayout from './settingsLayout.js';
 export default {
   ...lightningAddress,
   ...emoji,
@@ -81,6 +82,7 @@ export default {
   ...refundAddress,
   ...tillCodes,
   ...kioskPos,
+  ...settingsLayout,
   // Spend: Bitrefill door
   "Gift cards, mobile top-ups and more": "Tarjetas regalo, recargas móviles y más",
   "Bitrefill is on its way": "Bitrefill está en camino",
@@ -918,7 +920,7 @@ export default {
   "Enable": "Activar",
   // Quick-toggle fixed labels.
   "Theme": "Tema",
-  "Display": "Mostrar",
+  "Display": "Pantalla",
   "Format": "Formato",
   "N/A": "N/D",
   // Auto-Transfer dialog explainer.

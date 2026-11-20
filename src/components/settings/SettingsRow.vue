@@ -36,13 +36,16 @@
       { 'settings-row--disabled': disabled },
       { 'settings-row--destructive': destructive },
       { 'settings-row--quiet': quiet },
+      { 'settings-row--accent': accent },
+      { 'settings-row--tiled': tile || tiled },
+      { 'settings-row--iconed': !(tile || tiled) && (icon || $slots.icon) },
     ]"
     :aria-disabled="disabled ? 'true' : null"
     @click="onClick"
   >
-    <span v-if="icon || $slots.icon" class="settings-row-icon">
+    <span v-if="icon || $slots.icon" class="settings-row-icon" :class="{ 'settings-row-icon--tile': tile }" :style="tile ? { background: tile } : null">
       <slot name="icon">
-        <Icon :icon="icon" width="20" height="20" />
+        <Icon :icon="icon" :width="tile ? 18 : 20" :height="tile ? 18 : 20" />
       </slot>
     </span>
 
@@ -59,22 +62,25 @@
       </span>
     </span>
 
-    <span v-if="badge" class="settings-row-badge" :class="`settings-row-badge--${badgeVariant}`">
-      {{ badge }}
-    </span>
+    <!-- Badge, value and chevron move as one: under the label when they do not fit beside it. -->
+    <span class="settings-row-trail">
+      <span v-if="badge" class="settings-row-badge" :class="`settings-row-badge--${badgeVariant}`">
+        {{ badge }}
+      </span>
 
-    <span v-if="inlineValue" class="settings-row-inline-value">{{ inlineValue }}</span>
+      <span v-if="inlineValue" class="settings-row-inline-value">{{ inlineValue }}</span>
 
-    <span class="settings-row-right">
-      <slot name="right">
-        <Icon
-          v-if="interactive && showChevron && !destructive"
-          icon="tabler:chevron-right"
-          width="16"
-          height="16"
-          class="settings-row-chevron"
-        />
-      </slot>
+      <span class="settings-row-right">
+        <slot name="right">
+          <Icon
+            v-if="interactive && showChevron && !destructive && !accent"
+            icon="tabler:chevron-right"
+            width="16"
+            height="16"
+            class="settings-row-chevron"
+          />
+        </slot>
+      </span>
     </span>
   </component>
 </template>
@@ -105,6 +111,12 @@ export default {
     destructive: { type: Boolean, default: false },
     /** A destructive row that cannot run yet: muted, still tappable (it explains why). */
     quiet: { type: Boolean, default: false },
+    /** An action row ("Add wallet"): the label in the accent colour, no chevron. */
+    accent: { type: Boolean, default: false },
+    /** The icon on a rounded square in this colour, white glyph (grouped-list style). */
+    tile: { type: String, default: '' },
+    /** The #icon slot brings its own tile (a wallet logo): same size and divider inset as `tile`. */
+    tiled: { type: Boolean, default: false },
   },
   emits: ['click'],
   methods: {
@@ -119,9 +131,16 @@ export default {
 <style scoped>
 .settings-row {
   all: unset;
+  position: relative;
+  /* Where the divider under this row starts (SettingsSection draws it):
+     under the text, past the icon, the way grouped lists inset it. */
+  --settings-row-inset: 16px;
   display: flex;
+  /* When the label's longest word and the value do not fit side by side
+     (German on a small phone), the value moves under the label. */
+  flex-wrap: wrap;
   align-items: center;
-  gap: 14px;
+  gap: 2px 14px;
   width: 100%;
   min-height: 56px;
   padding: 12px 16px;
@@ -154,9 +173,27 @@ export default {
   color: var(--text-secondary);
 }
 
+.settings-row--iconed { --settings-row-inset: 50px; }
+.settings-row--tiled { --settings-row-inset: 60px; }
+
+/* Grouped-list tile: a rounded square in the setting's colour. */
+.settings-row-icon--tile,
+.settings-row--tiled .settings-row-icon {
+  width: 30px;
+  height: 30px;
+  border-radius: 7px;
+  color: #fff;
+}
+
+.settings-row--accent .settings-row-label {
+  color: var(--brand-accent-text);
+  font-weight: 600;
+}
+
 .settings-row-body {
   flex: 1;
-  min-width: 0;
+  /* Never narrower than its longest word, so a label is not split mid-word. */
+  min-width: min-content;
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -169,6 +206,7 @@ export default {
   color: var(--text-primary);
   letter-spacing: -0.01em;
   line-height: 1.25;
+  overflow-wrap: break-word;
 }
 
 .settings-row-caption {
@@ -193,6 +231,14 @@ export default {
   color: var(--text-secondary);
   margin-left: auto;
   letter-spacing: -0.005em;
+}
+
+.settings-row-trail {
+  flex-shrink: 0;
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 14px;
 }
 
 .settings-row-right {

@@ -1,8 +1,9 @@
 /**
  * Spark multi-wallet in the real UI: Home chip and switcher (with the total),
- * adding a wallet from Settings, the six-wallet limit, the guarded removal
- * with "Move funds", changing the address of a wallet that is not active,
- * and the onboarding tour. Store logic is covered by the unit specs; here
+ * adding a wallet from Settings' Add wallet row, the six-wallet limit, the
+ * guarded removal with "Move funds" from a wallet's own page (its row on
+ * Settings), changing the address of a wallet that is not active, and the
+ * onboarding tour. Store logic is covered by the unit specs; here
  * the store's network-facing actions are scripted so the screens can be
  * driven end to end without keys, a Spark connection or real money.
  *
@@ -116,8 +117,7 @@ try {
   await page.goto(`${base}/#/settings`);
   await page.locator('.settings-page').waitFor();
   await scriptStore(page);
-  await page.locator('.settings-page').getByText('Manage Wallets', { exact: true }).click();
-  await page.getByRole('button', { name: 'Add Wallet' }).click();
+  await page.locator('[data-audit="settings-add-wallet"]').click();
   const addRow = page.locator('[data-audit="add-spark-wallet"]');
   await addRow.waitFor();
   assert.match(await addRow.textContent(), /3 of 6 left/);
@@ -136,11 +136,12 @@ try {
   await addSheet.getByRole('button', { name: 'Create wallet' }).click();
   await toast(page, 'Switched to Rainy day');
   await addSheet.waitFor({ state: 'detached' });
-  assert.equal(await page.locator('.wallets-dialog-card [data-wallet-id="added-4"]').count(), 1, 'the new wallet is listed');
+  await page.locator('#settings-wallets [data-wallet-id="added-4"]').waitFor();
+  assert.equal(await page.locator('#settings-wallets [data-wallet-id="added-4"]').count(), 1, 'the new wallet is listed');
   console.log('PASS: Add Spark wallet from Settings with slots left, suggested name, inline name error, switch toast');
 
   // ---- Detail: address of a wallet that is not active ---------------------
-  await page.locator('.wallets-dialog-card [data-wallet-id="savings"]').click();
+  await page.locator('#settings-wallets [data-wallet-id="savings"]').click();
   const panel = page.locator('.wallet-detail-panel');
   await panel.getByText('savings@btc.mybuho.de', { exact: true }).waitFor();
   await panel.getByRole('button', { name: 'Change address' }).click();
@@ -171,12 +172,11 @@ try {
   await page.goto(`${base}/#/settings`);
   await page.locator('.settings-page').waitFor();
   await scriptStore(page);
-  await page.locator('.settings-page').getByText('Manage Wallets', { exact: true }).click();
-  await page.locator('.wallets-dialog-card [data-wallet-id="savings"]').click();
-  await page.locator('.wallet-detail-panel').getByRole('button', { name: 'Remove Wallet' }).click();
+  await page.locator('#settings-wallets [data-wallet-id="savings"]').click();
+  await page.locator('.wallet-detail-panel').getByRole('button', { name: 'Remove from this phone' }).click();
   const blocked = page.locator('.q-dialog').filter({ hasText: 'Move the money first' });
   await blocked.waitFor();
-  assert.match(await blocked.textContent(), /Savings still holds/);
+  assert.match(await blocked.textContent(), /Savings holds/);
   await page.waitForTimeout(400);
   await shot(page, 'p4-remove-blocked');
   await blocked.getByRole('button', { name: 'Move funds' }).click();
@@ -196,17 +196,16 @@ try {
     store.refreshBalance = async (id) => { store.applyBalance(id, 0, { source: 'sync' }); return true; };
     store.removeWallet = async (id) => { window.removed = id; store.wallets.splice(store.wallets.findIndex((w) => w.id === id), 1); };
   });
-  await page.locator('.settings-page').getByText('Manage Wallets', { exact: true }).click();
-  await page.locator('.wallets-dialog-card [data-wallet-id="shop"]').click();
-  await page.locator('.wallet-detail-panel').getByRole('button', { name: 'Remove Wallet' }).click();
-  const alert = page.locator('.q-dialog').filter({ hasText: 'Remove Shop?' });
+  await page.locator('#settings-wallets [data-wallet-id="shop"]').click();
+  await page.locator('.wallet-detail-panel').getByRole('button', { name: 'Remove from this phone' }).click();
+  const alert = page.locator('.q-dialog').filter({ hasText: 'Remove Shop from this phone?' });
   await alert.waitFor();
-  assert.match(await alert.textContent(), /stays part of your recovery phrase/);
-  assert.equal(await page.locator('.danger-confirm-card').count(), 0, 'no typed confirmation for a wallet that can come back');
+  assert.match(await alert.textContent(), /Your recovery phrase brings it back/);
+  assert.equal(await page.locator('.typed-removal-input').count(), 0, 'no typed confirmation for a wallet that can come back');
   await page.waitForTimeout(300);
   await shot(page, 'p6-remove-empty-alert');
   await alert.getByRole('button', { name: 'Remove' }).click();
-  await toast(page, 'Wallet removed');
+  await toast(page, 'Shop removed from this phone');
   assert.equal(await page.evaluate(() => window.removed), 'shop');
   console.log('PASS: an empty Spark wallet that can come back is removed after one plain alert');
 
@@ -214,8 +213,7 @@ try {
   page = await open(six, { dark: true });
   await page.goto(`${base}/#/settings`);
   await page.locator('.settings-page').waitFor();
-  await page.locator('.settings-page').getByText('Manage Wallets', { exact: true }).click();
-  await page.getByRole('button', { name: 'Add Wallet' }).click();
+  await page.locator('[data-audit="settings-add-wallet"]').click();
   await page.getByText('Add New Wallet', { exact: true }).waitFor();
   const limitRow = page.locator('[data-audit="add-spark-wallet"]');
   assert.equal(await limitRow.getAttribute('aria-disabled'), 'true', 'the row stays, disabled');
@@ -240,8 +238,7 @@ try {
   await page.goto(`${base}/#/settings`);
   await page.locator('.settings-page').waitFor();
   await scriptStore(page);
-  await page.locator('.settings-page').getByText('Wallets verwalten', { exact: true }).click();
-  await page.getByRole('button', { name: 'Wallet hinzufügen' }).click();
+  await page.locator('[data-audit="settings-add-wallet"]').click();
   await page.locator('[data-audit="add-spark-wallet"]').click();
   await page.locator('.add-spark-card').waitFor();
   await page.waitForTimeout(400);

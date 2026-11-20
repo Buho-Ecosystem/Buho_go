@@ -1,6 +1,7 @@
 /**
  * Real Quasar UI with scripted address-server responses. No wallet secrets,
  * external payments, or upstream calls. Uses the real store mutation actions.
+ * Reaches each Spark wallet's address from its own page (its row on Settings).
  * Start VITE_BREEZ_API_KEY=test-fixture-key npm run dev -- --port 9019,
  * then node scripts/check-lightning-address.mjs. All LNURL requests are intercepted.
  */
@@ -73,9 +74,9 @@ async function open({ dark = false, locale = 'en-US', width = 390, height = 844 
       return address && transfereePubkey ? { ...address, transferAuthorization: { username: address.username, pubkey: transfereePubkey } } : address;
     };
   });
-  const manage = { 'en-US': 'Manage Wallets', de: 'Wallets verwalten', es: 'Gestionar Carteras' }[locale];
-  await page.locator('.settings-page').getByText(manage, { exact: true }).click();
-  await page.locator('.wallets-dialog-card [data-wallet-id="main"]').click();
+  // The wallet's row on Settings opens its own page.
+  await page.locator('#settings-wallets [data-wallet-id="main"]').click();
+  await page.locator('.wallets-dialog-card .wallet-detail-panel').waitFor();
   return { page, context };
 }
 async function addressSheet(page, { empty = false } = {}) {

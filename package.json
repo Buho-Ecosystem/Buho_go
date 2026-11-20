@@ -13,6 +13,7 @@
     "check:people-search": "node scripts/check-people-search.mjs",
     "check:lightning-address": "node scripts/check-lightning-address.mjs",
     "check:spark-wallets": "node scripts/check-spark-wallets.mjs",
+    "check:settings-layout": "node scripts/check-settings-layout.mjs",
     "check:wallet-details": "node scripts/check-wallet-details.mjs",
     "check:transfer": "node scripts/check-transfer-completion.mjs",
     "check:shared-requests": "node scripts/check-shared-requests.mjs",

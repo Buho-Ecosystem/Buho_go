@@ -1,8 +1,9 @@
 /** Controlled browser check for connecting a wallet over Nostr Wallet Connect
- * and for the NWC details in Settings. Start `pnpm dev --port 9031` first (or
- * set NWC_BASE_URL). Every external request is blocked; the wallet behind the
- * connection is a stand-in on the page's own connection test, so each step
- * renders as a person sees it. */
+ * and for the NWC details on the wallet's own page, opened from its row on
+ * Settings. Start `pnpm dev --port 9031` first (or set NWC_BASE_URL). Every
+ * external request is blocked; the wallet behind the connection is a
+ * stand-in on the page's own connection test, so each step renders as a
+ * person sees it. */
 import { chromium } from '@playwright/test';
 import assert from 'node:assert/strict';
 import { mkdir } from 'node:fs/promises';
@@ -173,9 +174,9 @@ try {
   await shot('duplicate');
   console.log('✓ added with its own name; the same connection again is caught');
 
-  // 6 · Settings: the same facts, and whether the wallet answers.
+  // 6 · Settings: the wallet's own page shows the same facts, and whether it answers.
   await go('/settings');
-  await page.getByText('Manage Wallets', { exact: true }).waitFor({ timeout: 30000 });
+  await page.locator('#settings-wallets [data-wallet-id]').first().waitFor({ timeout: 30000 });
   await page.evaluate(() => {
     let c = document.querySelector('.q-page').__vueParentComponent;
     while (c && !('detailWalletId' in (c.proxy?.$data || {}))) c = c.parent;
@@ -183,9 +184,9 @@ try {
     const wallet = store.wallets.find((w) => w.type === 'nwc');
     store.nwcStatus[wallet.id] = 'answering';
     store.nwcLimits[wallet.id] = { totalSats: 100000, usedSats: 12400, remainingSats: 87600, renewsAt: Date.now() + 21 * 86400000 };
-    c.proxy.showWalletsDialog = true;
-    c.proxy.detailWalletId = wallet.id;
+    c.proxy.openWalletDetail(wallet.id);
   });
+  await page.locator('.wallet-detail-panel').waitFor();
   await page.getByText('Answering', { exact: true }).waitFor();
   await page.getByText('This connection can', { exact: true }).first().waitFor();
   await page.getByText(/^\D*87,600 left$/).waitFor();
