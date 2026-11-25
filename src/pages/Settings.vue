@@ -175,8 +175,10 @@
           On web / PWA: the toggle is rendered (so users discover
           the feature) but always shows OFF and any attempt to
           enable opens the "Get the Android app" dialog.
+          In the iOS app: hidden, there is no native implementation.
         -->
         <SettingsRow
+          v-if="showScreenPrivacyRow"
           icon="tabler:eye-off"
           :tile="TILE.teal"
           :label="$t('Screen Privacy')"
@@ -192,7 +194,12 @@
           </template>
         </SettingsRow>
         <template #footer>
-          {{ $t("App lock asks for your face or fingerprint when BuhoGO opens, or for your phone's PIN, pattern or password when neither is set up. Screen Privacy blocks screenshots, screen recordings and app switcher previews.") }}
+          <template v-if="showScreenPrivacyRow">
+            {{ $t("App lock asks for your face or fingerprint when BuhoGO opens, or for your phone's PIN, pattern or password when neither is set up. Screen Privacy blocks screenshots, screen recordings and app switcher previews.") }}
+          </template>
+          <template v-else>
+            {{ $t("App lock asks for Face ID or Touch ID when BuhoGO opens, or for your iPhone's passcode when neither is set up.") }}
+          </template>
         </template>
       </SettingsSection>
 
@@ -1297,6 +1304,11 @@ export default {
      */
     isNativeApp() {
       return Capacitor.isNativePlatform();
+    },
+
+    /** Screen Privacy in the Android app, and on the web to point there; never in the iOS app. */
+    showScreenPrivacyRow() {
+      return this.screenPrivacySupported || !this.isNativeApp;
     },
 
     /** Quick access in the Android app, and on the web to point there; never in the iOS app. */

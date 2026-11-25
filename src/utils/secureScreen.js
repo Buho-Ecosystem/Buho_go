@@ -85,12 +85,14 @@ export async function isScreenPrivacyEnabled () {
 }
 
 /**
- * True when the platform can actually enforce screen-capture blocking.
- * Settings.vue uses this to hide the toggle on web/PWA where the
- * underlying primitive doesn't exist.
+ * True when the platform can actually enforce screen-capture blocking:
+ * the Android app. Settings.vue hides the row in the iOS app and, on
+ * web/PWA, shows it switched off with the Get-the-App dialog.
  *
  * @returns {boolean}
  */
 export function isScreenPrivacySupported () {
-  return Capacitor.isNativePlatform()
+  // Android only: the SecureScreen plugin (FLAG_SECURE) has no iOS
+  // implementation, so on iOS every call would reject as unimplemented.
+  return Capacitor.getPlatform() === 'android'
 }

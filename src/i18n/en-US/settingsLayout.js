@@ -4,6 +4,7 @@ export default {
   "A single wallet can be removed or disconnected on its own page.": "A single wallet can be removed or disconnected on its own page.",
   "Amount format": "Amount format",
   "App lock asks for your face or fingerprint when BuhoGO opens, or for your phone's PIN, pattern or password when neither is set up. Screen Privacy blocks screenshots, screen recordings and app switcher previews.": "App lock asks for your face or fingerprint when BuhoGO opens, or for your phone's PIN, pattern or password when neither is set up. Screen Privacy blocks screenshots, screen recordings and app switcher previews.",
+  "App lock asks for Face ID or Touch ID when BuhoGO opens, or for your iPhone's passcode when neither is set up.": "App lock asks for Face ID or Touch ID when BuhoGO opens, or for your iPhone's passcode when neither is set up.",
   "Applies to all your Spark wallets.": "Applies to all your Spark wallets.",
   "Auto-Transfer moves money to another wallet or an address once a wallet holds more than you choose. Kiosk Mode turns this phone into a register for your shop.": "Auto-Transfer moves money to another wallet or an address once a wallet holds more than you choose. Kiosk Mode turns this phone into a register for your shop.",
   "Each set brings back what it covers on a new phone. Keep these words offline: no photos, no sharing.": "Each set brings back what it covers on a new phone. Keep these words offline: no photos, no sharing.",
