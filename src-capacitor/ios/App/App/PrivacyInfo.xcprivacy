@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!--
+	  The app's own privacy manifest. BuhoGO does not track and its own
+	  native code (AppDelegate, BuhoBridgeViewController, FileExportPlugin,
+	  WalletAppsPlugin) calls no required-reason API. Capacitor, its plugins
+	  and the ML Kit pods ship their own manifests for what they use.
+	  Keep NSPrivacyCollectedDataTypes in step with the App Store Connect
+	  privacy answers if those ever declare collected data.
+	-->
+	<key>NSPrivacyTracking</key>
+	<false/>
+	<key>NSPrivacyTrackingDomains</key>
+	<array/>
+	<key>NSPrivacyCollectedDataTypes</key>
+	<array/>
+	<key>NSPrivacyAccessedAPITypes</key>
+	<array/>
+</dict>
+</plist>

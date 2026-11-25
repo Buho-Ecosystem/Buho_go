@@ -20,6 +20,8 @@
 	<string>$(MARKETING_VERSION)</string>
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<!-- The wallet apps "Pay from another wallet" may open, by their own
@@ -54,7 +56,7 @@
 	<string>Main</string>
 	<key>UIRequiredDeviceCapabilities</key>
 	<array>
-		<string>armv7</string>
+		<string>arm64</string>
 	</array>
 	<key>UISupportedInterfaceOrientations</key>
 	<array>
@@ -75,24 +77,12 @@
 	<string>BuhoGO uses the camera to scan Lightning, Bitcoin, and Nostr QR codes so you can pay invoices and add contacts without typing them by hand.</string>
 	<key>NSFaceIDUsageDescription</key>
 	<string>BuhoGO uses Face ID to lock the app and to confirm sensitive actions like revealing your recovery phrase.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>BuhoGO uses your location only while the Bitcoin map is open, to show places near you that accept bitcoin. It is never stored or shared.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>BuhoGO can read QR codes from saved screenshots so you can pay or sign in from images you have already received.</string>
 	<key>CFBundleURLTypes</key>
 	<array>
-		<dict>
-			<key>CFBundleURLName</key>
-			<string>mybuho.buhogo.oauth</string>
-			<key>CFBundleURLSchemes</key>
-			<array>
-				<!--
-				  Reverse-DNS form of the iOS OAuth client ID issued by Google
-				  Cloud Console. Replace `XXXXX-YYYYY` with the prefix from your
-				  client ID (the part before `.apps.googleusercontent.com`).
-				  Must match VITE_GOOGLE_OAUTH_IOS_REDIRECT_URI's scheme.
-				-->
-				<string>com.googleusercontent.apps.REPLACE-WITH-IOS-CLIENT-ID-PREFIX</string>
-			</array>
-		</dict>
 		<!--
 		  Payment deep links. The iOS system camera (and other apps) can
 		  only hand a scanned lightning:/bitcoin:/lnurl* URI to BuhoGO
@@ -133,6 +123,20 @@
 			<key>CFBundleURLSchemes</key>
 			<array>
 				<string>buhogo</string>
+			</array>
+		</dict>
+		<!--
+		  A wallet's NWC connection (NIP-47): "Connect" in a wallet app
+		  opens BuhoGO's connect sheet with it, same as the Android intent
+		  filter. The no-`+` form is what some wallets still write.
+		-->
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>mybuho.buhogo.nwc</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>nostr+walletconnect</string>
+				<string>nostrwalletconnect</string>
 			</array>
 		</dict>
 	</array>
