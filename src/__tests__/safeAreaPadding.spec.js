@@ -5,7 +5,11 @@
  * bottom padding to the bare inset, which beats the sheet's own padding.
  * On older Android WebViews the inset is 0, so sheets lost their bottom
  * padding; on newer ones, sheets that pad inside got the inset twice
- * (issue #452). quasar.config.js turns Quasar's Android padding off.
+ * (issue #452). iOS has the same rule under `q-ios-padding`, and it also
+ * pads maximized dialogs that pad with --safe-top themselves (issue #457).
+ * quasar.config.js turns Quasar's padding off on both, so the native apps
+ * pad the way Safari and the PWA on iPhone always have: with the app's own
+ * --safe-* variables only.
  *
  * Run directly with Node:
  *   node src/__tests__/safeAreaPadding.spec.js
@@ -50,8 +54,8 @@ test('Quasar does not pad for the system bars on Android', () => {
   assert.equal(capacitorFlags().androidStatusBarPadding, false);
 });
 
-test('iOS keeps Quasar\'s padding (naming the capacitor block turns it off unless set)', () => {
-  assert.equal(capacitorFlags().iosStatusBarPadding, true);
+test('Quasar does not pad for the system bars on iOS (#457)', () => {
+  assert.equal(capacitorFlags().iosStatusBarPadding, false);
 });
 
 test('the installed Quasar still reads both switches for the body class', () => {
