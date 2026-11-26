@@ -24,6 +24,7 @@ import * as constants from '../../services/dm/constants.js'
 import * as emojiCatalog from '../../utils/emojiCatalog.js'
 import * as emojiSearch from '../../utils/emojiSearch.js'
 import * as amountKeypad from '../../utils/amountKeypad.js'
+import * as firstCharacter from '../../utils/firstCharacter.js'
 import { LOOKUP_ERROR, NIP05_ERROR } from '../../utils/nostrLookup.js'
 
 const sfc = createRequire(import.meta.url)('@vue/compiler-sfc')
@@ -59,7 +60,7 @@ function loadSfc(file, deps = {}) {
   return component
 }
 
-const chatFormat = loadJs('chatFormat.js', { '../../utils/amountFormatting.js': amountFormatting, '../../services/dm/constants.js': constants })
+const chatFormat = loadJs('chatFormat.js', { '../../utils/amountFormatting.js': amountFormatting, '../../services/dm/constants.js': constants, '../../utils/firstCharacter.js': firstCharacter })
 const base = { '@iconify/vue': { Icon }, './chatFormat.js': chatFormat }
 
 const ChatHeader = loadSfc('ChatHeader.vue', base)
@@ -122,13 +123,14 @@ const NOW = Math.floor(Date.now() / 1000)
 
 // ── chatFormat ───────────────────────────────────────────────────────
 
-test('initials: first and last word, whole code points, never empty', () => {
+test('initials: first and last word, whole characters, never empty', () => {
   assert.equal(chatFormat.initialsOf('Anna'), 'A')
   assert.equal(chatFormat.initialsOf('anna muster'), 'AM')
   assert.equal(chatFormat.initialsOf('Hans Peter Meier'), 'HM')
   assert.equal(chatFormat.initialsOf('  '), '?')
   assert.equal(chatFormat.initialsOf(undefined), '?')
   assert.equal(chatFormat.initialsOf('🦉 Owl'), '🦉O')
+  assert.equal(chatFormat.initialsOf('🇩🇪 Anna'), '🇩🇪A', 'a flag is one character, not two halves')
 })
 
 test('an npub is shortened to a fragment, never shown whole', () => {
@@ -1297,6 +1299,7 @@ test('presentational: no store, router, network or runtime imports', () => {
       assert.ok(
         // The app's keypad and its rules are presentational too: no store, no network.
         spec === '@iconify/vue' || spec.startsWith('./') || spec === '../../utils/amountFormatting.js' || spec === '../../services/dm/constants.js'
+          || spec === '../../utils/firstCharacter.js'
           || spec === '../AmountKeypad.vue' || spec === '../../utils/amountKeypad.js',
         `${file} imports ${spec}`,
       )

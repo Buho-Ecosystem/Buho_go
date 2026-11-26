@@ -150,7 +150,8 @@ import QrPhotoButton from '../QrPhotoButton.vue';
 import { useAddressBookStore } from '../../stores/addressBook';
 import { mapActions } from 'pinia';
 import { classifyIdentifier, lookupIdentifier } from '../../utils/nostrLookup.js';
-import { normalizePaymentAddress } from '../../utils/addressUtils.js';
+import { readContactAddress } from '../../utils/contactAddress.js';
+import { contactSaveError } from '../../utils/contactErrors.js';
 import { fetchProfile, parseProfileContent } from '../../utils/nostrFetch.js';
 import { copyToClipboard } from 'quasar';
 import NostrContactPreview from './NostrContactPreview.vue';
@@ -334,16 +335,17 @@ export default {
      *
      * 1. Nostr identifier (npub / nprofile / hex) → resolve the
      *    profile in place and offer the preview-card save.
-     * 2. Lightning address / Spark / Bitcoin / LNURL (after unwrapping
-     *    BIP21 `bitcoin:` and `lightning:` QR URIs) → hand the bare value
-     *    up to the parent, which flips to the manual "Enter" form with the
+     * 2. Lightning address / Spark / Bitcoin / LNURL, or the lasting
+     *    address inside a payment link (utils/contactAddress) → hand it up
+     *    to the parent, which flips to the manual "Enter" form with the
      *    address pre-filled so the user just adds a name + note.
      * 3. A shared BuhoGO profile link → the identifier inside it, then step 1.
      *    The card itself uses `nostr:npub…`, but links received elsewhere
      *    should still land in the same add-contact flow.
-     * 4. Anything else (BOLT11 invoice, other URLs, a bare NIP-05 that
-     *    isn't a Lightning address) → keep scanning; it isn't a contact
-     *    destination we can save.
+     * 4. A one-time request (an invoice, a checkout) → keep scanning, and
+     *    say why it can't become a contact.
+     * 5. Anything else (other URLs, a bare NIP-05 that isn't a Lightning
+     *    address) → keep scanning; it isn't a contact destination we can save.
      *
      * Ordering matters: `classifyIdentifier` reports `user@domain`
      * as `nip05`, which we deliberately skip in step 1 so step 2's
@@ -368,6 +370,7 @@ export default {
       const fromLink = parseProfileLink(trimmed);
       if (fromLink) {
         this.detected = true;
+        this.photoNote = '';
         this.stopScanner();
         this.showCamera = false;
         this.resolveAndFetch(fromLink);
@@ -377,24 +380,31 @@ export default {
       const kind = classifyIdentifier(trimmed);
       if (kind && kind !== 'nip05') {
         this.detected = true;
+        this.photoNote = '';
         this.stopScanner();
         this.showCamera = false;
         this.resolveAndFetch(trimmed);
         return;
       }
 
-      const candidate = normalizePaymentAddress(trimmed);
-      const paymentType = useAddressBookStore().detectAddressType(candidate);
-      if (paymentType) {
+      const reading = readContactAddress(trimmed);
+      if (reading?.address) {
         this.detected = true;
+        this.photoNote = '';
         this.stopScanner();
         this.showCamera = false;
-        this.$emit('detected-address', candidate);
+        this.$emit('detected-address', reading.address);
         return;
       }
 
-      // The camera keeps looking; a photo chosen on purpose gets an answer.
-      if (fromPhoto) this.photoNote = this.$t('That code is not a profile or an address. Choose a photo of the code you want to add.');
+      // The camera keeps looking. A one-time request is close enough to an
+      // address that silence would read as a broken scanner; anything else
+      // only gets an answer when it was a photo chosen on purpose.
+      if (reading?.problem === 'one-time') {
+        this.photoNote = this.$t('This is a one-time payment request, not a lasting address. Pay it and save the contact from the payment screen instead.');
+      } else if (fromPhoto) {
+        this.photoNote = this.$t('That code is not a profile or an address. Choose a photo of the code you want to add.');
+      }
     },
 
     /** Choose photo (web): the camera goes off while the picker is open. */
@@ -488,30 +498,8 @@ export default {
         this.$emit('saved', entry);
         this.teardown();
       } catch (err) {
-        const msg = err?.message || '';
-        // A contact that exists already also names the address in its message:
-        // only a profile without one is "no payment address".
-        if (msg.includes('Lightning address') && !msg.includes('already')) {
-          this.$q.notify({
-            type: 'negative',
-            message: this.$t('No payment address'),
-            caption: this.$t('This profile cannot receive payments yet.'),
-            timeout: 4000,
-          });
-        } else if (msg.includes('already')) {
-          this.$q.notify({
-            type: 'warning',
-            message: this.$t('Already in your address book'),
-            timeout: 3000,
-          });
-        } else {
-          this.$q.notify({
-            type: 'negative',
-            message: this.$t("Couldn't save contact"),
-            caption: msg || this.$t('Please try again'),
-            timeout: 4000,
-          });
-        }
+        const { type, message, caption } = contactSaveError(err, this.$t.bind(this));
+        this.$q.notify({ type, message, caption: caption || undefined, timeout: 4000 });
       } finally {
         this.isSaving = false;
       }

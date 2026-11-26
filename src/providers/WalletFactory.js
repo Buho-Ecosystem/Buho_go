@@ -179,7 +179,7 @@ export function parsePaymentDestination(input) {
   // downstream UI can prefill where useful.
   const withBip21 = (result) => (bip21 ? { ...result, bip21 } : result);
 
-  // BIP-352 Silent Payments share Spark's legacy sp1/tsp1 prefixes, so
+  // BIP-352 Silent Payments share Spark's legacy sp1 prefix, so
   // this more specific check must run first. Recognized, not payable:
   // deriving the one-time output needs sender-side BIP-352 support none
   // of our rails (Spark SDK, Arkade, Lightning backends) offer.

@@ -144,7 +144,7 @@ export class WalletProvider {
   /**
    * Transfer to Spark address (Spark wallets only)
    * @param {Object} params
-   * @param {string} params.sparkAddress - Recipient Spark address (sp1... or tsp1...)
+   * @param {string} params.sparkAddress - Recipient Spark address (spark1… or a legacy sp1…)
    * @param {number} params.amount - Amount in sats
    * @returns {Promise<{id: string, status: string}>}
    */
@@ -154,7 +154,7 @@ export class WalletProvider {
 
   /**
    * Check if a string is a valid Spark address
-   * Supports both legacy (sp1, tsp1) and new (spark1, sparkrt1, etc.) formats
+   * Supports both legacy (sp1, sprt1, etc.) and new (spark1, sparkrt1, etc.) formats
    * @param {string} address
    * @returns {boolean}
    */

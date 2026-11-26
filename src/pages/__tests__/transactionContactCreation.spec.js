@@ -6,6 +6,9 @@ import * as Pinia from 'pinia';
 import * as addresses from '../../utils/addressUtils.js';
 import * as requests from '../../utils/lud23.js';
 import * as spark from '../../utils/sparkPayment.js';
+import * as bip21 from '../../utils/bip21.js';
+import * as contactAddress from '../../utils/contactAddress.js';
+import * as contactErrors from '../../utils/contactErrors.js';
 
 class MemoryStorage {
   data = new Map();
@@ -34,6 +37,8 @@ const book = component('../AddressBook.vue', { '../stores/transactionMetadata': 
 const modal = component('../../components/AddressBook/AddressBookModal.vue', {
   '../../stores/addressBook': { useAddressBookStore }, '../../utils/addressUtils.js': addresses,
   '../../utils/lud23.js': requests, '../../utils/sparkPayment.js': spark,
+  '../../utils/bip21.js': bip21, '../../utils/contactAddress.js': contactAddress,
+  '../../utils/contactErrors.js': contactErrors,
 });
 const deferred = () => { let resolve; const promise = new Promise(done => { resolve = done; }); return { promise, resolve }; };
 

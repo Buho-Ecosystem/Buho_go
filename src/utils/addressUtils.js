@@ -8,8 +8,9 @@
  * call site should import from here.
  *
  * Identifier families:
- *   - Spark          — `sp1`, `tsp1`, `sprt1` (legacy) and
- *                      `spark1`, `sparkrt1`, `sparkt1`, `sparks1`, `sparkl1` (bech32m)
+ *   - Spark          — `spark1`, `sparkt1`, `sparks1`, `sparkrt1`, `sparkl1`
+ *                      and the legacy `sp1`, `spt1`, `sps1`, `sprt1`, `spl1`
+ *                      (bech32m; the list is the Spark decoder's, see SPARK_HRPS)
  *   - BOLT11 invoice — `lnbc` (mainnet), `lntb` (testnet), `lntbs` (signet),
  *                      `lnbcrt` (regtest)
  *   - BOLT12 offer   — `lno1…` (recognized so unsupported offers receive a
@@ -28,18 +29,18 @@
 import { bech32, bech32m } from 'bech32';
 import { extractLnFallbackParam } from './bip21.js';
 import { BOLT12_OFFER_HRP as BOLT12_OFFER_HRP_VALUE, isValidBolt12Offer } from './bolt12.js';
+import { SPARK_HRPS } from './sparkPayment.js';
 
 // ----------------------------------------------------------------------------
 // Constants — exported so other modules can reuse them without re-typing
 // ----------------------------------------------------------------------------
 
-/** @readonly */
-export const SPARK_PREFIXES = Object.freeze([
-  // New Bech32m format
-  'spark1', 'sparkrt1', 'sparkt1', 'sparks1', 'sparkl1',
-  // Legacy format
-  'sp1', 'tsp1', 'sprt1',
-]);
+/**
+ * Spark prefixes, one per human-readable part the Spark decoder knows.
+ * `tsp1` is not one of them: it is the testnet Silent Payments prefix.
+ * @readonly
+ */
+export const SPARK_PREFIXES = Object.freeze(SPARK_HRPS.map((hrp) => `${hrp}1`));
 
 /**
  * Arkade (Ark L2) address prefixes. Bech32m, case-insensitive.
@@ -136,9 +137,9 @@ export function stripWrapperScheme(value) {
 /**
  * True if the input is a BIP-352 Silent Payment address.
  *
- * These share Spark's legacy `sp1` / `tsp1` prefixes (both are bech32m
- * with the `sp` / `tsp` HRP), so the prefix alone cannot tell them
- * apart - the payload can. A silent payment address carries a version
+ * Mainnet ones share Spark's legacy `sp1` prefix (both are bech32m with
+ * the `sp` HRP), so the prefix alone cannot tell them apart - the payload
+ * can. Testnet ones (`tsp1`) are never Spark. A silent payment address carries a version
  * word plus a 66-byte payload (33-byte scan key + 33-byte spend key;
  * future versions may only grow it), while a legacy Spark address is a
  * bare 33-byte public key. We decode and check, so a checksum-valid
@@ -170,7 +171,7 @@ export function isSilentPaymentAddress(address) {
 /**
  * True if the input looks like a Spark address (any supported prefix).
  * A valid Silent Payment address is excluded despite sharing the legacy
- * `sp1`/`tsp1` prefixes - see isSilentPaymentAddress.
+ * `sp1` prefix - see isSilentPaymentAddress.
  * @param {unknown} address
  * @returns {boolean}
  */

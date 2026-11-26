@@ -4,6 +4,7 @@
  */
 
 import { REQUEST_STATE } from '../../services/dm/constants.js'
+import { firstCharacter } from '../../utils/firstCharacter.js'
 
 /** Emoji offered in the message menu, in display order. */
 export const REACTION_EMOJIS = Object.freeze(['👍', '❤️', '😂', '🙏', '🎉'])
@@ -54,13 +55,13 @@ export function formatSats(amountSats, bip177 = true, locale) {
 
 /**
  * One or two capital letters for an avatar without a picture. Splits on
- * whitespace and keeps whole code points, so emoji and non-Latin names work.
+ * whitespace and keeps whole characters, so emoji and non-Latin names work.
  */
 export function initialsOf(name) {
   const words = String(name || '').trim().split(/\s+/).filter(Boolean)
   if (!words.length) return '?'
-  const first = [...words[0]][0]
-  const second = words.length > 1 ? [...words[words.length - 1]][0] : ''
+  const first = firstCharacter(words[0])
+  const second = words.length > 1 ? firstCharacter(words[words.length - 1]) : ''
   return (first + second).toLocaleUpperCase()
 }
 

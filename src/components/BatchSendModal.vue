@@ -1052,10 +1052,6 @@ watch(exchangeRate, (rate) => {
 // ─────────────────────────────────────────────────────────────
 // Methods - Helpers
 // ─────────────────────────────────────────────────────────────
-function getInitial(name) {
-  return name ? name.charAt(0).toUpperCase() : '?'
-}
-
 function truncateAddress(addr) {
   if (!addr) return ''
   if (addr.length <= 20) return addr

@@ -760,6 +760,7 @@ import BrantaVerificationDetails from '../components/BrantaVerificationDetails.v
 import { useChatRuntime } from '../composables/useChatRuntime.js';
 import { useMessagesStore } from '../stores/messages.js';
 import { useAutoWithdrawStore } from '../stores/autoWithdraw';
+import { contactSaveError } from '../utils/contactErrors.js';
 
 // "Type" row text per metadata source (i18n message keys, resolved through
 // $t at render time). Lookup map on purpose: later passes stamp more sources
@@ -1309,8 +1310,10 @@ export default {
         this.showContactPicker = false;
         this.contactSearch = '';
 
-        // Update lastUsedAt in address book
-        await this.addressBookStore.updateEntry(contact.id, { lastUsedAt: Date.now() });
+        // Recency for the Quick pay shelf. Not an edit: updateEntry would
+        // move the contact's sync clock and could outvote a newer rename
+        // made in another app.
+        await this.addressBookStore.updateLastUsed(contact.id);
 
         this.$q.notify({
           type: 'positive',
@@ -1653,8 +1656,10 @@ export default {
         });
         this.$q.notify({ type: 'positive', message: this.$t('Contact added') });
       } catch (error) {
-        // Most common: already saved — surface the store's message as-is.
-        this.$q.notify({ type: 'info', message: error?.message || this.$t("Couldn't save contact") });
+        // Most common: already saved. The words come from the error's code,
+        // never from the store's English message.
+        const { type, message, caption } = contactSaveError(error, this.$t.bind(this));
+        this.$q.notify({ type, message, caption: caption || undefined });
       } finally {
         this.savingZapper = false;
       }
