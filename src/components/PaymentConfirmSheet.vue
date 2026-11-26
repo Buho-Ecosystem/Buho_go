@@ -566,6 +566,7 @@ import { payingWalletReasonText, paymentFeeText, paymentTotalText } from '../uti
 import RefundAddressField from './RefundAddressField.vue'
 import CardFace from './CardFace.vue'
 import { onAndroidBack } from '../utils/androidBack.js'
+import { firstCharacter } from '../utils/firstCharacter.js'
 import balanceUpdating from '../directives/balanceUpdating.js'
 
 // Below this, a tap "Send" button; above it, slide-to-confirm. Both morph into
@@ -862,8 +863,7 @@ export default {
     recipientInitial() {
       const explicit = this.payment?.recipient?.initial
       if (explicit) return explicit
-      const name = this.payment?.recipient?.name
-      return name ? name.charAt(0).toUpperCase() : '?'
+      return firstCharacter(this.payment?.recipient?.name).toLocaleUpperCase() || '?'
     },
     recipientAddress() {
       return this.payment?.recipient?.address || ''

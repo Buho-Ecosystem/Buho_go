@@ -33,7 +33,12 @@
 import { bech32m } from 'bech32';
 import { secp256k1 } from '@noble/curves/secp256k1.js';
 
-/** hrp → network, current family first, then the legacy short prefixes. */
+/**
+ * hrp → network, current family first, then the legacy short prefixes.
+ * Taken from the Spark SDK (the Breez SDK binary carries exactly these ten).
+ * The address predicates in addressUtils derive their prefix list from it,
+ * so recognition and decoding can never disagree again.
+ */
 const NETWORK_BY_HRP = Object.freeze({
   spark: 'MAINNET',
   sparkt: 'TESTNET',
@@ -54,6 +59,9 @@ const HRP_BY_NETWORK = Object.freeze({
   REGTEST: 'sparkrt',
   LOCAL: 'sparkl',
 });
+
+/** Every human-readable part a Spark address or invoice can carry. */
+export const SPARK_HRPS = Object.freeze(Object.keys(NETWORK_BY_HRP));
 
 const BECH32_LIMIT = 1024;
 

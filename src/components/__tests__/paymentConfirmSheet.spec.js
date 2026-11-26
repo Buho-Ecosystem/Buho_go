@@ -21,6 +21,7 @@ import * as ServerRenderer from 'vue/server-renderer'
 import * as amountFormatting from '../../utils/amountFormatting.js'
 import * as paymentAmountInput from '../../utils/paymentAmountInput.js'
 import * as payingWallets from '../../utils/payingWallets.js'
+import * as firstCharacter from '../../utils/firstCharacter.js'
 import { safeBrantaUrl, brantaAvatar } from '../../utils/branta.js'
 import '../../__tests__/memoryStorage.js'
 
@@ -70,6 +71,7 @@ const baseDeps = {
   '../utils/amountFormatting.js': amountFormatting,
   '../utils/paymentAmountInput.js': paymentAmountInput,
   '../utils/payingWallets.js': payingWallets,
+  '../utils/firstCharacter.js': firstCharacter,
 }
 
 function run(code, extra = {}, deps = {}) {

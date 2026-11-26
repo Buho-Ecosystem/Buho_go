@@ -133,6 +133,7 @@ import { classifyIdentifier, lookupIdentifier, LOOKUP_ERROR, NIP05_ERROR } from 
 import { parseProfileContent } from '../../utils/nostrFetch.js';
 import { copyToClipboard } from 'quasar';
 import NostrContactPreview from './NostrContactPreview.vue';
+import { contactSaveError } from '../../utils/contactErrors.js';
 import ContactAvatar from './ContactAvatar.vue';
 import { classifyPeopleInput, searchProfiles, fetchPeopleProfile, PROFILE_SEARCH_DEBOUNCE_MS, PROFILE_SEARCH_TIMEOUT_MS } from '../../services/profileSearch.js';
 import { formatUsername, usernameAddressFromInput } from '../../services/nip05.js';
@@ -635,30 +636,8 @@ export default {
         this.$emit('saved', entry);
         this.reset();
       } catch (err) {
-        const msg = err?.message || '';
-        // A contact that exists already also names the address in its message:
-        // only a profile without one is "no payment address".
-        if (msg.includes('Lightning address') && !msg.includes('already')) {
-          this.$q.notify({
-            type: 'negative',
-            message: this.$t('No payment address'),
-            caption: this.$t('This profile cannot receive payments yet.'),
-            timeout: 4000,
-          });
-        } else if (msg.includes('already')) {
-          this.$q.notify({
-            type: 'warning',
-            message: this.$t('Already in your address book'),
-            timeout: 3000,
-          });
-        } else {
-          this.$q.notify({
-            type: 'negative',
-            message: this.$t("Couldn't save contact"),
-            caption: msg || this.$t('Please try again'),
-            timeout: 4000,
-          });
-        }
+        const { type, message, caption } = contactSaveError(err, this.$t.bind(this));
+        this.$q.notify({ type, message, caption: caption || undefined, timeout: 4000 });
       } finally {
         this.isSaving = false;
       }

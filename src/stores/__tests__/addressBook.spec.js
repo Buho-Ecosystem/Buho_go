@@ -2162,5 +2162,91 @@ await test('manual and post-payment service identities resolve to one contact', 
   await assert.rejects(store.addEntry({ name: 'Coffee again', address: 'alice@coffee.example', addressType: 'lightning' }), /already exists/);
 });
 
+// ---------------------------------------------------------------------------
+// Contacts review: stored form, Remove all, rename, failed saves
+// ---------------------------------------------------------------------------
+
+await test('a contact keeps the address a wallet pays: lowercase bech32, the lasting part of a link, never a one-time request', async () => {
+  const { readContactAddress } = await import('../../utils/contactAddress.js');
+  const { encodeSparkAddress } = await import('../../utils/sparkPayment.js');
+  const { isSparkAddress } = await import('../../utils/addressUtils.js');
+  const spark = encodeSparkAddress({ identityPublicKey: `02${'79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798'}`, network: 'MAINNET' });
+  const onchain = 'bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq';
+
+  // A phone keyboard's capital first letter is no address a wallet pays.
+  const store = freshStore();
+  const entry = await store.addEntry({ name: 'Anna', address: `B${onchain.slice(1)}`, addressType: 'bitcoin' });
+  assert.equal(entry.address, onchain);
+  await assert.rejects(store.addEntry({ name: 'Typo', address: `${onchain.slice(0, -1)}x`, addressType: 'bitcoin' }),
+    (err) => err.code === 'invalid-address');
+  await assert.rejects(store.addEntry({ name: 'Anna again', address: onchain.toUpperCase(), addressType: 'bitcoin' }),
+    (err) => err.code === 'duplicate' && err.existing.id === entry.id);
+
+  // A payment link gives its lasting part; an invoice is never a contact.
+  assert.deepEqual(readContactAddress(`bitcoin:${onchain}?amount=0.001&lightning=lnbc10u1pxyz&spark=${spark}`), { address: spark, addressType: 'spark' });
+  assert.deepEqual(readContactAddress(`bitcoin:${onchain}?amount=0.001&lightning=lnbc10u1pxyz`), { problem: 'one-time' });
+  assert.deepEqual(readContactAddress('lightning:lnbc10u1pxyz'), { problem: 'one-time' });
+
+  // Spark prefixes are the decoder's: legacy testnet is spt1, tsp1 is Silent Payments.
+  assert.equal(isSparkAddress(`spt1${'q'.repeat(60)}`), true);
+  assert.equal(isSparkAddress(`tsp1${'q'.repeat(60)}`), false);
+
+  // Contacts saved by older versions: a kind on every entry, the case a wallet pays.
+  globalThis.localStorage = new MemoryStorage();
+  localStorage.setItem(STORAGE_KEY, JSON.stringify([{ id: 'old', name: 'Old', address: spark.toUpperCase() }]));
+  setActivePinia(createPinia());
+  const reloaded = useAddressBookStore();
+  await reloaded.initialize();
+  assert.equal(reloaded.entries[0].address, spark);
+  assert.equal(reloaded.entries[0].addressType, 'spark');
+});
+
+await test('Remove all leaves a tombstone for every contact, so the next sync does not bring them back', async () => {
+  const store = freshStore();
+  const identityStore = fakeIdentity({ pubkey: ALICE_PUBKEY, secret: ALICE_SECRET });
+  await store.addEntry({ name: 'Carol', address: 'carol@carol.test', addressType: 'lightning' });
+  await store.addNostrContact({ pubkey: BOB_PUBKEY, npub: BOB_NPUB, event: makeKind0(BOB_SECRET, { name: 'Bob', lud16: 'bob@bob.test' }) });
+  const first = syncFakePool();
+  assert.equal((await store.syncToNostr({ identityStore, pool: first, relays: ['wss://r.test'] })).published, true);
+  const publishedDoc = first.calls.publish[0].event;
+
+  await store.clearAll();
+  assert.equal(store.syncDirty, true);
+  const second = syncFakePool({ events: { 'wss://r.test': [publishedDoc] } });
+  await store.syncToNostr({ identityStore, pool: second, relays: ['wss://r.test'] });
+
+  assert.equal(store.entries.length, 0, 'the shared doc must not restore what was removed');
+  const doc = decryptDoc(second.calls.publish[0].event, ALICE_SECRET, ALICE_PUBKEY);
+  assert.ok(doc.contacts.length === 2 && doc.contacts.every((c) => c.trashed), 'both reach the doc as trashed');
+});
+
+await test('renaming a Nostr contact keeps it following the address on their profile', async () => {
+  const store = freshStore();
+  const bob = await store.addNostrContact({ pubkey: BOB_PUBKEY, npub: BOB_NPUB, event: makeKind0(BOB_SECRET, { name: 'Bob', lud16: 'bob@bob.test' }) });
+  // The edit form hands the unchanged address back with the new name.
+  const renamed = await store.updateEntry(bob.id, { name: 'Bobby', address: 'bob@bob.test', addressType: 'lightning' });
+  assert.equal(renamed.name, 'Bobby');
+  assert.equal(renamed.nostr_payment_address_explicit, false);
+
+  const moved = await store.refreshContact(bob.id, {
+    fetcher: async () => makeKind0(BOB_SECRET, { name: 'Bob', lud16: 'bob@new.test' }, nowSec() + 60),
+  });
+  assert.equal(moved.entry.address, 'bob@new.test');
+});
+
+await test('a save the phone could not keep leaves no contact behind', async () => {
+  const store = freshStore();
+  await store.initialize();
+  const setItem = localStorage.setItem.bind(localStorage);
+  localStorage.setItem = (key, value) => {
+    if (key === STORAGE_KEY) throw new Error('QuotaExceededError');
+    return setItem(key, value);
+  };
+  await assert.rejects(store.addEntry({ name: 'Dan', address: 'dan@dan.test', addressType: 'lightning' }),
+    (err) => err.code === 'save-failed');
+  assert.equal(store.entries.length, 0);
+  assert.equal(store.syncDirty, false, 'nothing unsaved may reach the sync');
+});
+
 console.log(`\n  ${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);

@@ -26,6 +26,7 @@
           @click="closeModal"
           class="close-btn"
           :class="$q.dark.isActive ? 'text-white' : 'text-grey-6'"
+          :aria-label="$t('Close')"
         >
           <Icon icon="tabler:x" width="20" height="20" />
         </q-btn>
@@ -146,15 +147,22 @@
                 autocapitalize="off"
                 autocorrect="off"
                 spellcheck="false"
+                :aria-invalid="addressShowsError || !!duplicateEntry"
+                aria-describedby="contact-address-helper"
               />
-              <div class="input-helper" :class="$q.dark.isActive ? 'helper-dark' : 'helper-light'">
+              <div id="contact-address-helper" class="input-helper" :class="$q.dark.isActive ? 'helper-dark' : 'helper-light'" aria-live="polite">
                 <template v-if="addressIsRequest">
                   <span>{{ $t('Review this request to share your payment address.') }}</span>
                 </template>
                 <template v-else-if="addressShowsError">
                   <Icon icon="tabler:alert-circle" width="13" height="13" />
-                  <span v-if="addressIsSparkRequest">{{ $t('This is a one-time payment request, not a lasting address. Pay it and save the contact from the payment screen instead.') }}</span>
+                  <span v-if="addressReading?.problem === 'one-time'">{{ $t('This is a one-time payment request, not a lasting address. Pay it and save the contact from the payment screen instead.') }}</span>
+                  <span v-else-if="addressReading?.problem === 'invalid'">{{ $t("This address isn't complete or has a typo. Check it and try again.") }}</span>
                   <span v-else>{{ $t("We don't recognize this as a Lightning, Spark, Bitcoin, or LNURL address") }}</span>
+                </template>
+                <template v-else-if="duplicateEntry">
+                  <Icon icon="tabler:alert-circle" width="13" height="13" />
+                  <span>{{ $t('Already saved as {name}', { name: duplicateEntry.name }) }}</span>
                 </template>
                 <template v-else>
                   <span>{{ $t('Works with a Lightning, Spark, or Bitcoin address, or an LNURL link') }}</span>
@@ -216,17 +224,10 @@ import { offerAddressRequest } from '../../services/addressRequestIntake.js';
 import { useAddressRequestStore } from '../../stores/addressRequest.js';
 import { useAddressBookStore } from '../../stores/addressBook'
 import { mapActions } from 'pinia'
-import {
-  isSparkAddress,
-  isBitcoinAddress,
-  isLightningAddress,
-  isLnurl,
-  canonicalLnurl,
-  lnurlToUrl,
-  lnurlDomain,
-  isArkadeAddress,
-} from '../../utils/addressUtils.js'
-import { isSparkPaymentRequest } from '../../utils/sparkPayment.js'
+import { lnurlToUrl, lnurlDomain, stripWrapperScheme } from '../../utils/addressUtils.js'
+import { isBip21 } from '../../utils/bip21.js'
+import { readContactAddress } from '../../utils/contactAddress.js'
+import { contactSaveError } from '../../utils/contactErrors.js'
 import { fetchPayRequest } from '../../utils/lnurlPay.js'
 import { parsePayRequestMetadata, serviceTitle, normalizeServiceImage, serviceIdentity } from '../../utils/lnurlMetadata.js'
 import { useServiceImagesStore } from '../../stores/serviceImages'
@@ -234,22 +235,9 @@ import AddContactSearch from './AddContactSearch.vue'
 import AddContactScan from './AddContactScan.vue'
 import ArkadeLogo from '../ArkadeLogo.vue'
 
-// Order matters: Spark addresses are checked before Bitcoin because some
-// Spark prefixes share a base58-ish look and we want them claimed first.
-function detectType(address) {
-  if (!address || typeof address !== 'string') return null
-  const v = address.trim()
-  if (!v || isAddressRequest(v)) return null
-  // A Spark invoice shares the spark1… prefix but is single-use — it must
-  // never become a contact. The helper text below names it specifically.
-  if (isSparkAddress(v)) return isSparkPaymentRequest(v) ? null : 'spark'
-  if (isArkadeAddress(v)) return 'arkade'
-  if (isBitcoinAddress(v)) return 'bitcoin'
-  // LNURL static pay links — recognized as their own type for routing, but
-  // surfaced as Lightning in the pill below (see detectedType/Label/Icon).
-  if (isLnurl(v)) return 'lnurl'
-  if (isLightningAddress(v)) return 'lightning'
-  return null
+/** True for text wrapped in a payment link or URI scheme the field unwraps. */
+function isWrapped(text) {
+  return isBip21(text) || stripWrapperScheme(text) !== text.trim()
 }
 
 const TABS = [
@@ -344,8 +332,29 @@ export default {
       return this.isEditing || this.activeTab === 'manual'
     },
 
+    /** What the field holds as a contact address (utils/contactAddress). */
+    addressReading() {
+      return readContactAddress(this.formData.address)
+    },
+
     detectedType() {
-      return detectType(this.formData.address)
+      return this.addressReading?.addressType || null
+    },
+
+    /** An unchanged address of the contact being edited is not a duplicate of itself. */
+    duplicateEntry() {
+      const address = this.addressReading?.address
+      if (!address) return null
+      return useAddressBookStore().findContactByAddress(address, this.entry?.id || null)
+    },
+
+    /**
+     * A Nostr contact saved without an address can still be renamed: its
+     * address comes from their profile when they publish one.
+     */
+    editingWithoutAddress() {
+      return this.isEditing && !this.formData.address.trim()
+        && this.entry?.source === 'nostr' && !(this.entry.address || this.entry.lightningAddress)
     },
 
     /**
@@ -379,13 +388,11 @@ export default {
     addressShowsError() {
       return this.formData.address.trim().length > 0 && !this.detectedType && !this.addressIsRequest
     },
-    addressIsSparkRequest() {
-      const v = this.formData.address.trim()
-      return v.length > 0 && isSparkPaymentRequest(v)
-    },
 
     isFormValid() {
-      return this.formData.name.trim() && !!this.detectedType
+      if (!this.formData.name.trim()) return false
+      if (this.editingWithoutAddress) return true
+      return !!this.detectedType && !this.duplicateEntry
     }
   },
   watch: {
@@ -394,6 +401,18 @@ export default {
     },
     'addressRequests.state.stage'(value) {
       if (value === 'idle' && !this.addressRequests.state.presented) this.addressHandoff = false;
+    },
+    /**
+     * A pasted payment link or `lightning:` link becomes the lasting
+     * address inside it, in the field itself, so what is saved is what the
+     * person sees. A label in the link names the contact when no name is
+     * typed yet.
+     */
+    'formData.address'(value) {
+      const reading = this.addressReading
+      if (!reading?.address || !isWrapped(value)) return
+      if (reading.label && !this.formData.name.trim()) this.formData.name = reading.label
+      this.formData.address = reading.address
     },
     show(newVal) {
       if (newVal) {
@@ -434,7 +453,7 @@ export default {
       } else {
         this.formData = {
           name: '',
-          address: detectType(this.initialAddress) ? this.initialAddress.trim() : '',
+          address: readContactAddress(this.initialAddress)?.address || '',
           notes: ''
         }
       }
@@ -497,23 +516,22 @@ export default {
       this.isSaving = true
 
       try {
+        // The stored form: lowercase bech32, the lasting part of a link,
+        // the canonical LNURL (utils/contactAddress).
         const entryData = {
           name: this.formData.name.trim(),
-          address: this.formData.address.trim(),
-          addressType: this.detectedType,
           notes: this.formData.notes?.trim() || ''
         }
+        if (this.addressReading?.address) {
+          entryData.address = this.addressReading.address
+          entryData.addressType = this.addressReading.addressType
+        }
 
-        // A pasted pay link (LUD-11 service) is stored in its one canonical
-        // form, and the service gets one chance to describe itself (LUD-06
-        // name and logo). Best effort: no answer means the domain is the
-        // name, and nothing here ever creates an invoice.
-        if (this.detectedType === 'lnurl') {
-          const canonical = canonicalLnurl(entryData.address)
-          if (canonical) entryData.address = canonical
-          if (!this.isEditing) {
-            entryData.service = await this.describeService(entryData.address)
-          }
+        // A pasted pay link (LUD-11 service) gets one chance to describe
+        // itself (LUD-06 name and logo). Best effort: no answer means the
+        // domain is the name, and nothing here ever creates an invoice.
+        if (this.detectedType === 'lnurl' && !this.isEditing) {
+          entryData.service = await this.describeService(entryData.address)
         }
 
         let savedEntry
@@ -582,26 +600,8 @@ export default {
     },
 
     getErrorMessage(error) {
-      const msg = error.message || ''
-
-      if (msg.includes('already exists')) {
-        return {
-          title: this.$t('Contact already exists'),
-          caption: this.$t('This address is already saved in your address book')
-        }
-      }
-
-      if (msg.includes('Invalid')) {
-        return {
-          title: this.$t('Address not recognized'),
-          caption: this.$t('Please check the address and try again')
-        }
-      }
-
-      return {
-        title: this.$t("Couldn't save contact"),
-        caption: msg || this.$t('Please try again')
-      }
+      const { message, caption } = contactSaveError(error, this.$t.bind(this))
+      return { title: message, caption }
     }
   }
 }

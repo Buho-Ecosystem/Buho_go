@@ -75,7 +75,7 @@
                 </q-item-section>
                 <q-item-section>
                   <q-item-label style="color: #EF4444;">
-                    {{ $t('Clear All') }}
+                    {{ $t('Remove all contacts') }}
                   </q-item-label>
                 </q-item-section>
               </q-item>
@@ -125,9 +125,9 @@
           <div class="delete-icon-wrapper">
             <Icon icon="tabler:alert-triangle" width="32" height="32" class="delete-icon"/>
           </div>
-          <div class="delete-title">{{ $t('Clear All Contacts') }}</div>
+          <div class="delete-title">{{ $t('Remove all contacts?') }}</div>
           <div class="delete-message" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'">
-            {{ $t('This will permanently delete all your contacts. This action cannot be undone.') }}
+            {{ $t('Payments with them stay in your history.') }}
           </div>
         </q-card-section>
 
@@ -143,7 +143,7 @@
           <q-btn
             unelevated
             no-caps
-            :label="$t('Clear All')"
+            :label="$t('Remove all')"
             @click="executeClearAll"
             class="delete-action-btn"
           />
@@ -318,9 +318,9 @@ export default {
       try {
         await useAddressBookStore().clearAll()
         this.showClearAllConfirmDialog = false
-        this.$q.notify({ type: 'positive', message: this.$t('Contacts cleared') })
+        this.$q.notify({ type: 'positive', message: this.$t('Contacts removed') })
       } catch (error) {
-        this.$q.notify({ type: 'negative', message: this.$t('Couldn\'t clear contacts') })
+        this.$q.notify({ type: 'negative', message: this.$t("Couldn't remove contacts") })
       }
     },
 

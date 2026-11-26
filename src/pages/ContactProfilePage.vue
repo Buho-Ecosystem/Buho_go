@@ -53,7 +53,13 @@
 
       <!-- The address, copyable in place. Identity-only contacts show the
            calm no-address state instead; paying still explains + re-checks. -->
-      <button v-if="entryAddress" type="button" class="profile-addr" @click="copyAddress">
+      <button
+        v-if="entryAddress"
+        type="button"
+        class="profile-addr"
+        :aria-label="addressCopied ? $t('Address copied') : $t('Copy address')"
+        @click="copyAddress"
+      >
         <code>{{ entryAddressDisplay }}</code>
         <Icon :icon="addressCopied ? 'tabler:check' : 'tabler:copy'" width="14" height="14" />
       </button>
@@ -112,9 +118,9 @@
           <div class="delete-icon-wrapper">
             <Icon icon="tabler:trash" width="32" height="32" class="delete-icon"/>
           </div>
-          <div class="delete-title">{{ $t('Delete Contact') }}</div>
+          <div class="delete-title">{{ $t('Remove {name}?', { name: entry?.name || '' }) }}</div>
           <div class="delete-message" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'">
-            {{ $t('Are you sure you want to delete') }} <strong>{{ entry?.name }}</strong>{{ $t('?') }}
+            {{ $t('Payments with them stay in your history.') }}
           </div>
         </q-card-section>
 
@@ -130,7 +136,7 @@
           <q-btn
             unelevated
             no-caps
-            :label="$t('Delete')"
+            :label="$t('Remove')"
             @click="executeRemove"
             class="delete-action-btn"
           />
@@ -282,7 +288,7 @@ export default {
         this.$q.notify({ type: 'positive', message: this.$t('Contact removed') })
         this.$router.back()
       } catch {
-        this.$q.notify({ type: 'negative', message: this.$t("Couldn't delete contact") })
+        this.$q.notify({ type: 'negative', message: this.$t("Couldn't remove contact") })
       }
     },
 

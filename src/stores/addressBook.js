@@ -1,16 +1,9 @@
 import { formatUsername } from '../services/nip05.js'
 import { serviceIdentity } from '../utils/lnurlMetadata.js'
-import { isAddressRequest } from '../utils/lud23.js';
 import { defineStore } from 'pinia'
 import { verifyEvent, nip19 } from 'nostr-core'
-import {
-  isSparkAddress,
-  isArkadeAddress,
-  isBitcoinAddress,
-  isLightningAddress,
-  isLnurl,
-} from '../utils/addressUtils.js'
-import { isSparkPaymentRequest } from '../utils/sparkPayment.js'
+import { isLightningAddress } from '../utils/addressUtils.js'
+import { canonicalContactAddress, contactAddressType } from '../utils/contactAddress.js'
 import { fetchProfile, parseProfileContent } from '../utils/nostrFetch.js'
 // Legacy kind:30000 list — READ ONLY, for the one-time migration into
 // the shared contacts doc. The old event is never written again.
@@ -41,6 +34,36 @@ export const ADDRESS_TYPES = {
   // its own type for correct send routing, but presented as Lightning in the
   // UI since it ultimately pays over Lightning.
   LNURL: 'lnurl'
+}
+
+/**
+ * A failed contact change, with a `code` the screens decide their words by
+ * (utils/contactErrors.js) instead of reading English messages:
+ *   'invalid-address'    not a lasting address of its kind
+ *   'duplicate'          `existing` is the contact that already has it
+ *   'no-payment-address' a Nostr profile with nothing to pay yet
+ *   'not-found'          the contact is gone
+ *   'save-failed'        the phone did not keep the change
+ */
+function contactError(code, message, extra = {}) {
+  return Object.assign(new Error(message), { code }, extra)
+}
+
+const INVALID_ADDRESS_MESSAGES = Object.freeze({
+  spark: 'Invalid Spark address format',
+  arkade: 'Invalid Arkade address format',
+  bitcoin: 'Invalid Bitcoin address format',
+  lightning: 'Invalid Lightning address format',
+  lnurl: 'Invalid LNURL format',
+})
+
+function invalidAddressError(addressType) {
+  return contactError('invalid-address', INVALID_ADDRESS_MESSAGES[addressType] || 'Invalid address format')
+}
+
+/** Case-free, accent-free text for search ("jose" finds "José"). */
+function foldForSearch(text) {
+  return String(text || '').normalize('NFD').replace(/\p{M}/gu, '').toLocaleLowerCase()
 }
 
 // Contact source — undefined on legacy entries; treat any
@@ -278,14 +301,17 @@ export const useAddressBookStore = defineStore('addressBook', {
         return sorted
       }
 
-      const query = state.searchQuery.toLowerCase()
-      return sorted.filter(entry => {
-        const address = entry.address || entry.lightningAddress || ''
-        const notes = entry.notes || ''
-        return entry.name.toLowerCase().includes(query) ||
-          address.toLowerCase().includes(query) ||
-          notes.toLowerCase().includes(query)
-      })
+      // Name, address and notes, plus what a Nostr contact or a service
+      // is also known by (their NIP-05 name, npub, the service's name).
+      const query = foldForSearch(state.searchQuery.trim())
+      return sorted.filter(entry => [
+        entry.name,
+        entry.address || entry.lightningAddress,
+        entry.notes,
+        entry.nostr_profile?.nip05,
+        entry.nostr_npub,
+        entry.service?.name,
+      ].some((field) => field && foldForSearch(field).includes(query)))
     },
 
     // Get favorite contacts sorted by name
@@ -358,6 +384,7 @@ export const useAddressBookStore = defineStore('addressBook', {
         console.error('Error loading address book:', error)
         this.entries = []
       }
+      this._normalizeStoredAddresses()
       try {
         const savedMeta = localStorage.getItem(SYNC_META_STORAGE_KEY)
         if (savedMeta) {
@@ -385,6 +412,39 @@ export const useAddressBookStore = defineStore('addressBook', {
         console.warn('Error loading address-book sync metadata:', error)
       }
       this._initialized = true
+    },
+
+    /**
+     * Bring contacts saved by older versions to the stored form every
+     * reader trusts: a kind on every entry (the oldest ones carried none,
+     * so a Spark contact was paid as a Lightning address) and the
+     * canonical case of its address ("Bc1q…" is no address a wallet pays).
+     * An address that does not check out is left exactly as it was. No
+     * clock moves: this is the same contact, not an edit to sync.
+     */
+    _normalizeStoredAddresses() {
+      let changed = false
+      this.entries = this.entries.map((entry) => {
+        const address = this.getEntryAddress(entry)
+        if (!entry || !address) return entry
+        const addressType = entry.addressType || this.detectAddressType(address)
+        const canonical = addressType ? canonicalContactAddress(address, addressType) : ''
+        if (!canonical || (canonical === entry.address && addressType === entry.addressType)) return entry
+        changed = true
+        return {
+          ...entry,
+          address: canonical,
+          addressType,
+          lightningAddress: addressType === 'lightning' ? canonical : '',
+        }
+      })
+      if (!changed) return
+      try {
+        localStorage.setItem('buhoGO_address_book', JSON.stringify(this.entries))
+      } catch (error) {
+        // Still right in memory; the next saved change writes it.
+        console.warn('Error saving normalized address book:', error)
+      }
     },
 
     // Mark there are local nostr-contact changes not yet pushed to
@@ -468,216 +528,211 @@ export const useAddressBookStore = defineStore('addressBook', {
     // Add new entry
     async addEntry(entryData) {
       await this.initialize()
-      try {
-        let addressType = entryData.addressType || 'lightning'
-        let address = entryData.address || entryData.lightningAddress || ''
-        let service = sanitizeService(entryData.service)
-        if (addressType === 'lnurl' && service) {
-          const identity = serviceIdentity(address, service)
-          address = identity.address || address
-          addressType = identity.addressType
-          service = { ...service, payLink: identity.payLink }
-        }
-
-        const newEntry = {
-          id: `addr-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-          name: entryData.name.trim(),
-          address: address.trim(),
-          addressType: addressType,
-          // Keep lightningAddress for backward compatibility
-          lightningAddress: addressType === 'lightning' ? address.trim() : '',
-          color: entryData.color || this.getRandomColor(),
-          // New fields for enhanced contacts
-          notes: entryData.notes?.trim() || '',
-          isFavorite: entryData.isFavorite || false,
-          lastUsedAt: entryData.lastUsedAt || null,
-          // LUD-11 service payees carry their LUD-06 self-description.
-          service,
-          createdAt: Date.now(),
-          updatedAt: Date.now()
-        }
-
-        // Validate address format based on type
-        if (!this.isValidAddress(newEntry.address, newEntry.addressType)) {
-          const errorMessages = {
-            spark: 'Invalid Spark address format',
-            arkade: 'Invalid Arkade address format',
-            bitcoin: 'Invalid Bitcoin address format',
-            lightning: 'Invalid Lightning address format',
-            lnurl: 'Invalid LNURL format'
-          }
-          throw new Error(errorMessages[addressType] || 'Invalid address format')
-        }
-
-        // Check for duplicates
-        const existingEntry = this.findContactByAddress(newEntry.address)
-          || (service?.payLink && this.findContactByAddress(service.payLink))
-
-        if (existingEntry) {
-          throw new Error('This address already exists in your address book')
-        }
-
-        // A re-add supersedes any pending delete-tombstone for this
-        // address, mirroring what addNostrContact does per pubkey.
-        const addrLower = newEntry.address.toLowerCase()
-        if (Array.isArray(this.nostrDeletions)) {
-          this.nostrDeletions = this.nostrDeletions.filter(
-            (d) => (d.address || '').toLowerCase() !== addrLower,
-          )
-        }
-
-        this.entries.push(newEntry)
-        await this.persistEntries()
-        // Manual contacts live in the shared doc too — a create must
-        // reach relays like any other mutation.
-        await this._markSyncDirty()
-
-        return newEntry
-      } catch (error) {
-        throw error
+      let addressType = entryData.addressType || 'lightning'
+      let address = entryData.address || entryData.lightningAddress || ''
+      let service = sanitizeService(entryData.service)
+      if (addressType === 'lnurl' && service) {
+        const identity = serviceIdentity(address, service)
+        address = identity.address || address
+        addressType = identity.addressType
+        service = { ...service, payLink: identity.payLink }
       }
+
+      // The one stored form (utils/contactAddress): lowercase bech32,
+      // checksum checked, never a one-time request.
+      const canonical = canonicalContactAddress(address, addressType)
+      if (!canonical) throw invalidAddressError(addressType)
+
+      const existing = this.findContactByAddress(canonical)
+        || (service?.payLink && this.findContactByAddress(service.payLink))
+      if (existing) {
+        throw contactError('duplicate', 'This address already exists in your address book', { existing })
+      }
+
+      const now = Date.now()
+      const newEntry = {
+        id: `addr-${now}-${Math.random().toString(36).substr(2, 9)}`,
+        name: entryData.name.trim(),
+        address: canonical,
+        addressType,
+        // Keep lightningAddress for backward compatibility
+        lightningAddress: addressType === 'lightning' ? canonical : '',
+        color: entryData.color || this.getRandomColor(),
+        notes: entryData.notes?.trim() || '',
+        isFavorite: entryData.isFavorite || false,
+        lastUsedAt: entryData.lastUsedAt || null,
+        // LUD-11 service payees carry their LUD-06 self-description.
+        service,
+        createdAt: now,
+        updatedAt: now,
+      }
+
+      const previous = this.entries.slice()
+      this.entries.push(newEntry)
+      await this._commitEntries(previous)
+
+      // A re-add supersedes any pending delete-tombstone for this
+      // address, mirroring what addNostrContact does per pubkey.
+      const addrLower = canonical.toLowerCase()
+      if (Array.isArray(this.nostrDeletions)) {
+        this.nostrDeletions = this.nostrDeletions.filter(
+          (d) => (d.address || '').toLowerCase() !== addrLower,
+        )
+      }
+      // Manual contacts live in the shared doc too — a create must
+      // reach relays like any other mutation.
+      await this._markSyncDirty()
+
+      return newEntry
     },
 
     // Update existing entry
     async updateEntry(id, updateData) {
       await this.initialize()
-      try {
-        const entryIndex = this.entries.findIndex(entry => entry.id === id)
-        if (entryIndex === -1) {
-          throw new Error('Entry not found')
-        }
+      const entryIndex = this.entries.findIndex(entry => entry.id === id)
+      if (entryIndex === -1) {
+        throw contactError('not-found', 'Entry not found')
+      }
 
-        const currentEntry = this.entries[entryIndex]
-        const updatedEntry = {
-          ...currentEntry,
-          // Explicitly update all editable fields
-          name: updateData.name !== undefined ? updateData.name : currentEntry.name,
-          color: updateData.color !== undefined ? updateData.color : currentEntry.color,
-          notes: updateData.notes !== undefined ? updateData.notes : (currentEntry.notes || ''),
-          isFavorite: updateData.isFavorite !== undefined ? updateData.isFavorite : (currentEntry.isFavorite || false),
-          updatedAt: Date.now()
-        }
+      const currentEntry = this.entries[entryIndex]
+      const updatedEntry = {
+        ...currentEntry,
+        // Explicitly update all editable fields
+        name: updateData.name !== undefined ? updateData.name : currentEntry.name,
+        color: updateData.color !== undefined ? updateData.color : currentEntry.color,
+        notes: updateData.notes !== undefined ? updateData.notes : (currentEntry.notes || ''),
+        isFavorite: updateData.isFavorite !== undefined ? updateData.isFavorite : (currentEntry.isFavorite || false),
+        updatedAt: Date.now()
+      }
 
-        // If this is a Nostr contact and the user changed the name to
-        // something other than what the kind:0 profile would currently
-        // produce, mark it as locally overridden. `refreshContact()` then
-        // never overwrites it on a silent re-sync (locked decision #4:
-        // user's local edit always wins).
-        if (currentEntry.source === CONTACT_SOURCES.NOSTR && updateData.name !== undefined) {
-          const derivedName = pickDisplayNameFromProfile(
-            currentEntry.nostr_profile,
-            currentEntry.nostr_npub,
-          )
-          updatedEntry.name_locally_edited = updatedEntry.name.trim() !== derivedName
-        }
+      // If this is a Nostr contact and the user changed the name to
+      // something other than what the kind:0 profile would currently
+      // produce, mark it as locally overridden. `refreshContact()` then
+      // never overwrites it on a silent re-sync (locked decision #4:
+      // user's local edit always wins).
+      if (currentEntry.source === CONTACT_SOURCES.NOSTR && updateData.name !== undefined) {
+        const derivedName = pickDisplayNameFromProfile(
+          currentEntry.nostr_profile,
+          currentEntry.nostr_npub,
+        )
+        updatedEntry.name_locally_edited = updatedEntry.name.trim() !== derivedName
+      }
 
-        if (updateData.service !== undefined) {
-          updatedEntry.service = sanitizeService(updateData.service)
-        }
+      if (updateData.service !== undefined) {
+        updatedEntry.service = sanitizeService(updateData.service)
+      }
 
-        // If address is being updated, validate it
-        const newAddress = updateData.address || updateData.lightningAddress
-        if (newAddress) {
-          const addressType = updateData.addressType || updatedEntry.addressType || 'lightning'
-          updatedEntry.address = newAddress.trim()
+      // An address handed back unchanged (the edit form always sends the
+      // field) is not a change: it must not pin a Nostr contact to it, and
+      // must not count as an edit to sync.
+      const givenAddress = updateData.address || updateData.lightningAddress
+      let addressChanged = false
+      if (givenAddress) {
+        const addressType = updateData.addressType || updatedEntry.addressType || 'lightning'
+        const canonical = canonicalContactAddress(givenAddress, addressType)
+        if (!canonical) throw invalidAddressError(addressType)
+        addressChanged = canonical.toLowerCase() !== this.getEntryAddress(currentEntry).toLowerCase()
+          || addressType !== this.getEntryAddressType(currentEntry)
+        if (addressChanged) {
+          const existing = this.findContactByAddress(canonical, id)
+          if (existing) {
+            throw contactError('duplicate', 'This address already exists in your address book', { existing })
+          }
+          updatedEntry.address = canonical
           updatedEntry.addressType = addressType
-          updatedEntry.lightningAddress = addressType === 'lightning' ? newAddress.trim() : ''
-
-          if (!this.isValidAddress(updatedEntry.address, addressType)) {
-            const errorMessages = {
-              spark: 'Invalid Spark address format',
-              arkade: 'Invalid Arkade address format',
-              bitcoin: 'Invalid Bitcoin address format',
-              lightning: 'Invalid Lightning address format',
-              lnurl: 'Invalid LNURL format'
-            }
-            throw new Error(errorMessages[addressType] || 'Invalid address format')
-          }
-
-          // Check for duplicates
-          const existingEntry = this.entries.find(
-            entry => entry.id !== id &&
-            this.getEntryAddress(entry).toLowerCase() === updatedEntry.address.toLowerCase()
-          )
-
-          if (existingEntry) {
-            throw new Error('This address already exists in your address book')
-          }
-
+          updatedEntry.lightningAddress = addressType === 'lightning' ? canonical : ''
           if (currentEntry.source === CONTACT_SOURCES.NOSTR) {
             // A destination selected by the user is now explicit and must not
             // be replaced by a later kind:0 metadata refresh.
             updatedEntry.nostr_payment_address_explicit = true
           }
         }
-
-        // Use splice for proper Vue reactivity
-        this.entries.splice(entryIndex, 1, updatedEntry)
-        await this.persistEntries()
-
-        // Name and address are synced fields in the shared doc; notes
-        // and color are device-local. Mark dirty only for the former —
-        // avoids a publish round-trip for a notes-only edit.
-        const nameChanged = updateData.name !== undefined
-          && updatedEntry.name !== currentEntry.name
-        const addressChanged = !!newAddress
-          && updatedEntry.address !== currentEntry.address
-        if (nameChanged || addressChanged) {
-          await this._markSyncDirty()
-        }
-
-        return updatedEntry
-      } catch (error) {
-        throw error
       }
+
+      const previous = this.entries.slice()
+      this.entries.splice(entryIndex, 1, updatedEntry)
+      await this._commitEntries(previous)
+
+      // Name and address are synced fields in the shared doc; notes
+      // and color are device-local. Mark dirty only for the former —
+      // avoids a publish round-trip for a notes-only edit.
+      const nameChanged = updateData.name !== undefined
+        && updatedEntry.name !== currentEntry.name
+      if (nameChanged || addressChanged) {
+        await this._markSyncDirty()
+      }
+
+      return updatedEntry
     },
 
     // Delete entry
     async deleteEntry(id) {
       await this.initialize()
+      const entryIndex = this.entries.findIndex(entry => entry.id === id)
+      if (entryIndex === -1) {
+        throw contactError('not-found', 'Entry not found')
+      }
+
+      const deletedEntry = this.entries[entryIndex]
+      const previous = this.entries.slice()
+      this.entries.splice(entryIndex, 1)
+      await this._commitEntries(previous)
+
+      if (this._recordTombstone(deletedEntry)) {
+        await this._markSyncDirty()
+        // _markSyncDirty persists only on the clean-to-dirty flip;
+        // the tombstone must hit disk even when the book was already
+        // dirty, or an app kill drops the delete and the next sync
+        // re-imports the contact.
+        await this._persistSyncMeta()
+      }
+
+      return deletedEntry
+    },
+
+    /**
+     * Record a removal as a tombstone, not just an omission — that's how
+     * the delete propagates to other devices instead of being
+     * "resurrected" by their stale copy of the list. In the shared doc a
+     * tombstone lands as `trashed: true` (recoverable from the other
+     * apps' trash), never as removal. Nostr entries carry their pubkey;
+     * manual entries the doc contact id they were linked to (or their
+     * address as the pre-link fallback). Caller persists.
+     *
+     * @returns {boolean} whether a tombstone was recorded
+     */
+    _recordTombstone(entry) {
+      const tombstone = { deletedAt: Date.now() }
+      if (entry.source === CONTACT_SOURCES.NOSTR && entry.nostr_pubkey) {
+        tombstone.pubkey = entry.nostr_pubkey
+      }
+      if (typeof entry.doc_contact_id === 'string' && entry.doc_contact_id) {
+        tombstone.docId = entry.doc_contact_id
+      }
+      const address = this.getEntryAddress(entry)
+      if (!tombstone.pubkey && !tombstone.docId && address) {
+        tombstone.address = address.toLowerCase()
+      }
+      if (!tombstone.pubkey && !tombstone.docId && !tombstone.address) return false
+      this.nostrDeletions = (this.nostrDeletions || []).filter((d) => (
+        (!tombstone.pubkey || d.pubkey !== tombstone.pubkey)
+        && (!tombstone.docId || d.docId !== tombstone.docId)
+        && (!tombstone.address || (d.address || '') !== tombstone.address)
+      ))
+      this.nostrDeletions.push(tombstone)
+      return true
+    },
+
+    /**
+     * Write the list, or put it back the way it was and rethrow: a change
+     * the phone could not keep must not stay on screen, or reach the sync,
+     * as if it had been saved.
+     */
+    async _commitEntries(previous) {
       try {
-        const entryIndex = this.entries.findIndex(entry => entry.id === id)
-        if (entryIndex === -1) {
-          throw new Error('Entry not found')
-        }
-
-        const deletedEntry = this.entries[entryIndex]
-        this.entries.splice(entryIndex, 1)
         await this.persistEntries()
-
-        // Record a tombstone, not just an omission — that's how the
-        // delete propagates to other devices instead of being
-        // "resurrected" by their stale copy of the list. In the shared
-        // doc a tombstone lands as `trashed: true` (recoverable from
-        // the other apps' trash), never as removal.
-        const tombstone = { deletedAt: Date.now() }
-        if (deletedEntry.source === CONTACT_SOURCES.NOSTR && deletedEntry.nostr_pubkey) {
-          tombstone.pubkey = deletedEntry.nostr_pubkey
-        }
-        if (typeof deletedEntry.doc_contact_id === 'string' && deletedEntry.doc_contact_id) {
-          tombstone.docId = deletedEntry.doc_contact_id
-        }
-        const address = this.getEntryAddress(deletedEntry)
-        if (!tombstone.pubkey && !tombstone.docId && address) {
-          tombstone.address = address.toLowerCase()
-        }
-        if (tombstone.pubkey || tombstone.docId || tombstone.address) {
-          this.nostrDeletions = (this.nostrDeletions || []).filter((d) => (
-            (!tombstone.pubkey || d.pubkey !== tombstone.pubkey)
-            && (!tombstone.docId || d.docId !== tombstone.docId)
-            && (!tombstone.address || (d.address || '') !== tombstone.address)
-          ))
-          this.nostrDeletions.push(tombstone)
-          await this._markSyncDirty()
-          // _markSyncDirty persists only on the clean-to-dirty flip;
-          // the tombstone must hit disk even when the book was already
-          // dirty, or an app kill drops the delete and the next sync
-          // re-imports the contact.
-          await this._persistSyncMeta()
-        }
-
-        return deletedEntry
       } catch (error) {
+        this.entries = previous
         throw error
       }
     },
@@ -762,33 +817,33 @@ export const useAddressBookStore = defineStore('addressBook', {
       const explicitAddressType = explicitAddress
         ? (input?.paymentAddressType || this.detectAddressType(explicitAddress))
         : null
-      if (explicitAddress && (
-        !Object.values(ADDRESS_TYPES).includes(explicitAddressType)
-        || !this.isValidAddress(explicitAddress, explicitAddressType)
-      )) {
-        throw new Error('Invalid payment address')
+      const explicitCanonical = explicitAddress && Object.values(ADDRESS_TYPES).includes(explicitAddressType)
+        ? canonicalContactAddress(explicitAddress, explicitAddressType)
+        : ''
+      if (explicitAddress && !explicitCanonical) {
+        throw contactError('invalid-address', 'Invalid payment address')
       }
       if (!explicitAddress && !hasLightningAddress && !allowWithoutLn) {
-        throw new Error('This Nostr profile does not have a Lightning address (lud16) yet')
+        throw contactError('no-payment-address', 'This Nostr profile does not have a Lightning address (lud16) yet')
       }
       // A destination that was explicitly resolved/paid wins. Otherwise use
       // the profile's lud16, or keep an identity-only contact empty until a
       // refresh discovers one.
-      const resolvedAddress = explicitAddress || (hasLightningAddress ? lud16Raw : '')
-      const resolvedAddressType = explicitAddress ? explicitAddressType : 'lightning'
+      const resolvedAddress = explicitCanonical || (hasLightningAddress ? lud16Raw : '')
+      const resolvedAddressType = explicitCanonical ? explicitAddressType : 'lightning'
 
       // Dedupe — always by pubkey (the canonical identity). The
       // Lightning-address dedup only runs when we actually have one;
       // it stops a manual contact with the same lud16 being shadowed
       // by a Nostr duplicate.
-      if (this.entries.some(entry => entry.nostr_pubkey === pubkey)) {
-        throw new Error('This Nostr contact is already in your address book')
+      const samePerson = this.entries.find(entry => entry.nostr_pubkey === pubkey)
+      if (samePerson) {
+        throw contactError('duplicate', 'This Nostr contact is already in your address book', { existing: samePerson })
       }
-      if (resolvedAddress && this.entries.some(
-        entry => this.getEntryAddress(entry).toLowerCase() === resolvedAddress.toLowerCase(),
-      )) {
+      const sameAddress = resolvedAddress ? this.findContactByAddress(resolvedAddress) : null
+      if (sameAddress) {
         const label = resolvedAddressType === 'lightning' ? 'Lightning address' : 'payment address'
-        throw new Error(`A contact with this ${label} already exists`)
+        throw contactError('duplicate', `A contact with this ${label} already exists`, { existing: sameAddress })
       }
 
       const now = Date.now()
@@ -817,7 +872,7 @@ export const useAddressBookStore = defineStore('addressBook', {
         nostr_relay_hints: sanitizedHints,
         // Exact destinations such as npub1…@npub.cash belong to the saved
         // contact, not to kind:0, so metadata refreshes must preserve them.
-        nostr_payment_address_explicit: !!explicitAddress,
+        nostr_payment_address_explicit: !!explicitCanonical,
         last_synced_at: now,
         name_locally_edited: false,
       }
@@ -827,12 +882,13 @@ export const useAddressBookStore = defineStore('addressBook', {
       // tombstone against the (newer) live entry and the contact
       // would survive anyway, but carrying a stale tombstone is just
       // noise. Drop it here so local state stays clean.
+      const previous = this.entries.slice()
+      this.entries.push(newEntry)
+      await this._commitEntries(previous)
+
       if (Array.isArray(this.nostrDeletions) && this.nostrDeletions.some((d) => d.pubkey === pubkey)) {
         this.nostrDeletions = this.nostrDeletions.filter((d) => d.pubkey !== pubkey)
       }
-
-      this.entries.push(newEntry)
-      await this.persistEntries()
       await this._markSyncDirty()
       return newEntry
     },
@@ -1328,11 +1384,12 @@ export const useAddressBookStore = defineStore('addressBook', {
           }
           if (entry.source === CONTACT_SOURCES.NOSTR && dc.paymentAddress) {
             const addressType = this.detectAddressType(dc.paymentAddress)
-            if (addressType && this.isValidAddress(dc.paymentAddress, addressType)) {
-              if (dc.paymentAddress !== this.getEntryAddress(entry)) {
-                next.address = dc.paymentAddress
+            const address = canonicalContactAddress(dc.paymentAddress, addressType)
+            if (address) {
+              if (address !== this.getEntryAddress(entry)) {
+                next.address = address
                 next.addressType = addressType
-                next.lightningAddress = addressType === 'lightning' ? dc.paymentAddress : ''
+                next.lightningAddress = addressType === 'lightning' ? address : ''
                 touched = true
               }
               if (!entry.nostr_payment_address_explicit) {
@@ -1431,14 +1488,15 @@ export const useAddressBookStore = defineStore('addressBook', {
         // Nostr entry may already own this address) — those stay
         // doc-only rather than becoming broken local entries.
         const addressType = this.detectAddressType(dc.paymentAddress)
-        if (!addressType || !this.isValidAddress(dc.paymentAddress, addressType)) continue
-        if (this.findContactByAddress(dc.paymentAddress)) continue
+        const address = canonicalContactAddress(dc.paymentAddress, addressType)
+        if (!address) continue
+        if (this.findContactByAddress(address)) continue
         this.entries.push({
           id: `addr-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
           name: (dc.name || dc.paymentAddress).slice(0, 80),
-          address: dc.paymentAddress,
+          address,
           addressType,
-          lightningAddress: addressType === 'lightning' ? dc.paymentAddress : '',
+          lightningAddress: addressType === 'lightning' ? address : '',
           color: this.getRandomColor(),
           notes: '',
           isFavorite: dc.starred,
@@ -1904,14 +1962,15 @@ export const useAddressBookStore = defineStore('addressBook', {
     // `starred` flag, so the flip syncs like any other edit.
     async toggleFavorite(id) {
       await this.initialize()
-      const entry = this.entries.find(e => e.id === id)
-      if (entry) {
-        entry.isFavorite = !entry.isFavorite
-        entry.updatedAt = Date.now()
-        await this.persistEntries()
-        await this._markSyncDirty()
-      }
-      return entry
+      const index = this.entries.findIndex(e => e.id === id)
+      if (index === -1) return undefined
+      const entry = this.entries[index]
+      const updated = { ...entry, isFavorite: !entry.isFavorite, updatedAt: Date.now() }
+      const previous = this.entries.slice()
+      this.entries.splice(index, 1, updated)
+      await this._commitEntries(previous)
+      await this._markSyncDirty()
+      return updated
     },
 
     // Update last used timestamp (called when paying a contact)
@@ -1925,11 +1984,16 @@ export const useAddressBookStore = defineStore('addressBook', {
       return entry
     },
 
-    // Find contact by address (for save-to-contacts check)
-    findContactByAddress(address) {
-      if (!address) return null
+    /**
+     * The contact that already has this address, other than `exceptId` (the
+     * one being edited). Case-free: every stored form is lowercase bech32 or
+     * an address whose case does not tell two people apart.
+     */
+    findContactByAddress(address, exceptId = null) {
+      if (typeof address !== 'string' || !address.trim()) return null
       const normalizedAddress = address.toLowerCase().trim()
       return this.entries.find(entry => {
+        if (exceptId && entry.id === exceptId) return false
         const entryAddress = (entry.address || entry.lightningAddress || '').toLowerCase().trim()
         return entryAddress === normalizedAddress
           || entry.service?.identifier?.toLowerCase() === normalizedAddress
@@ -1957,59 +2021,31 @@ export const useAddressBookStore = defineStore('addressBook', {
       this.searchQuery = ''
     },
 
-    // Validate address based on type
+    // A lasting address of this kind (utils/contactAddress decides): a
+    // Spark invoice or a typo'd Bitcoin address is not one.
     isValidAddress(address, type = 'lightning') {
-      if (!address || !address.trim() || isAddressRequest(address)) return false
-
-      if (type === 'spark') {
-        return this.isValidSparkAddress(address)
-      }
-      if (type === 'arkade') {
-        return this.isValidArkadeAddress(address)
-      }
-      if (type === 'bitcoin') {
-        return this.isValidBitcoinAddress(address)
-      }
-      if (type === 'lnurl') {
-        return isLnurl(address)
-      }
-      return this.isValidLightningAddress(address)
+      return !!canonicalContactAddress(address, type)
     },
 
-    // Validation predicates — delegated to the shared addressUtils module so
-    // every part of the app recognizes the same set of identifiers.
     isValidLightningAddress(address) {
-      return isLightningAddress(address)
+      return this.isValidAddress(address, 'lightning')
     },
 
     isValidSparkAddress(address) {
-      // A Spark invoice shares the spark1… prefix but is a single-use
-      // payment request — the contact would break as soon as it is paid
-      // or expires. Only the durable plain address may be saved.
-      return isSparkAddress(address) && !isSparkPaymentRequest(address)
+      return this.isValidAddress(address, 'spark')
     },
 
     isValidArkadeAddress(address) {
-      return isArkadeAddress(address)
+      return this.isValidAddress(address, 'arkade')
     },
 
     isValidBitcoinAddress(address) {
-      return isBitcoinAddress(address)
+      return this.isValidAddress(address, 'bitcoin')
     },
 
-    // Detect address type from input. Order matters: Spark addresses can look
-    // vaguely like base58 if misread, so we check them first.
+    // The kind of a bare address, by format (utils/contactAddress).
     detectAddressType(address) {
-      if (isAddressRequest(address)) return null;
-      if (!address) return null
-      if (isSparkAddress(address)) return 'spark'
-      if (isArkadeAddress(address)) return 'arkade'
-      if (isBitcoinAddress(address)) return 'bitcoin'
-      // LNURL before the lightning-address check: an LNURL has no `@`, so the
-      // two never collide, but keeping it explicit guards future edits.
-      if (isLnurl(address)) return 'lnurl'
-      if (isLightningAddress(address)) return 'lightning'
-      return null
+      return contactAddressType(address)
     },
 
     // Get address from entry (handles backward compatibility)
@@ -2051,15 +2087,28 @@ export const useAddressBookStore = defineStore('addressBook', {
         localStorage.setItem('buhoGO_address_book', JSON.stringify(this.entries))
       } catch (error) {
         console.error('Error saving address book:', error)
-        throw new Error('Failed to save address book')
+        throw contactError('save-failed', 'Failed to save address book')
       }
     },
 
     // Clear all entries
     async clearAll() {
+      await this.initialize()
+      const previous = this.entries.slice()
       this.entries = []
+      await this._commitEntries(previous)
       this.searchQuery = ''
-      localStorage.removeItem('buhoGO_address_book')
+      // Every contact leaves through a tombstone, like a single removal.
+      // Without one the next sync reads the shared doc, finds them all
+      // there, and brings every contact back.
+      let recorded = false
+      for (const entry of previous) {
+        if (this._recordTombstone(entry)) recorded = true
+      }
+      if (recorded) {
+        await this._markSyncDirty()
+        await this._persistSyncMeta()
+      }
     },
 
     // Import entries (supports both Lightning and Spark addresses)
