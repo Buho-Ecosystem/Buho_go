@@ -756,6 +756,7 @@ import { listNwcTransactions } from '../services/nwcReceive.js';
 import { EARN_BRAND, earnRewardKind } from '../services/earnBrand';
 import RequestMoneyFlow from '../components/chat/RequestMoneyFlow.vue';
 import RecipientPaymentsSheet from '../components/RecipientPaymentsSheet.vue';
+import { paymentTimeMs } from '../services/recipientPayments.js';
 import BrantaVerificationDetails from '../components/BrantaVerificationDetails.vue';
 import { useChatRuntime } from '../composables/useChatRuntime.js';
 import { useMessagesStore } from '../stores/messages.js';
@@ -1083,7 +1084,7 @@ export default {
     filteredContacts() {
       if (!this.addressBookStore) return [];
       const entries = [...this.addressBookStore.entries].sort((a, b) => {
-        return (b.lastUsedAt || 0) - (a.lastUsedAt || 0);
+        return (b.lastPaidAt || 0) - (a.lastPaidAt || 0);
       });
       const query = this.contactSearch.toLowerCase();
       if (!query) return entries;
@@ -1310,10 +1311,13 @@ export default {
         this.showContactPicker = false;
         this.contactSearch = '';
 
-        // Recency for the Quick pay shelf. Not an edit: updateEntry would
-        // move the contact's sync clock and could outvote a newer rename
-        // made in another app.
-        await this.addressBookStore.updateLastUsed(contact.id);
+        // A settled send assigned to them is a payment to them, made when
+        // it was made: an older one never moves a newer "Last paid" back.
+        // Something received from them is not paying them.
+        if (this.transaction.type === 'outgoing' && this.isSettled) {
+          const paidAt = paymentTimeMs(this.transaction);
+          if (paidAt) await this.addressBookStore.recordPayment(contact.id, paidAt).catch(() => {});
+        }
 
         this.$q.notify({
           type: 'positive',

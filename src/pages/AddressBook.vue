@@ -164,6 +164,8 @@ import { useChatRuntime } from '../composables/useChatRuntime'
 import { contactTapPath } from '../components/chat/threadRows.js'
 import { useIdentityStore } from '../stores/identity'
 import { useTransactionMetadataStore } from '../stores/transactionMetadata'
+import { refreshContactLastPaid } from '../composables/useContactLastPaid.js'
+import { contactPageRoute } from '../services/dm/routes.js'
 import { mapActions, mapState } from 'pinia'
 
 // Nostr contacts get a quiet re-sync the moment the user reaches for
@@ -210,6 +212,8 @@ export default {
     preloadContactPaymentPipeline()
     await this.initializeAddressBook()
     if (this.creatingFromRoute) this.showAddModal()
+    // Quick pay and "Last paid" catch up with what History lists as paid.
+    refreshContactLastPaid()
   },
   watch: {
     // Also supports opening the form while Address Book is already mounted.
@@ -335,7 +339,13 @@ export default {
 
     async handleEntrySaved(entry) {
       this.selectedEntry = null
-      if (!this.creatingFromRoute || !entry?.id) return
+      // A new contact opens on its own page, ready to pay. A contact made
+      // from a receipt stays here: Back still leads to that receipt.
+      if (!this.creatingFromRoute) {
+        if (entry?.id) this.$router.push(contactPageRoute(entry.id))
+        return
+      }
+      if (!entry?.id) return
       // Capture before the modal closes and consumes its route parameters.
       // Never use the active wallet: it can change while creating a contact.
       const { transaction, wallet } = this.$route.query

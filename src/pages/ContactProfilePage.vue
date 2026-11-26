@@ -60,6 +60,7 @@
         :aria-label="addressCopied ? $t('Address copied') : $t('Copy address')"
         @click="copyAddress"
       >
+        <PaymentMark :address-type="entry.addressType" :address="entryAddress" :size="14" />
         <code>{{ entryAddressDisplay }}</code>
         <Icon :icon="addressCopied ? 'tabler:check' : 'tabler:copy'" width="14" height="14" />
       </button>
@@ -68,7 +69,9 @@
         <span>{{ $t('No address yet') }}</span>
       </div>
 
-      <button type="button" class="profile-pay" @click="onPay">
+      <!-- Only someone with an address can be paid. Without one the line
+           above says so, and their profile is checked again on opening. -->
+      <button v-if="entryAddress" type="button" class="profile-pay" @click="onPay">
         {{ $t('Pay {name}', { name: entry.name }) }}
       </button>
 
@@ -83,21 +86,29 @@
       </div>
       <template v-else-if="history.length > 0">
         <div class="profile-history">
-          <div
+          <!-- Each row says what the payment was for (its note, else its
+               direction) and opens it. -->
+          <button
             v-for="tx in history"
             :key="tx.sourceKey"
+            type="button"
             class="profile-tx"
             :class="{ 'profile-tx--incoming': tx.type === 'incoming' }"
+            @click="openPayment(tx)"
           >
             <span class="profile-tx-icon">
               <Icon :icon="tx.type === 'incoming' ? 'tabler:arrow-down-left' : 'tabler:arrow-up-right'" width="15" height="15" />
             </span>
             <span class="profile-tx-copy">
-              <strong>{{ tx.type === 'incoming' ? $t('Received') : $t('Sent') }}</strong>
-              <small>{{ formatTxDate(tx) }}</small>
+              <strong>{{ txTitle(tx) }}</strong>
+              <small>
+                {{ formatTxDate(tx) }}
+                <span v-if="tx.pending" class="profile-tx-pending">{{ $t('Pending') }}</span>
+              </small>
             </span>
             <span class="profile-tx-amt">{{ formatSats(tx.amountSats, tx.type === 'incoming' ? '+' : '') }}</span>
-          </div>
+            <Icon icon="tabler:chevron-right" width="16" height="16" class="profile-tx-chev" />
+          </button>
         </div>
         <p class="profile-history-note">{{ $t('Payments between you and {name}.', { name: entry.name }) }}</p>
       </template>
@@ -156,8 +167,10 @@ import { preloadContactPaymentPipeline } from '../components/contactPaymentPipel
 import { loadRecipientPayments } from '../services/recipientPayments.js'
 import ContactAvatar from '../components/AddressBook/ContactAvatar.vue'
 import AddressBookModal from '../components/AddressBook/AddressBookModal.vue'
+import PaymentMark from '../components/PaymentMark.vue'
 import { serviceAddressLine } from '../utils/lnurlMetadata.js'
 import { formatAmountWithPrefix } from '../utils/amountFormatting.js'
+import { getTxMessage } from '../utils/txMessage.js'
 
 /** How many payments the Between-you list shows. */
 const HISTORY_LIMIT = 8
@@ -165,7 +178,7 @@ const HISTORY_LIMIT = 8
 export default {
   name: 'ContactProfilePage',
 
-  components: { Icon, ContactAvatar, AddressBookModal },
+  components: { Icon, ContactAvatar, AddressBookModal, PaymentMark },
 
   setup() {
     return {
@@ -249,6 +262,8 @@ export default {
       this.$router.replace('/address-book')
       return
     }
+    // Someone saved without an address may have published one since.
+    if (!this.entryAddress) usePayContact(this).refreshContact(this.entry)
     this.loadHistory()
   },
 
@@ -311,12 +326,24 @@ export default {
           metadataFor: (txId, walletId) => this.txMetadata.getMetadataForTransaction(txId, walletId),
           addresses,
           contactId,
+          // A send still on its way is shown, marked; the money may yet move.
+          includePending: true,
         })
         if (token !== this._historyToken) return
         this.history = payments.slice(0, HISTORY_LIMIT)
       } finally {
         if (token === this._historyToken) this.historyLoading = false
       }
+    },
+
+    /** What a payment was for, as its sender wrote it; else which way it went. */
+    txTitle(tx) {
+      return getTxMessage(tx) || (tx.type === 'incoming' ? this.$t('Received') : this.$t('Sent'))
+    },
+
+    openPayment(tx) {
+      if (!tx?.id || !tx.walletId) return
+      this.$router.push(`/transaction/${encodeURIComponent(tx.id)}?wallet=${encodeURIComponent(tx.walletId)}`)
     },
 
     formatTxDate(tx) {
@@ -492,7 +519,43 @@ body.body--dark .profile-pay {
   display: flex;
   align-items: center;
   gap: 11px;
+  width: 100%;
+  min-height: 56px;
   padding: 11px 2px;
+  border: 0;
+  background: none;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.profile-tx:active {
+  background: rgba(127, 127, 127, 0.06);
+}
+
+.profile-tx:focus-visible {
+  outline: 2px solid var(--brand-accent);
+  outline-offset: 2px;
+  border-radius: 8px;
+}
+
+.profile-tx-chev {
+  flex: 0 0 auto;
+  color: var(--text-muted);
+}
+
+/* A send still on its way: said in words, in the app's quiet status pill. */
+.profile-tx-pending {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--bg-input);
+  color: var(--text-secondary);
+  font-size: 0.6875rem;
+  font-weight: 700;
+  vertical-align: 1px;
 }
 
 .profile-tx + .profile-tx {
@@ -522,6 +585,9 @@ body.body--dark .profile-pay {
   font-size: 0.84375rem;
   font-weight: 700;
   color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .profile-tx-copy small {

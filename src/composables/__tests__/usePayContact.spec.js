@@ -29,7 +29,7 @@ function harness(contactOverrides = {}) {
   const flow = { accepts: true, begin(input) { if (!this.accepts) return false; begun.push(input); return begun.length; } };
   const store = {
     isEntryPayable: (entry) => Boolean(entry.address),
-    updateLastUsed: async id => { used.push(id); },
+    recordPayment: async id => { used.push(id); },
     refreshContact: async () => {},
   };
   const ctx = { $q: { notify: notice => notices.push(notice) }, $t: key => key, $router: { push: value => pushed.push(value) } };
@@ -37,12 +37,12 @@ function harness(contactOverrides = {}) {
   return { pay: load(store, flow)(ctx), flow, begun, pushed, notices, used, contact };
 }
 
-test('contact opens contextual payment synchronously with identity and no Home navigation', () => {
+test('contact opens contextual payment synchronously with identity and no Home navigation, and the tap alone is no payment', () => {
   const { pay, begun, pushed, used, contact } = harness({ nostrProfile: { picture: 'https://example.com/avatar.jpg' } });
   assert.equal(pay.payContact(contact), true);
   assert.deepEqual(begun, [{ address: 'bob@example.com', addressType: 'lightning', name: 'Bob', contactId: 'c1', contact }]);
   assert.deepEqual(pushed, []);
-  assert.deepEqual(used, ['c1']);
+  assert.deepEqual(used, [], 'Quick pay moves when a payment went out, never on the tap');
   assert.equal('walletId' in begun[0], false, 'automatic choice is left to the payment controller');
 });
 

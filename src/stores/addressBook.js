@@ -321,12 +321,12 @@ export const useAddressBookStore = defineStore('addressBook', {
         .sort((a, b) => a.name.localeCompare(b.name))
     },
 
-    // Get recently used contacts (last 5, used within 30 days, excluding favorites)
+    // Paid within 30 days (the last 5, favorites left out: they have their own place)
     recentEntries: (state) => {
       const thirtyDaysAgo = Date.now() - (30 * 24 * 60 * 60 * 1000)
       return state.entries
-        .filter(entry => entry.lastUsedAt && entry.lastUsedAt > thirtyDaysAgo && !entry.isFavorite)
-        .sort((a, b) => b.lastUsedAt - a.lastUsedAt)
+        .filter(entry => entry.lastPaidAt > thirtyDaysAgo && !entry.isFavorite)
+        .sort((a, b) => b.lastPaidAt - a.lastPaidAt)
         .slice(0, 5)
     },
 
@@ -336,13 +336,12 @@ export const useAddressBookStore = defineStore('addressBook', {
 
     /**
      * The Quick pay shelf: the last people actually paid, newest first.
-     * `lastUsedAt` is stamped by every pay path (send modal contact pick,
-     * batch recipients, the pay composable), so this is real recency.
+     * `lastPaidAt` only ever comes from a payment (see recordPayment).
      */
     recentlyPaidEntries: (state) => {
       return state.entries
-        .filter((entry) => Number(entry.lastUsedAt) > 0)
-        .sort((a, b) => (b.lastUsedAt || 0) - (a.lastUsedAt || 0))
+        .filter((entry) => Number(entry.lastPaidAt) > 0)
+        .sort((a, b) => b.lastPaidAt - a.lastPaidAt)
         .slice(0, 10)
     },
 
@@ -560,7 +559,6 @@ export const useAddressBookStore = defineStore('addressBook', {
         color: entryData.color || this.getRandomColor(),
         notes: entryData.notes?.trim() || '',
         isFavorite: entryData.isFavorite || false,
-        lastUsedAt: entryData.lastUsedAt || null,
         // LUD-11 service payees carry their LUD-06 self-description.
         service,
         createdAt: now,
@@ -860,7 +858,6 @@ export const useAddressBookStore = defineStore('addressBook', {
         color: input?.color || this.getRandomColor(),
         notes: typeof input?.notes === 'string' ? input.notes.trim() : '',
         isFavorite: !!input?.isFavorite,
-        lastUsedAt: null,
         createdAt: now,
         updatedAt: now,
         // Nostr-sourced metadata
@@ -1500,7 +1497,6 @@ export const useAddressBookStore = defineStore('addressBook', {
           color: this.getRandomColor(),
           notes: '',
           isFavorite: dc.starred,
-          lastUsedAt: null,
           createdAt: dc.createdAtMs || Date.now(),
           updatedAt: dc.updatedAtMs || Date.now(),
           doc_contact_id: dc.docId,
@@ -1973,15 +1969,35 @@ export const useAddressBookStore = defineStore('addressBook', {
       return updated
     },
 
-    // Update last used timestamp (called when paying a contact)
-    async updateLastUsed(id) {
+    /**
+     * When a contact was last paid: the one writer of `lastPaidAt`, which
+     * Quick pay and a row's "Last paid" read. Reported by every path that
+     * pays a contact once the payment went out (Wallet.vue, the batch
+     * send), by a receipt assigned to a contact, and by the payment history
+     * (lastPaidTimes). Each report says when its payment was made, so an
+     * older one never moves a newer date back. Kept on this phone only and
+     * not an edit: the contact's sync clock stays where it is.
+     *
+     * @param {Map<string, number>|Record<string, number>} paidAt  contact id -> ms
+     */
+    async recordPayments(paidAt) {
       await this.initialize()
-      const entry = this.entries.find(e => e.id === id)
-      if (entry) {
-        entry.lastUsedAt = Date.now()
-        await this.persistEntries()
-      }
-      return entry
+      const times = paidAt instanceof Map ? paidAt : new Map(Object.entries(paidAt || {}))
+      let changed = false
+      this.entries = this.entries.map((entry) => {
+        const at = Number(times.get(entry.id))
+        if (!Number.isFinite(at) || at <= 0 || at <= (Number(entry.lastPaidAt) || 0)) return entry
+        changed = true
+        return { ...entry, lastPaidAt: at }
+      })
+      if (changed) await this.persistEntries()
+      return changed
+    },
+
+    /** One payment to one contact, made at `at` (now unless the payment says otherwise). */
+    recordPayment(id, at = Date.now()) {
+      if (!id) return Promise.resolve(false)
+      return this.recordPayments(new Map([[id, at]]))
     },
 
     /**

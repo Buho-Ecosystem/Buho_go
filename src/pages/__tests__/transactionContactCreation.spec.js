@@ -21,6 +21,7 @@ const originalFetch = globalThis.fetch;
 globalThis.fetch = async () => ({ ok: true, json: async () => ({ USD: 85000 }) });
 const { useAddressBookStore } = await import('../../stores/addressBook.js');
 const { useTransactionMetadataStore } = await import('../../stores/transactionMetadata.js');
+const dmRoutes = await import('../../services/dm/routes.js');
 const { fiatRatesService } = await import('../../utils/fiatRates.js');
 fiatRatesService.stopAutoUpdate();
 after(() => { globalThis.fetch = originalFetch; });
@@ -33,7 +34,7 @@ function component(file, dependencies = {}) {
   return module.exports.default;
 }
 const details = component('../TransactionDetails.vue');
-const book = component('../AddressBook.vue', { '../stores/transactionMetadata': { useTransactionMetadataStore } });
+const book = component('../AddressBook.vue', { '../stores/transactionMetadata': { useTransactionMetadataStore }, '../services/dm/routes.js': dmRoutes });
 const modal = component('../../components/AddressBook/AddressBookModal.vue', {
   '../../stores/addressBook': { useAddressBookStore }, '../../utils/addressUtils.js': addresses,
   '../../utils/lud23.js': requests, '../../utils/sparkPayment.js': spark,
@@ -114,16 +115,18 @@ test('closing the form while metadata initializes cannot change the captured tra
   assert.equal(metadata.getContactForTransaction('second', 'B'), null);
 });
 
-test('cancel consumes the creation request; later ordinary saves never attach to the old receipt', async () => {
+test('cancel consumes the creation request; a later ordinary save opens the new contact and never attaches to the old receipt', async () => {
   const { contacts, metadata } = harness();
   const query = { action: 'create-contact', address: 'lee@example.com', transaction: 'tx', wallet: 'A', keep: 'yes' };
+  const opened = [];
   const page = { ...book.methods, creatingFromRoute: true, $route: { query },
-    $router: { replace: ({ query }) => { page.$route.query = query; page.creatingFromRoute = false; } } };
+    $router: { replace: ({ query }) => { page.$route.query = query; page.creatingFromRoute = false; }, push: (path) => opened.push(path) } };
   book.watch.showModal.call(page, false);
   assert.deepEqual(page.$route.query, { keep: 'yes' });
   const entry = await contacts.addEntry({ name: 'Someone else', address: 'other@example.com' });
   await page.handleEntrySaved(entry);
   assert.equal(metadata.getContactForTransaction('tx', 'A'), null);
+  assert.deepEqual(opened, [`/address-book/${entry.id}`]);
 });
 
 test('missing or ambiguous route identifiers never fall back to the active wallet', async () => {

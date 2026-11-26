@@ -49,11 +49,11 @@
          contact can still be saved and becomes payable after a refresh. -->
     <div class="preview-pay-row">
       <div v-if="lud16" class="preview-pay-chip preview-pay-chip--ok">
-        <Icon icon="tabler:bolt" width="13" height="13" />
+        <PaymentMark address-type="lightning" :size="12" />
         <span class="preview-pay-value">{{ lud16 }}</span>
       </div>
       <div v-else class="preview-pay-chip preview-pay-chip--missing">
-        <Icon icon="tabler:bolt-off" width="13" height="13" />
+        <Icon icon="tabler:hourglass-empty" width="13" height="13" />
         <span class="preview-pay-value">{{ $t('No payment address yet') }}</span>
       </div>
     </div>
@@ -136,12 +136,13 @@
  */
 import ContactAvatar from './ContactAvatar.vue';
 import NostrAddress from '../identity/NostrAddress.vue';
+import PaymentMark from '../PaymentMark.vue';
 import { formatUsername } from '../../services/nip05';
 
 export default {
   name: 'NostrContactPreview',
 
-  components: { ContactAvatar, NostrAddress },
+  components: { ContactAvatar, NostrAddress, PaymentMark },
 
   props: {
     /** 64-char lowercase hex. */

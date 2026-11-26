@@ -1605,9 +1605,9 @@ async function startBatch() {
         result.error = t('Unknown type')
       }
 
-      // Update last used on success
+      // Quick pay: a contact paid in the batch was paid.
       if (result.status === 'success') {
-        await addressBookStore.updateLastUsed(result.contact.id)
+        await addressBookStore.recordPayment(result.contact.id).catch(() => {})
 
         // LUD-09: resolve the recipient's message now that the payment has
         // settled (an `aes` secret needs the preimage). Never throws — a

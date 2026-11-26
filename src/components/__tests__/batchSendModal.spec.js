@@ -76,7 +76,7 @@ function harness(ctx, { type = 'spark', balance = 100_000, provider = {}, store 
     '../utils/fiatRates.js': { fiatRatesService: { freshRate: () => 0, convertFiatToSatsSync: () => null, formatSatsAsFiat: () => '', getRates: async () => ({}) } },
     '../utils/walletCapabilities': walletCapabilities,
     '../stores/wallet': { useWalletStore: () => walletStore },
-    '../stores/addressBook': { useAddressBookStore: () => ({ entries: [], initialize: async () => {}, isEntryPayable: () => true, updateLastUsed: async () => {} }) },
+    '../stores/addressBook': { useAddressBookStore: () => ({ entries: [], initialize: async () => {}, isEntryPayable: () => true, recordPayment: async () => {} }) },
     '../stores/transactionMetadata': { useTransactionMetadataStore: () => ({ enqueuePendingContactLink: async () => {} }) },
     '../utils/lightning.js': { default: class {} },
     '../utils/lnurlPay.js': {

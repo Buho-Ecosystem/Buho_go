@@ -82,34 +82,15 @@
 
         <!-- MANUAL — also used for the edit flow -->
         <template v-else>
-          <!-- Static preview: the app-wide filled-bust silhouette.
-               Contacts no longer carry a color; a Nostr picture (via
-               the Search / Scan tabs) is the only way an avatar
-               personalizes. -->
+          <!-- The contact as the list will show them: their picture while
+               editing, else the first character of the name typed so far. -->
           <div class="avatar-preview">
-            <div class="preview-circle">
-              <svg class="preview-glyph" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                <path d="M12 12.3a4.05 4.05 0 1 0 0-8.1 4.05 4.05 0 0 0 0 8.1Zm0 2.2c-4.3 0-7.6 2.6-8.1 6.3h16.2c-.5-3.7-3.8-6.3-8.1-6.3Z" />
-              </svg>
-            </div>
+            <ContactAvatar class="preview-avatar" :entry="previewEntry" />
           </div>
 
+          <!-- The address first: it is what makes a contact payable, and a
+               Lightning address or a payment link's label suggests the name. -->
           <div class="form-fields">
-            <div class="input-wrapper">
-              <div class="input-label" :class="$q.dark.isActive ? 'view_title_dark' : 'view_title'">
-                {{ $t('Name') }}
-              </div>
-              <input
-                v-model="formData.name"
-                type="text"
-                :placeholder="$t('Enter contact name')"
-                class="form-input"
-                :class="$q.dark.isActive ? 'form-input-dark' : 'form-input-light'"
-                ref="nameInput"
-                maxlength="50"
-              />
-            </div>
-
             <div class="input-wrapper">
               <div class="input-label-row">
                 <div class="input-label" :class="$q.dark.isActive ? 'view_title_dark' : 'view_title'">
@@ -121,14 +102,7 @@
                     class="detected-pill"
                     :class="`detected-pill--${detectedDisplayType}`"
                   >
-                    <img
-                      v-if="detectedDisplayType === 'spark'"
-                      width="11" height="11"
-                      :src="$q.dark.isActive ? '/Spark/Spark Asterisk White.svg' : '/Spark/Spark Asterisk Black.svg'"
-                      alt="Spark"
-                    />
-                    <ArkadeLogo v-else-if="detectedDisplayType === 'arkade'" variant="mark" :size="12" />
-                    <Icon v-else :icon="detectedIcon" width="12" height="12" />
+                    <PaymentMark :address-type="detectedType" :size="12" />
                     <span>{{ detectedLabel }}</span>
                   </div>
                 </transition>
@@ -172,6 +146,21 @@
 
             <div class="input-wrapper">
               <div class="input-label" :class="$q.dark.isActive ? 'view_title_dark' : 'view_title'">
+                {{ $t('Name') }}
+              </div>
+              <input
+                v-model="formData.name"
+                type="text"
+                :placeholder="$t('Enter contact name')"
+                class="form-input"
+                :class="$q.dark.isActive ? 'form-input-dark' : 'form-input-light'"
+                ref="nameInput"
+                maxlength="50"
+              />
+            </div>
+
+            <div class="input-wrapper">
+              <div class="input-label" :class="$q.dark.isActive ? 'view_title_dark' : 'view_title'">
                 {{ $t('Notes') }} <span class="optional-hint">({{ $t('optional') }})</span>
               </div>
               <textarea
@@ -187,32 +176,23 @@
         </template>
       </q-card-section>
 
-      <!-- Footer — only the manual / edit path needs a global Save
-           button. Search and Scan tabs ship their own save UI inside
-           the preview card. -->
-      <q-card-actions
-        v-if="showManualFooter"
-        align="right"
-        class="modal-actions"
-      >
-        <q-btn
-          flat
-          :label="$t('Cancel')"
-          @click="closeModal"
-          no-caps
-          class="cancel-btn"
-          :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-6'"
-        />
-        <q-btn
-          unelevated
-          :label="addressIsRequest ? $t('Review request') : isEditing ? $t('Update') : $t('Add')"
+      <!-- Footer: only the manual / edit path needs it; Search and Scan
+           save from their own preview card. One full-width action that
+           plainly cannot be used until the form is complete, Cancel
+           quietly beneath it. -->
+      <q-card-section v-if="showManualFooter" class="modal-actions">
+        <button
+          type="button"
+          class="form-sheet-primary save-btn"
+          :disabled="isSaving || (!isFormValid && !addressIsRequest)"
+          :aria-busy="isSaving ? 'true' : null"
           @click="saveEntry"
-          :loading="isSaving"
-          :disable="!isFormValid && !addressIsRequest"
-          class="save-btn"
-          no-caps
-        />
-      </q-card-actions>
+        >
+          <q-spinner v-if="isSaving" size="18px" :aria-hidden="true" />
+          <span>{{ addressIsRequest ? $t('Review request') : isEditing ? $t('Save') : $t('Add contact') }}</span>
+        </button>
+        <button type="button" class="cancel-btn" @click="closeModal">{{ $t('Cancel') }}</button>
+      </q-card-section>
     </q-card>
 
   </q-dialog>
@@ -226,14 +206,15 @@ import { useAddressBookStore } from '../../stores/addressBook'
 import { mapActions } from 'pinia'
 import { lnurlToUrl, lnurlDomain, stripWrapperScheme } from '../../utils/addressUtils.js'
 import { isBip21 } from '../../utils/bip21.js'
-import { readContactAddress } from '../../utils/contactAddress.js'
+import { readContactAddress, suggestedContactName } from '../../utils/contactAddress.js'
 import { contactSaveError } from '../../utils/contactErrors.js'
 import { fetchPayRequest } from '../../utils/lnurlPay.js'
 import { parsePayRequestMetadata, serviceTitle, normalizeServiceImage, serviceIdentity } from '../../utils/lnurlMetadata.js'
 import { useServiceImagesStore } from '../../stores/serviceImages'
 import AddContactSearch from './AddContactSearch.vue'
 import AddContactScan from './AddContactScan.vue'
-import ArkadeLogo from '../ArkadeLogo.vue'
+import ContactAvatar from './ContactAvatar.vue'
+import PaymentMark from '../PaymentMark.vue'
 
 /** True for text wrapped in a payment link or URI scheme the field unwraps. */
 function isWrapped(text) {
@@ -253,7 +234,7 @@ const TABS = [
 
 export default {
   name: 'AddressBookModal',
-  components: { AddContactSearch, AddContactScan, ArkadeLogo },
+  components: { AddContactSearch, AddContactScan, ContactAvatar, PaymentMark },
   props: {
     modelValue: {
       type: Boolean,
@@ -299,6 +280,10 @@ export default {
         notes: ''
       },
       isSaving: false,
+      // The name the address suggested, and the address it came from: a
+      // suggestion follows the address until the person names them.
+      suggestedName: '',
+      nameSuggestedFor: '',
     }
   },
   setup() { return { addressRequests: useAddressRequestStore() }; },
@@ -377,12 +362,11 @@ export default {
       return labels[this.detectedDisplayType] || ''
     },
 
-    detectedIcon() {
-      const icons = {
-        lightning: 'tabler:bolt',
-        bitcoin: 'tabler:currency-bitcoin'
-      }
-      return icons[this.detectedDisplayType] || ''
+    /** The avatar preview: the contact being edited, else what is typed so far. */
+    previewEntry() {
+      const name = this.formData.name.trim()
+      if (this.isEditing) return { ...this.entry, name: name || this.entry.name }
+      return { name, address: this.addressReading?.address || '', addressType: this.detectedType || '' }
     },
 
     addressShowsError() {
@@ -405,14 +389,14 @@ export default {
     /**
      * A pasted payment link or `lightning:` link becomes the lasting
      * address inside it, in the field itself, so what is saved is what the
-     * person sees. A label in the link names the contact when no name is
-     * typed yet.
+     * person sees. The address suggests the name (utils/contactAddress):
+     * the link's label, else a Lightning address's own name.
      */
     'formData.address'(value) {
       const reading = this.addressReading
-      if (!reading?.address || !isWrapped(value)) return
-      if (reading.label && !this.formData.name.trim()) this.formData.name = reading.label
-      this.formData.address = reading.address
+      if (!reading?.address) return
+      this.suggestName(suggestedContactName(reading), reading.address)
+      if (isWrapped(value)) this.formData.address = reading.address
     },
     show(newVal) {
       if (newVal) {
@@ -423,9 +407,7 @@ export default {
         // there is no tab bar in that mode. Resetting here keeps the next
         // open from being biased by where the previous one finished.
         this.activeTab = this.isEditing ? 'manual' : this.initialTab
-        this.$nextTick(() => {
-          this.$refs.nameInput?.focus()
-        })
+        this.$nextTick(() => this.focusManualForm())
       } else {
         this.resetForm()
       }
@@ -438,9 +420,30 @@ export default {
       if (this.activeTab === id) return
       this.activeTab = id
       this.$nextTick(() => {
-        if (id === 'manual') this.$refs.nameInput?.focus()
+        if (id === 'manual') this.focusManualForm()
         else if (id === 'search') this.$refs.searchRef?.focus?.()
       })
+    },
+
+    /** The keyboard opens where the work is: the address until there is one, then the name. */
+    focusManualForm() {
+      if (this.activeTab !== 'manual') return
+      const ref = this.isEditing || this.formData.address.trim() ? 'nameInput' : 'addressInput'
+      this.$refs[ref]?.focus()
+    },
+
+    /**
+     * Put the address's suggestion in the name field, unless the person
+     * named the contact themselves. Each address suggests once, so the
+     * unwrapped address of a link never replaces its label.
+     */
+    suggestName(suggestion, forAddress) {
+      if (!forAddress || forAddress === this.nameSuggestedFor) return
+      this.nameSuggestedFor = forAddress
+      const typed = this.formData.name.trim()
+      if (typed && typed !== this.suggestedName) return
+      this.suggestedName = suggestion
+      this.formData.name = suggestion
     },
 
     initializeForm() {
@@ -465,6 +468,8 @@ export default {
         address: '',
         notes: ''
       }
+      this.suggestedName = ''
+      this.nameSuggestedFor = ''
       this.isSaving = false
       this.activeTab = 'manual'
     },
@@ -704,30 +709,10 @@ export default {
   margin-bottom: 1.25rem;
 }
 
-/* Silhouette preview — same blue-on-pale-blue treatment as
-   ContactAvatar's fallback, purely informational (no picker behind
-   it anymore). */
-.preview-circle {
+/* ContactAvatar owns the look; the sheet only sizes it. */
+.preview-avatar {
   width: 64px;
   height: 64px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--bg-input);
-  color: var(--text-muted);
-}
-
-.body--dark .preview-circle {
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.05);
-}
-
-.preview-glyph {
-  /* Filled marks read smaller than strokes — 52% matches the
-     reference wallet's bust-to-disc ratio. */
-  width: 52%;
-  height: 52%;
-  display: block;
 }
 
 /* Form */
@@ -892,34 +877,38 @@ export default {
 }
 
 .modal-actions {
-  padding: 1rem 1.5rem 1.5rem;
-  gap: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 1rem 1.5rem 1.25rem;
 }
 
-.cancel-btn {
-  font-family: 'Manrope', sans-serif;
-  font-size: 14px;
-  font-weight: 500;
-}
-
+/* Full width, the shared sheet button; while it cannot be used it is
+   plainly grey in both themes, never a dimmed version of the live one. */
 .save-btn {
-  height: 40px;
-  border-radius: var(--radius-xl);
-  font-family: 'Manrope', sans-serif;
-  font-size: 14px;
-  font-weight: 500;
-  padding: 0 1.5rem;
-  background: var(--gradient-green);
-  color: #FFF;
-}
-
-.body--light .save-btn {
-  background: var(--btn-neutral-bg);
-  color: var(--btn-neutral-fg);
+  width: 100%;
 }
 
 .save-btn:disabled {
-  opacity: 0.4;
+  opacity: 1;
+  background: var(--bg-input);
+  color: var(--text-muted);
+}
+
+.cancel-btn {
+  width: 100%;
+  min-height: 44px;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--text-secondary);
+  font: 500 15px/1.3 'Manrope', sans-serif;
+  cursor: pointer;
+}
+
+.cancel-btn:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
 }
 
 
@@ -948,7 +937,7 @@ export default {
   }
 
   .modal-actions {
-    padding: 0.75rem 1.25rem 1.25rem;
+    padding: 0.75rem 1.25rem 1rem;
   }
 
 }
