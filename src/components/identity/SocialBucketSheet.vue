@@ -182,6 +182,7 @@ import { useProfileStore } from '../../stores/profile';
 import { useWalletStore } from '../../stores/wallet';
 import { useTransactionMetadataStore } from '../../stores/transactionMetadata';
 import { sanitizeImageUrl } from '../../services/nostrRecipient';
+import { formatAmountWithPrefix } from '../../utils/amountFormatting.js';
 
 export default {
   name: 'SocialBucketSheet',

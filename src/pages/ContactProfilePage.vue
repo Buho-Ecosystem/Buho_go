@@ -157,6 +157,7 @@ import { loadRecipientPayments } from '../services/recipientPayments.js'
 import ContactAvatar from '../components/AddressBook/ContactAvatar.vue'
 import AddressBookModal from '../components/AddressBook/AddressBookModal.vue'
 import { serviceAddressLine } from '../utils/lnurlMetadata.js'
+import { formatAmountWithPrefix } from '../utils/amountFormatting.js'
 
 /** How many payments the Between-you list shows. */
 const HISTORY_LIMIT = 8
