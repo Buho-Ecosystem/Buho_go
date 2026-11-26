@@ -142,15 +142,10 @@ export default {
      * path from BuhoGO and stays first; the remaining examples follow.
      */
     /*
-     * Each entry may carry an optional `icon` path pointing to a
-     * bundled brand asset under `/public/clients/`. We use bundled
-     * assets only for sites whose own origin doesn't serve a
-     * working apple-touch-icon / favicon (Primal, Amethyst, WISP at
-     * time of writing). Sites that do serve a working icon
-     * (Yakihonne, Jumble) omit `icon` and fall through to
-     * SiteFavicon's live-fetch chain — keeps the bundled-asset
-     * surface small and means new releases of those apps pick up
-     * any rebrand automatically.
+     * Every entry carries its app's logo as a file in `/public/clients/`
+     * (`icon`), so opening the sheet asks no other site for anything.
+     * SiteFavicon uses that file alone; its fetch from the app's own site is
+     * for sites the user signs into, which no list can know in advance.
      */
     clients() {
       return [
@@ -176,6 +171,7 @@ export default {
           platforms: this.$t('iOS, Android'),
           url: 'https://yakihonne.com',
           domain: 'yakihonne.com',
+          icon: '/clients/yakihonne_logo.png',
         },
         {
           name: 'Amethyst',
@@ -199,6 +195,7 @@ export default {
           platforms: 'jumble.social',
           url: 'https://jumble.social',
           domain: 'jumble.social',
+          icon: '/clients/jumble_logo.png',
         },
       ];
     },
