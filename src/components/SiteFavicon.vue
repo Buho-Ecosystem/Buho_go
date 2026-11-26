@@ -39,9 +39,10 @@
  *
  * Resolution order:
  *   1. `iconUrl` prop, if the caller already knows a specific URL.
+ *      Fixed lists (the apps and sign-in examples) pass a logo that
+ *      ships in /public, so they never fetch.
  *   2. `/apple-touch-icon.png` (modern, high-res, near-universal
- *      on any site with a mobile presence — the apps in our
- *      example sheets all expose one).
+ *      on any site with a mobile presence).
  *   3. `/apple-touch-icon-precomposed.png` (older iOS variant).
  *   4. `/favicon.ico` (legacy, sometimes the only one served).
  *   5. Colored single-letter circle (deterministic per-domain so

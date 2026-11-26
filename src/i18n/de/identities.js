@@ -70,4 +70,11 @@ export default {
   "All {n} identities on this phone are erased": "Alle {n} Identitäten auf diesem Telefon werden gelöscht",
   // Wherever the identity in use has to wait for a payment that is being sent.
   "A Bitcoin payment is being sent. You can change your identity as soon as it has finished.": "Eine Bitcoin-Zahlung wird gerade gesendet. Sobald sie abgeschlossen ist, kannst du deine Identität ändern.",
+  // Other apps: where the card works besides BuhoGO.
+  "Other apps": "Andere Apps",
+  "Use your card in Lotus, Primal and more": "Nutze deine Karte in Lotus, Primal und mehr",
+  "Sign in to these apps with your card. Your name, photo and contacts come with you. No new account, no password.": "Melde dich mit deiner Karte bei diesen Apps an. Dein Name, dein Foto und deine Kontakte kommen mit. Kein neues Konto, kein Passwort.",
+  "Copy it to sign in": "Zum Anmelden kopieren",
+  "Paste it where the app asks for your key. Copy it only into an app you trust.": "Füge ihn dort ein, wo die App nach deinem Schlüssel fragt. Kopiere ihn nur in eine App, der du vertraust.",
+  "Your key stays in your signer app. Many of these apps can sign in with it too.": "Dein Schlüssel bleibt in deiner Signer-App. Viele dieser Apps können dich auch damit anmelden.",
 }

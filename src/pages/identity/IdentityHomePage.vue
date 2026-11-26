@@ -115,8 +115,8 @@
         />
       </IdentityGroup>
 
-      <!-- The one quiet door. Everything else the tab can do lives on the
-           card or in the three verbs above; backing up lives in Security. -->
+      <!-- The quiet doors. Everything else the tab can do lives on the card
+           or in the three verbs above; backing up lives in Security. -->
       <IdentityGroup class="id-block">
         <IdentityRow
           icon="tabler:users"
@@ -124,7 +124,13 @@
           :caption="$t('Switch, or create a new one')"
           @click="$router.push('/identity/identities')"
         />
-
+        <IdentityRow
+          icon="tabler:apps"
+          :label="$t('Other apps')"
+          :caption="$t('Use your card in Lotus, Primal and more')"
+          data-audit="identity-other-apps"
+          @click="showAppsSheet = true"
+        />
       </IdentityGroup>
     </div>
 
@@ -142,6 +148,9 @@
     <!-- Website sign-in is a short, contextual task like Get paid. Keeping it
          in a sheet preserves the user's place on their card. -->
     <IdentitySignInSheet v-model="showSignInSheet" />
+
+    <!-- Where else the card works, and the key to sign in there. -->
+    <IdentityAppsSheet v-model="showAppsSheet" />
 
     <!-- Scan someone else's card. Same add-contact flow the address book
          uses, landed on its scan tab. -->
@@ -166,6 +175,7 @@ import IdentityRow from '../../components/identity/IdentityRow.vue';
 import IdentityShareSheet from '../../components/identity/IdentityShareSheet.vue';
 import IdentityGetPaidSheet from '../../components/identity/IdentityGetPaidSheet.vue';
 import IdentitySignInSheet from '../../components/identity/IdentitySignInSheet.vue';
+import IdentityAppsSheet from '../../components/identity/IdentityAppsSheet.vue';
 import AddressBookModal from '../../components/AddressBook/AddressBookModal.vue';
 import { useIdentityHealth } from '../../composables/useIdentityHealth';
 import { useSocialBucketStore } from '../../stores/socialBucket';
@@ -189,6 +199,7 @@ export default {
     IdentityShareSheet,
     IdentityGetPaidSheet,
     IdentitySignInSheet,
+    IdentityAppsSheet,
     AddressBookModal,
     Nip05MarketplaceSheet,
   },
@@ -205,6 +216,7 @@ export default {
       showShareSheet: false,
       showGetPaidSheet: false,
       showSignInSheet: false,
+      showAppsSheet: false,
       showScanSheet: false,
       showClaimSheet: false,
       avatarBroken: false,
