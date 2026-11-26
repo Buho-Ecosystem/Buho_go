@@ -70,4 +70,11 @@ export default {
   "All {n} identities on this phone are erased": "All {n} identities on this phone are erased",
   // Wherever the identity in use has to wait for a payment that is being sent.
   "A Bitcoin payment is being sent. You can change your identity as soon as it has finished.": "A Bitcoin payment is being sent. You can change your identity as soon as it has finished.",
+  // Other apps: where the card works besides BuhoGO.
+  "Other apps": "Other apps",
+  "Use your card in Lotus, Primal and more": "Use your card in Lotus, Primal and more",
+  "Sign in to these apps with your card. Your name, photo and contacts come with you. No new account, no password.": "Sign in to these apps with your card. Your name, photo and contacts come with you. No new account, no password.",
+  "Copy it to sign in": "Copy it to sign in",
+  "Paste it where the app asks for your key. Copy it only into an app you trust.": "Paste it where the app asks for your key. Copy it only into an app you trust.",
+  "Your key stays in your signer app. Many of these apps can sign in with it too.": "Your key stays in your signer app. Many of these apps can sign in with it too.",
 }
