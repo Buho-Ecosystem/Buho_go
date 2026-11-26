@@ -1,6 +1,7 @@
 import { isLightningAddress } from '../utils/addressUtils.js';
 import { parseLightningInvoice } from '../utils/lightningInvoice.js';
 import { lnurlGetJson } from '../utils/lnurlHttp.js';
+import { lightningAddressSpellings } from '../utils/merchantQR.js';
 
 export class ProfileInvoiceError extends Error {
   constructor(code, values = {}) {
@@ -21,13 +22,19 @@ export async function requestProfileInvoice(
   if (!Number.isSafeInteger(amountSats) || amountSats <= 0 || !Number.isSafeInteger(msat)) {
     throw new ProfileInvoiceError('amount');
   }
-  const [name, domain] = address.trim().split('@');
   const options = { signal, timeoutMs: 15000 };
-  const response = await getJson(`https://${domain}/.well-known/lnurlp/${encodeURIComponent(name)}`, options);
-  const params = response.data;
-  if (!response.ok || params?.tag !== 'payRequest' || params.status === 'ERROR') {
-    throw new ProfileInvoiceError('unavailable');
+  // As written, then in lower case when its service does not know that
+  // spelling (utils/merchantQR). No answer at all is not asked again.
+  let params = null;
+  for (const spelling of lightningAddressSpellings(address)) {
+    const at = spelling.lastIndexOf('@');
+    const response = await getJson(`https://${spelling.slice(at + 1)}/.well-known/lnurlp/${encodeURIComponent(spelling.slice(0, at))}`, options);
+    if (response.ok && response.data?.tag === 'payRequest' && response.data.status !== 'ERROR') {
+      params = response.data;
+      break;
+    }
   }
+  if (!params) throw new ProfileInvoiceError('unavailable');
   const min = Number(params.minSendable);
   const max = Number(params.maxSendable);
   if (!Number.isSafeInteger(min) || !Number.isSafeInteger(max) || min < 1 || max < min) {

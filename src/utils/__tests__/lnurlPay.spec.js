@@ -11,6 +11,7 @@ import {
   PAYOUT_FEE_ALLOWANCE_PERCENT,
   PAY_REQUEST_ERROR,
   buildLnurlPayCallbackUrl,
+  fetchAddressPayRequest,
   fetchPayRequest,
   fitComment,
   isStoreablePayLink,
@@ -211,6 +212,43 @@ describe('asking for the pay request', () => {
       await assert.rejects(fetchPayRequest(url, { get }), /Invalid LNURL/);
       assert.deepEqual(asked, [], `${url} was never requested`);
     }
+  });
+});
+
+describe('a Lightning address is asked as written, then in lower case', () => {
+  const NOT_FOUND = ok({ status: 'ERROR', reason: 'Lightning address not found.' });
+  const lnurlp = (name, host = 'example.com') => `https://${host}/.well-known/lnurlp/${name}`;
+
+  test('a name its service knows only in lower case still pays; nothing else is asked twice', async () => {
+    // Seen on an LNbits service: "Buhogo" is not found, "buhogo" is.
+    let { get, asked } = fakeService(NOT_FOUND, ok(PAY_REQUEST));
+    let answer = await fetchAddressPayRequest(' Buhogo@Example.COM ', { get });
+    assert.deepEqual(asked.map(({ url }) => url), [lnurlp('Buhogo'), lnurlp('buhogo')]);
+    assert.equal(answer.address, 'buhogo@example.com', 'the spelling that answered is the one paid');
+    assert.equal(answer.payRequest.callback, PAY_REQUEST.callback);
+
+    ({ get, asked } = fakeService(failed(404), ok(PAY_REQUEST)));
+    assert.equal((await fetchAddressPayRequest('Lena@example.com', { get })).address, 'lena@example.com', 'an HTTP 404 too');
+
+    ({ get, asked } = fakeService(ok(PAY_REQUEST)));
+    answer = await fetchAddressPayRequest('Alice@example.com', { get });
+    assert.deepEqual([asked.length, answer.address], [1, 'Alice@example.com'], 'a service that takes any case is asked once, as written');
+
+    for (const [label, address, first] of [
+      ['no answer at all', 'Alice@example.com', new Error('offline')],
+      ['a server error', 'Alice@example.com', failed(503)],
+      ['already lower case', 'alice@example.com', NOT_FOUND],
+      ['a till code, read exactly as printed', 'AbC@cryptoqr.net', NOT_FOUND],
+    ]) {
+      ({ get, asked } = fakeService(first, ok(PAY_REQUEST)));
+      await assert.rejects(fetchAddressPayRequest(address, { get }));
+      assert.equal(asked.length, 1, label);
+    }
+
+    ({ get } = fakeService(NOT_FOUND, ok({ status: 'ERROR', reason: 'Disabled' })));
+    await assert.rejects(fetchAddressPayRequest('Alice@example.com', { get }), refusedWith('Lightning address not found.'),
+      'when neither answers, the error is about the address as given');
+    await assert.rejects(fetchAddressPayRequest('not an address', { get }), /Invalid Lightning address/);
   });
 });
 

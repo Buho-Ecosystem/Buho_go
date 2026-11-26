@@ -96,6 +96,7 @@ export function lnurlPayWith(get) {
   return {
     ...lnurlPay,
     fetchPayRequest: (url, options = {}) => lnurlPay.fetchPayRequest(url, { ...options, get }),
+    fetchAddressPayRequest: (address, options = {}) => lnurlPay.fetchAddressPayRequest(address, { ...options, get }),
     requestPayInvoice: (payRequest, args, options = {}) => lnurlPay.requestPayInvoice(payRequest, args, { ...options, get }),
   };
 }

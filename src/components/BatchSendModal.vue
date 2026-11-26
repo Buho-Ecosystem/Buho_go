@@ -678,7 +678,7 @@ import { fiatRatesService } from '../utils/fiatRates.js'
 import { useAddressBookStore } from '../stores/addressBook'
 import { useTransactionMetadataStore } from '../stores/transactionMetadata'
 import LightningPaymentService from '../utils/lightning.js'
-import { fetchPayRequest, lightningAddressUrl, linkAmountSats, requestPayInvoice } from '../utils/lnurlPay.js'
+import { fetchAddressPayRequest, fetchPayRequest, lightningAddressUrl, linkAmountSats, requestPayInvoice } from '../utils/lnurlPay.js'
 import { lnurlToUrl } from '../utils/addressUtils'
 import { resolveSuccessAction, formatSuccessActionUrl } from '../utils/successAction.js'
 import { openInAppBrowser } from '../utils/inAppBrowser.js'
@@ -1346,11 +1346,10 @@ async function fetchLightningAddressInvoice(address, amountSats) {
   // LUD-11 (`disposable`) is ignored here on purpose: a batch fans out to
   // addresses that are already durable, and there is no per-payment surface
   // to offer a repeat from. The single-send path in Wallet.vue reads it.
-  const url = lightningAddressUrl(address)
-  if (!url) {
+  if (!lightningAddressUrl(address)) {
     throw new Error('Invalid Lightning address')
   }
-  const payRequest = await fetchPayRequest(url)
+  const { payRequest } = await fetchAddressPayRequest(address)
   const { pr, successAction } = await requestPayInvoice(payRequest, { amountSats })
   return { pr, successAction }
 }

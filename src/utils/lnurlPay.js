@@ -38,12 +38,13 @@
  */
 import { lnurlGetJson } from './lnurlHttp.js'
 import { ONION_HOST_RE } from './addressUtils.js'
-import { counterpartyError } from './errorOrigin.js'
+import { counterpartyError, isCounterpartyError } from './errorOrigin.js'
 import { parseLightningInvoice } from './lightningInvoice.js'
 import { APP_MAX_PAYMENT_SATS } from './payingWallets.js'
 import { PAYER_DATA_PROBLEM, payerDataFor } from './lud18.js'
 import { parseSuccessAction } from './successAction.js'
 import { validateVerifyUrl } from './lnurlVerify.js'
+import { lightningAddressSpellings } from './merchantQR.js'
 
 /** Why a pay request could not be used: the `code` on the thrown Error. */
 export const PAY_REQUEST_ERROR = Object.freeze({
@@ -277,6 +278,49 @@ export function lightningAddressUrl(address) {
     return null
   }
   return `https://${domain}/.well-known/lnurlp/${name}`
+}
+
+/**
+ * Whether the service answered that it does not know an address: it declined,
+ * gave an HTTP 4xx, or answered with something other than a pay request. Only
+ * then is another spelling worth asking. No answer at all (offline, timeout),
+ * a server error or a pay request that cannot be used is the same under any
+ * spelling.
+ */
+function addressUnknown(error) {
+  if (error?.code === PAY_REQUEST_ERROR.HTTP) return error.status >= 400 && error.status < 500
+  return error?.code === PAY_REQUEST_ERROR.REFUSED
+    || error?.code === PAY_REQUEST_ERROR.NOT_PAY_REQUEST
+    || isCounterpartyError(error)
+}
+
+/**
+ * First step for a Lightning address: its service's pay request, and the
+ * spelling of the address that answered. Asked as written first; when the
+ * service says it does not know that name, asked once more as BuhoGO pays
+ * addresses (lower case, a till code exactly as printed; see
+ * merchantQR.lightningAddressSpellings). Every path that pays an address asks
+ * here, so a capitalised name pays the same from Send, a contact, a batch,
+ * Auto-Transfer or a Nostr profile. When no spelling answers, the error is
+ * the one about the address as given.
+ * @param {string} address
+ * @param {{ get?: Function, timeoutMs?: number, signal?: AbortSignal }} [options]  as fetchPayRequest
+ * @returns {Promise<{ payRequest: object, address: string }>} `payRequest` as readPayRequest
+ * @throws {Error} 'Invalid Lightning address' when the text cannot be one, else as fetchPayRequest
+ */
+export async function fetchAddressPayRequest(address, options = {}) {
+  const spellings = lightningAddressSpellings(address).filter((spelling) => lightningAddressUrl(spelling))
+  if (!spellings.length) throw new Error('Invalid Lightning address')
+  let failure = null
+  for (const spelling of spellings) {
+    try {
+      return { payRequest: await fetchPayRequest(lightningAddressUrl(spelling), options), address: spelling }
+    } catch (error) {
+      failure ||= error
+      if (!addressUnknown(error)) break
+    }
+  }
+  throw failure
 }
 
 /** A whole, positive number sent as a number or as digits, else NaN. */
