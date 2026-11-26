@@ -392,6 +392,15 @@ test('a service profile groups payments to both its identifier and original pay 
   assert.deepEqual(vm.history.map(tx => tx.id).sort(), ['identifier', 'link']);
 });
 
+test('a contact\'s payments show their amounts in the chosen Bitcoin format', () => {
+  const calls = [];
+  const formatAmountWithPrefix = (...args) => { calls.push(args); return '₿ 21,000'; };
+  const profile = evaluate('../ContactProfilePage.vue', { '../utils/amountFormatting.js': { formatAmountWithPrefix } }).default;
+  const vm = { walletStore: { useBip177Format: true } };
+  assert.equal(profile.methods.formatSats.call(vm, 21000), '₿ 21,000');
+  assert.deepEqual(calls, [[21000, true, '']]);
+});
+
 test('contact history reloads when a wallet connects after the page opened, and per contact', () => {
   const profile = evaluate('../ContactProfilePage.vue', {}).default;
   const providers = {};
