@@ -94,7 +94,7 @@
           rel="noopener noreferrer"
           class="sign-help-site"
         >
-          <SiteFavicon :domain="site.domain" :size="28" shape="rounded-square" />
+          <SiteFavicon :domain="site.domain" :icon-url="site.icon" :size="28" shape="rounded-square" />
           <span>{{ site.name }}</span>
           <Icon icon="tabler:external-link" width="14" height="14" />
         </a>
@@ -166,13 +166,14 @@ export default {
       return this.identity.connectedSites.find((site) => site.domain === this.selectedDomain) || null;
     },
 
+    /** Fixed examples, so each logo ships with the app: opening this sheet asks no other site for anything. */
     exampleSites() {
       return [
-        { name: 'Satsback', domain: 'satsback.com', url: 'https://satsback.com' },
-        { name: 'Bitrefill', domain: 'bitrefill.com', url: 'https://bitrefill.com' },
-        { name: 'Stacker News', domain: 'stacker.news', url: 'https://stacker.news' },
-        { name: 'Einundzwanzig Portal', domain: 'einundzwanzig.space', url: 'https://einundzwanzig.space' },
-        { name: 'LN Markets', domain: 'lnmarkets.com', url: 'https://lnmarkets.com' },
+        { name: 'Satsback', domain: 'satsback.com', url: 'https://satsback.com', icon: '/clients/satsback_logo.png' },
+        { name: 'Bitrefill', domain: 'bitrefill.com', url: 'https://bitrefill.com', icon: '/Bitrefill/bitrefill-mark.png' },
+        { name: 'Stacker News', domain: 'stacker.news', url: 'https://stacker.news', icon: '/clients/stackernews_logo.png' },
+        { name: 'Einundzwanzig Portal', domain: 'einundzwanzig.space', url: 'https://einundzwanzig.space', icon: '/clients/einundzwanzig_logo.png' },
+        { name: 'LN Markets', domain: 'lnmarkets.com', url: 'https://lnmarkets.com', icon: '/clients/lnmarkets_logo.png' },
       ];
     },
   },
