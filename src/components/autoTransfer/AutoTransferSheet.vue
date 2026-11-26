@@ -248,7 +248,7 @@ import { useWalletStore } from '../../stores/wallet';
 import { useAutoWithdrawStore } from '../../stores/autoWithdraw';
 import { useAddressBookStore } from '../../stores/addressBook';
 import { keypadSats } from '../../utils/amountKeypad.js';
-import { fetchPayRequest, lightningAddressUrl, payRequestLimits } from '../../utils/lnurlPay.js';
+import { fetchAddressPayRequest, lightningAddressUrl, payRequestLimits } from '../../utils/lnurlPay.js';
 import { readPayerRequest } from '../../utils/lud18.js';
 import { readClipboardCrossPlatform } from '../../utils/shopClipboard.js';
 import {
@@ -618,12 +618,11 @@ export default {
      * much it takes at a time, which the rule is then held against.
      */
     async lightningAddressProblem(address) {
-      const url = lightningAddressUrl(address);
-      if (!url) return 'silent';
+      if (!lightningAddressUrl(address)) return 'silent';
       try {
         // The check a transfer makes, so an address accepted here is one the
         // rule can pay. A person is waiting: give up sooner than a payment would.
-        const payRequest = await fetchPayRequest(url, { timeoutMs: 8000 });
+        const { payRequest } = await fetchAddressPayRequest(address, { timeoutMs: 8000 });
         const asks = readPayerRequest(payRequest?.payerData);
         if (asks.identifierRequired || asks.unmetRequired.length) return 'details';
         this.addressLimits = { address, ...payRequestLimits(payRequest) };

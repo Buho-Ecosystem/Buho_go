@@ -434,3 +434,25 @@ export function lightningAddressCase(address) {
   const name = text.slice(0, at);
   return `${isProviderHost(domain) ? name : name.toLowerCase()}@${domain}`;
 }
+
+/**
+ * The spellings of a Lightning address worth asking its service for, in
+ * order: as written, then as BuhoGO pays it (lightningAddressCase) when that
+ * differs. LUD-16 names are lower case and some services know no other
+ * spelling ("Buhogo@" is not found where "buhogo@" is), while a phone
+ * keyboard, a saved contact or a Nostr profile may capitalise one. Others
+ * take any case, so the address as written is always asked first. A till
+ * code has the one spelling: the provider reads it exactly as printed.
+ *
+ * @param {string} address - a Lightning address
+ * @returns {string[]} the host always in lower case; empty for no text
+ */
+export function lightningAddressSpellings(address) {
+  const text = String(address ?? '').trim();
+  if (!text) return [];
+  const at = text.lastIndexOf('@');
+  if (at < 1) return [text];
+  const written = `${text.slice(0, at)}@${text.slice(at + 1).toLowerCase()}`;
+  const paid = lightningAddressCase(text);
+  return paid === written ? [written] : [written, paid];
+}

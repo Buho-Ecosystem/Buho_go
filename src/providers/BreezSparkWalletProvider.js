@@ -31,7 +31,7 @@
 import { WalletProvider } from './WalletProvider.js';
 import { AUTO_CLAIM_THRESHOLDS } from '../stores/bitcoinPreferences.js';
 import { Invoice } from '@getalby/lightning-tools';
-import { fetchPayRequest, lightningAddressUrl, requestPayInvoice } from '../utils/lnurlPay.js';
+import { fetchAddressPayRequest, lightningAddressUrl, requestPayInvoice } from '../utils/lnurlPay.js';
 import { fiatRatesService } from '../utils/fiatRates.js';
 import { isBitcoinAddress } from '../utils/addressUtils.js';
 import { invoiceSats } from '../utils/lightningInvoice.js';
@@ -1251,11 +1251,10 @@ export class BreezSparkWalletProvider extends WalletProvider {
     try {
       // Asked for and checked by utils/lnurlPay.js: a refusal keeps the
       // service's reason, and the invoice must be for the amount confirmed.
-      const url = lightningAddressUrl(lightningAddress);
-      if (!url) {
+      if (!lightningAddressUrl(lightningAddress)) {
         throw new Error('Invalid Lightning address format');
       }
-      const payRequest = await fetchPayRequest(url);
+      const { payRequest } = await fetchAddressPayRequest(lightningAddress);
       const invoice = await requestPayInvoice(payRequest, { amountSats, payout, comment, payerData });
 
       // Invoice already carries the amount — passing amountSats would be

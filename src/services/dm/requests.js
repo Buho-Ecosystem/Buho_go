@@ -23,6 +23,7 @@
 
 import { decodeBolt11, parseLightningAddress } from 'nostr-core';
 import { parseProfileContent } from '../../utils/nostrFetch.js';
+import { lightningAddressSpellings } from '../../utils/merchantQR.js';
 import { DM_ERROR, DmError } from './errors.js';
 
 /** How long the payer waits for the requester's profile before using the address signed in the request. */
@@ -123,12 +124,20 @@ export function createRequestService({
   async function loadPayRequest(address, amountSats, unreachable) {
     requireSats(amountSats);
     let payRequest;
-    try {
-      const { name, domain } = parseLightningAddress(address);
-      payRequest = await lnurl.fetchPayRequest(`https://${domain}/.well-known/lnurlp/${encodeURIComponent(name)}`);
-    } catch (cause) {
-      return fail(unreachable, 'the Lightning address did not answer', { cause });
+    let firstCause = null;
+    // As written, then in lower case (utils/merchantQR). nostr-core's errors
+    // do not tell a name its service does not know from no answer, so after
+    // either the other spelling is asked once.
+    for (const spelling of lightningAddressSpellings(address)) {
+      try {
+        const { name, domain } = parseLightningAddress(spelling);
+        payRequest = await lnurl.fetchPayRequest(`https://${domain}/.well-known/lnurlp/${encodeURIComponent(name)}`);
+        break;
+      } catch (cause) {
+        firstCause ||= cause;
+      }
     }
+    if (!payRequest) return fail(unreachable, 'the Lightning address did not answer', { cause: firstCause });
     const amountMsat = amountSats * MSAT_PER_SAT;
     if (!(amountMsat >= payRequest?.minSendable && amountMsat <= payRequest?.maxSendable)) {
       fail(DM_ERROR.AMOUNT_OUT_OF_RANGE, 'the amount is outside what the Lightning address accepts');

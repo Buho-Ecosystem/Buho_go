@@ -82,6 +82,7 @@ function harness(ctx, { type = 'spark', balance = 100_000, provider = {}, store 
     '../utils/lnurlPay.js': {
       lightningAddressUrl: (address) => `https://example.com/${address}`,
       fetchPayRequest: async () => ({}),
+      fetchAddressPayRequest: async (address) => ({ payRequest: {}, address }),
       linkAmountSats: (_request, sats) => sats,
       requestPayInvoice: async (_request, { amountSats }) => ({ pr: `invoice-${amountSats}`, amountSats, successAction: null }),
     },

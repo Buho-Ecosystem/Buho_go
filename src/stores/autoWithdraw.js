@@ -12,7 +12,7 @@
 import { defineStore } from 'pinia'
 import { useTransactionMetadataStore } from './transactionMetadata'
 import { WALLET_TYPES } from '../providers/WalletFactory'
-import { fetchPayRequest, lightningAddressUrl, payRequestLimits, requestPayInvoice } from '../utils/lnurlPay.js'
+import { fetchAddressPayRequest, lightningAddressUrl, payRequestLimits, requestPayInvoice } from '../utils/lnurlPay.js'
 import { migratePocketConfigKeys, settleRulesForWallets } from '../utils/autoWithdrawKeys.js'
 import { payWithNwc } from '../services/nwcPayment.js'
 import { isUnconfirmedPayment } from '../utils/paymentOutcome.js'
@@ -419,9 +419,9 @@ export const useAutoWithdrawStore = defineStore('autoWithdraw', {
     async _limitsOf(walletId, address) {
       const kept = _addressLimits.get(walletId)
       if (kept?.address === address && Date.now() - kept.readAt < LIMITS_FRESH_MS) return kept
-      const url = lightningAddressUrl(address)
-      if (!url) throw new Error('Could not resolve Lightning address')
-      const limits = { address, ...payRequestLimits(await fetchPayRequest(url)), readAt: Date.now() }
+      if (!lightningAddressUrl(address)) throw new Error('Could not resolve Lightning address')
+      const { payRequest } = await fetchAddressPayRequest(address)
+      const limits = { address, ...payRequestLimits(payRequest), readAt: Date.now() }
       _addressLimits.set(walletId, limits)
       return limits
     },
@@ -511,12 +511,11 @@ export const useAutoWithdrawStore = defineStore('autoWithdraw', {
 
     /** The invoice a Lightning address gives for `amount`. */
     async _addressInvoice(address, amount) {
-      const url = lightningAddressUrl(address)
-      if (!url) throw new Error('Could not resolve Lightning address')
+      if (!lightningAddressUrl(address)) throw new Error('Could not resolve Lightning address')
       // The same request every send makes (utils/lnurlPay.js). Nobody is
       // watching here, so its check matters most: an invoice for any other
       // amount than the rule's is refused before anything is paid.
-      const payRequest = await fetchPayRequest(url)
+      const { payRequest } = await fetchAddressPayRequest(address)
       // A LUD-09 successAction is ignored: nobody is there to read it.
       const { pr: invoice } = await requestPayInvoice(payRequest, { amountSats: amount })
       return invoice

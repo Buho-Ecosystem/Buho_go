@@ -705,7 +705,7 @@ import { buildPaymentError, classifyTransportFailure, ownWordsError, unreachable
 import { capabilitiesOf } from '../utils/nwcWallet.js';
 import { diagnoseConnection } from '../utils/connectivity.js';
 import { counterpartyError, isCounterpartyError, keepOrigin } from '../utils/errorOrigin.js';
-import { PAY_REQUEST_ERROR, fetchPayRequest, lightningAddressUrl, payoutCeilingSats, readPayRequest, requestPayInvoice } from '../utils/lnurlPay.js';
+import { PAY_REQUEST_ERROR, fetchAddressPayRequest, fetchPayRequest, lightningAddressUrl, payoutCeilingSats, readPayRequest, requestPayInvoice } from '../utils/lnurlPay.js';
 import {parsePayRequestMetadata, serviceTitle, normalizeServiceImage, serviceIdentity} from '../utils/lnurlMetadata.js';
 import {isLightningInvoice as isLightningInvoiceShared, isLightningAddress as isLightningAddressShared, stripWrapperScheme, nativeRailsFromBip21, canonicalLnurl, lnurlDomain, lnurlToUrl} from '../utils/addressUtils.js';
 // One rule for "what is this string", shared with the Send field and the
@@ -5091,8 +5091,11 @@ export default {
           }
 
           // Fetch LNURL info for all wallet types
-          const lnurlInfo = await this.fetchLightningAddressInfo(paymentData.data);
+          const { answeredAs, ...lnurlInfo } = await this.fetchLightningAddressInfo(paymentData.data);
           if (!alive()) return;
+          // Its service knew the address only in lower case ("Buhogo@" from a
+          // contact or a profile): that spelling is shown, paid and kept.
+          if (answeredAs && answeredAs !== paymentData.data) paymentData = { ...paymentData, data: answeredAs };
 
           // NIP-05 fallback. A name@domain that didn't resolve as a Lightning
           // Address (empty lnurlInfo) might be a NIP-05 identifier instead —
@@ -6851,7 +6854,9 @@ export default {
 
     /**
      * Fetch LNURL info from a Lightning address
-     * Returns min/max amounts and whether it's a fixed amount.
+     * Returns min/max amounts and whether it's a fixed amount, and
+     * `answeredAs`: the spelling its service knew (utils/lnurlPay
+     * fetchAddressPayRequest).
      * A server that answers but doesn't serve the address yields {} ("not
      * found"), with `httpStatus` when it said so in HTTP; a transport failure (timeout, DNS, CORS on web) yields
      * { error: true, reason } so the caller doesn't misreport a reachable
@@ -6859,8 +6864,7 @@ export default {
      * the Send sheet spinning forever.
      */
     async fetchLightningAddressInfo(address) {
-      const url = lightningAddressUrl(address);
-      if (!url) {
+      if (!lightningAddressUrl(address)) {
         return {};
       }
 
@@ -6879,11 +6883,12 @@ export default {
       }
 
       try {
-        const data = await fetchPayRequest(url, { timeoutMs: 10000 });
+        const { payRequest: data, address: answeredAs } = await fetchAddressPayRequest(address, { timeoutMs: 10000 });
         const { minSendable, maxSendable } = data;
         const isFixedAmount = minSendable === maxSendable;
 
         return {
+          answeredAs,
           minSendable,
           maxSendable,
           minSats: Math.ceil(minSendable / 1000),
@@ -7034,11 +7039,10 @@ export default {
      *   `payerData` what went with it (see requestPayInvoice)
      */
     async fetchLightningAddressInvoice(address, amountSats, comment, payout = null, payerData = null) {
-      const url = lightningAddressUrl(address);
-      if (!url) {
+      if (!lightningAddressUrl(address)) {
         throw new Error('Invalid Lightning address');
       }
-      const payRequest = await fetchPayRequest(url);
+      const { payRequest } = await fetchAddressPayRequest(address);
       const { pr, amountSats: invoiceSats, successAction, verify, payerData: shared } = await requestPayInvoice(payRequest, { amountSats, payout, comment, payerData });
       return { pr, invoiceSats, successAction, verify, payerData: shared };
     },

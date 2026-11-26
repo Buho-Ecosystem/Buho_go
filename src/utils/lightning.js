@@ -11,7 +11,7 @@ import { assertPaymentInput } from './lud23.js';
 
 import { payWithNwc } from '../services/nwcPayment.js';
 import { Invoice } from '@getalby/lightning-tools';
-import { fetchPayRequest, lightningAddressUrl, requestPayInvoice } from './lnurlPay.js';
+import { fetchAddressPayRequest, fetchPayRequest, lightningAddressUrl, requestPayInvoice } from './lnurlPay.js';
 import {
   isLightningAddress as isLightningAddressShared,
   isLightningInvoice as isLightningInvoiceShared,
@@ -223,16 +223,16 @@ export class LightningPaymentService {
     // Asked for and checked by utils/lnurlPay.js, the same path every other
     // wallet type uses. Its errors pass through as they are: a refusal keeps
     // the service's reason, a transport failure stays recognisable.
-    const url = lightningAddressUrl(address);
-    if (!url) {
+    if (!lightningAddressUrl(address)) {
       throw new Error('Invalid Lightning address format');
     }
-    const data = await fetchPayRequest(url);
+    // The spelling the service knows is the one paid and shown.
+    const { payRequest: data, address: answered } = await fetchAddressPayRequest(address);
     return {
       type: PaymentType.LIGHTNING_ADDRESS,
-      address,
+      address: answered,
       ...payParams(data),
-      description: `Payment to ${address}`,
+      description: `Payment to ${answered}`,
     };
   }
 

@@ -28,6 +28,7 @@ import { decodeBolt11, parseLightningAddress } from 'nostr-core';
 import { sha256 } from '@noble/hashes/sha2.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
 import { hashOfPreimage } from './paymentConfirmation.js';
+import { lightningAddressSpellings } from '../../utils/merchantQR.js';
 
 /** How long a verify URL may take to answer. */
 export const VERIFY_TIMEOUT_MS = 5_000;
@@ -41,6 +42,24 @@ const CLOCK_SKEW_SECONDS = 5 * 60;
 function payEndpointOf(address) {
   const { name, domain } = parseLightningAddress(address.trim());
   return `https://${domain}/.well-known/lnurlp/${encodeURIComponent(name)}`;
+}
+
+/**
+ * Whether one spelling of `address` (as written, then in lower case; see
+ * utils/merchantQR) has the metadata an invoice commits to. The payer's
+ * wallet asked one of them, and a service that takes any case may repeat
+ * the spelling in its metadata. A spelling that does not answer is skipped.
+ */
+async function anySpellingCommits(address, committed, fetchPayRequest, timeout) {
+  for (const spelling of lightningAddressSpellings(address)) {
+    try {
+      const payRequest = await timeout(fetchPayRequest(payEndpointOf(spelling)));
+      if (typeof payRequest?.metadata === 'string' && metadataHash(payRequest.metadata) === committed) return true;
+    } catch {
+      // Not known under this spelling, or no answer: the next one may be.
+    }
+  }
+  return false;
 }
 
 /** sha256 of the metadata string, hex: what an invoice of this address commits to. */
@@ -101,9 +120,9 @@ export async function verifyPaymentViaAddress({
     // Whose invoice is it? Only one of the requester's own addresses counts.
     const committed = invoice.descriptionHash?.toLowerCase();
     if (!committed) return null;
+    const timeout = (promise) => withTimeout(promise, VERIFY_TIMEOUT_MS, setTimer, clearTimer);
     for (const address of onHost) {
-      const payRequest = await withTimeout(fetchPayRequest(payEndpointOf(address)), VERIFY_TIMEOUT_MS, setTimer, clearTimer);
-      if (typeof payRequest?.metadata === 'string' && metadataHash(payRequest.metadata) === committed) {
+      if (await anySpellingCommits(address, committed, fetchPayRequest, timeout)) {
         return { address: address.trim().toLowerCase(), paymentHash };
       }
     }

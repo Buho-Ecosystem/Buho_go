@@ -130,7 +130,7 @@ import { Icon } from '@iconify/vue';
 import { mapState } from 'pinia';
 import { useWalletStore } from '../../stores/wallet';
 import { formatAmount } from '../../utils/amountFormatting.js';
-import { fetchPayRequest, lightningAddressUrl, requestPayInvoice } from '../../utils/lnurlPay.js';
+import { fetchAddressPayRequest, requestPayInvoice } from '../../utils/lnurlPay.js';
 
 export default {
   name: 'SupportBuhoGo',
@@ -170,7 +170,7 @@ export default {
       try {
         // The same request every send makes, so the invoice shown is for
         // exactly the amount on screen.
-        const payRequest = await fetchPayRequest(lightningAddressUrl(this.donationAddress));
+        const { payRequest } = await fetchAddressPayRequest(this.donationAddress);
         const { pr } = await requestPayInvoice(payRequest, { amountSats: amount });
 
         this.donationInvoice = pr;
