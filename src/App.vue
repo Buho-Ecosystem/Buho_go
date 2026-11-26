@@ -39,6 +39,7 @@ import { authenticate as biometricAuth, isBiometricAvailable } from 'src/utils/b
 import { triggerWalletStoreHydration, readPersistedWalletState } from 'src/utils/walletHydration'
 import { useAddressBookSync } from 'src/composables/useAddressBookSync'
 import { useQuickAccessSync } from 'src/composables/useQuickAccessSync'
+import { useContactLastPaid } from 'src/composables/useContactLastPaid'
 import PaymentErrorDialog from 'src/components/PaymentErrorDialog.vue'
 import ToastHost from 'src/components/toasts/ToastHost.vue'
 import IncomingPaymentHost from 'src/components/IncomingPaymentHost.vue'
@@ -69,6 +70,8 @@ export default defineComponent({
     // Quick Settings tiles and launcher shortcuts follow the app's state
     // (wallet, kiosk mode, app lock, contacts, language). Android only.
     useQuickAccessSync()
+    // Quick pay and "Last paid" follow the payments History lists as paid.
+    useContactLastPaid()
 
     const locked = ref(false)
     // Screens that read the clipboard on foreground wait until the lock is gone.

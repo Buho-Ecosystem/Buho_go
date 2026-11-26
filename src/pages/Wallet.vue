@@ -639,12 +639,8 @@
             />
           </div>
           <div class="save-contact-address" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'">
-            <Icon
-              :icon="saveContactData.service ? 'tabler:building-store' : (saveContactData.addressType === 'spark' ? 'tabler:flame' : 'tabler:bolt')"
-              width="16" height="16"
-              :style="saveContactData.service ? null : { color: saveContactData.addressType === 'spark' ? '#4caf50' : '#ffc107' }"
-              class="q-mr-xs"
-            />
+            <Icon v-if="saveContactData.service" icon="tabler:building-store" width="16" height="16" class="q-mr-xs" />
+            <PaymentMark v-else class="q-mr-xs" :address-type="saveContactData.addressType" :address="saveContactData.address" :size="14" />
             <span class="address-preview">{{ saveContactData.service ? saveContactData.service.domain : truncateAddress(saveContactData.address) }}</span>
           </div>
 
@@ -782,6 +778,8 @@ import WalletBrandMark from '../components/WalletBrandMark.vue';
 import WalletSwitcherSheet from '../components/wallets/WalletSwitcherSheet.vue';
 import PaymentConfirmSheet from '../components/PaymentConfirmSheet.vue';
 import ContactAvatar from '../components/AddressBook/ContactAvatar.vue';
+import PaymentMark from '../components/PaymentMark.vue';
+import { canonicalContactAddress } from '../utils/contactAddress.js';
 import WaitingForYou from '../components/WaitingForYou.vue';
 import {useWaiting} from '../composables/useWaiting.js';
 import BatchSendModal from '../components/BatchSendModal.vue';
@@ -850,6 +848,8 @@ function emptySaveContactData() {
     // link is stamped on that wallet's history (not whichever is active when
     // the user finally taps Save).
     walletId: null,
+    // The id an on-chain send is listed under; it has no address to match by.
+    transactionId: null,
   };
 }
 
@@ -861,6 +861,7 @@ export default {
     paymentIntent: { type: Object, default: null },
   },
   components: {
+    PaymentMark,
     DefaultPaymentWalletDialog,
     WalletBrandMark,
     WalletSwitcherSheet,
@@ -3516,6 +3517,8 @@ export default {
         // So does what Pay again may pay: the withdrawal's id is the one its payment is listed under.
         const payAgain = this.payAgainRecordFor({ result: { id: result.requestId }, amount: amountSats, payLink: null, walletType: 'spark', isNostrSend: false, payment });
         if (payAgain) this.queueOnChainPayAgain(payAgain, result.requestId, walletId);
+        // The saved contact it pays, found now: Quick pay moves once it completes.
+        const paidContactId = payAgain ? this.addressBookStore.findContactByAddress(destinationAddress)?.id || null : null;
 
         // Same post-submit lifecycle as before the fold: close the sheet,
         // clear the payment, poll in the background with toasts. Polling
@@ -3528,7 +3531,7 @@ export default {
         this.l1Fee = null;
         this.sendSheetAmountSats = 0;
         this.refreshPayerBalance(walletId);
-        this._monitorL1Withdrawal(result.requestId, walletId);
+        this._monitorL1Withdrawal(result.requestId, walletId, paidContactId);
       } catch (error) {
         console.error('Withdrawal failed:', error);
         // Sent off, and nobody has said how it ended. A second payment to a
@@ -3559,7 +3562,7 @@ export default {
      * state. Notification handles update in place: persistent "submitted"
      * → success-with-mempool-link or a clear failure message.
      */
-    async _monitorL1Withdrawal(requestId, walletId = null) {
+    async _monitorL1Withdrawal(requestId, walletId = null, paidContactId = null) {
       // The wallet that submitted the withdrawal watches it; the active wallet
       // only when no other was named.
       const provider = walletId
@@ -3592,6 +3595,8 @@ export default {
           this.refreshPayerBalance(walletId);
           return;
         }
+
+        this.recordContactPayment(paidContactId);
 
         const mempoolUrl = provider.getMempoolExplorerUrl?.();
         const txId = final.txId;
@@ -5442,6 +5447,20 @@ export default {
       }
     },
 
+    /**
+     * Tell the address book a saved contact was paid (Quick pay, "Last
+     * paid"). Best effort: it is never part of how the payment ended.
+     */
+    recordContactPayment(contactId) {
+      if (!contactId) return;
+      try {
+        Promise.resolve(this.addressBookStore.recordPayment(contactId))
+          .catch((err) => console.warn('[wallet] could not record the payment for Quick pay:', err?.message || err));
+      } catch (err) {
+        console.warn('[wallet] could not record the payment for Quick pay:', err?.message || err);
+      }
+    },
+
     emitPaymentSent(payload) {
       // The debit may finish after an identity switch. Its old chat context
       // must never be announced using the newly active identity's signer.
@@ -5655,11 +5674,25 @@ export default {
         const invoiceContactId = payment.type === 'lightning_invoice' && payment.paymentContactId
           && this.addressBookStore.getEntryById(payment.paymentContactId)
           ? payment.paymentContactId : null;
-        const shouldOfferSave = isCompletedSend && !!(recipientAddress && !existingContact);
+        // What Pay again may pay later, kept only on a payment it can prove.
+        const payAgain = this.payAgainRecordFor({ result, amount, payLink, walletType, isNostrSend, payment, payout });
+        // A plain Bitcoin address is a lasting destination too: Pay again
+        // already decided it is one (never a checkout's address for one
+        // order, a till or a verified business). It carries no address stamp
+        // (see below), so it only finds its contact and offers the save.
+        const onChainAddress = payAgain?.addressType === 'bitcoin'
+          ? canonicalContactAddress(payAgain.address, 'bitcoin') || null : null;
+        const onChainContact = onChainAddress ? this.addressBookStore.findContactByAddress(onChainAddress) : null;
+        const saveAddress = recipientAddress || onChainAddress;
+        const shouldOfferSave = isCompletedSend && !!(saveAddress && !existingContact && !onChainContact);
+        // Quick pay and "Last paid" move once a payment to a saved contact
+        // went through; a payment still on its way is dated by History later.
+        const paidContactId = existingContact?.id || invoiceContactId || onChainContact?.id || null;
+        if (isCompletedSend && this.isPaymentIdentityCurrent()) this.recordContactPayment(paidContactId);
         const tillStoreName = payment.source === SA_RETAIL_SOURCE ? (payment.merchant?.displayName || null) : null;
         const recipientLabel = isServiceSend && !existingContact
           ? serviceName
-          : this.getRecipientDisplayLabel(existingContact, payment);
+          : this.getRecipientDisplayLabel(existingContact || onChainContact, payment);
 
         // LUD-21 fiat delivery: only meaningful for a recognized fiat-payout
         // provider (ChapSmart/Tando/Bitzed) — an ordinary LNURL/LUD-21 endpoint
@@ -5690,10 +5723,8 @@ export default {
 
         // A verified business stays with the payment (History, details).
         const merchantVerification = this.brantaReceipt(payment);
-        // What Pay again may pay later, kept only on a payment it can prove.
         // An on-chain send has no address stamp to be matched by, so its
-        // record waits on its own for the payment's id.
-        const payAgain = this.payAgainRecordFor({ result, amount, payLink, walletType, isNostrSend, payment, payout });
+        // Pay again record waits on its own for the payment's id.
         if (payAgain?.addressType === 'bitcoin') this.queueOnChainPayAgain(payAgain, result?.id, sendingWalletId);
         const addressPayAgain = payAgain?.addressType === 'bitcoin' ? null : payAgain;
 
@@ -5780,7 +5811,7 @@ export default {
           // Fiat-payout numbers (Bitzed/Tando): prefill the note so the saved
           // contact reads clearly as a mobile-money recipient. Empty for any
           // other address.
-          const payoutService = matchLnAddressService(recipientAddress);
+          const payoutService = matchLnAddressService(saveAddress);
           const profile = payment.nostrProfile || null;
           const profileEvent = payment.nostrProfileEvent || null;
           const nostrIdentity = recipientNostrPubkey && recipientNostrNpub && profileEvent
@@ -5795,8 +5826,8 @@ export default {
               }
             : null;
           this.saveContactData = {
-            address: recipientAddress,
-            addressType: recipientAddressType,
+            address: saveAddress,
+            addressType: onChainAddress && !recipientAddress ? 'bitcoin' : recipientAddressType,
             name: nostrIdentity
               ? (profileDisplayName(profile) || shortenNpub(recipientNostrNpub))
               : serviceName,
@@ -5821,6 +5852,8 @@ export default {
             // ... and the wallet that sent it: that is the history the link
             // belongs to, whichever wallet is active by the time Save is tapped.
             walletId: sendingWalletId,
+            // An on-chain send is found in History by its id only.
+            transactionId: onChainAddress && !recipientAddress ? (result?.id || null) : null,
           };
         }
 
@@ -6724,7 +6757,10 @@ export default {
         // (or is about to land). The pending-link consumer matches by
         // address + amount + recent timestamp on the next tx-list
         // refresh, so we don't need to know the provider-assigned id.
-        if (newContact?.id) {
+        // An on-chain send is matched by its id alone: by amount and time it
+        // could take an unrelated payment.
+        const linkable = data.addressType !== 'bitcoin' || !!data.transactionId;
+        if (newContact?.id && linkable) {
           try {
             await this.transactionMetadataStore.enqueuePendingContactLink({
               contactId: newContact.id,
@@ -6735,11 +6771,14 @@ export default {
               // active one). Without it - a dialog staged some other way - the
               // active wallet, which was the only possibility before.
               walletId: data.walletId || this.activeWallet?.id || null,
+              ...(data.transactionId ? { transactionId: data.transactionId } : {}),
             });
           } catch (err) {
             console.warn('[wallet] could not queue contact link for new contact:', err);
           }
         }
+        // The dialog only follows a payment that went through: they were just paid.
+        this.recordContactPayment(newContact?.id);
 
         this.showSaveContactDialog = false;
         this.saveContactData = emptySaveContactData();

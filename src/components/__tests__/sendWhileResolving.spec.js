@@ -20,7 +20,7 @@ function field(state = {}) {
       isEntryPayable: () => true,
       getEntryAddress: (entry) => entry.address,
       getEntryAddressType: (entry) => entry.addressType,
-      updateLastUsed() {},
+      recordPayment() {},
     },
     ...state,
   });

@@ -98,6 +98,25 @@ export function readContactAddress(raw) {
   return readBare(stripWrapperScheme(text))
 }
 
+/**
+ * A name an address suggests for its contact, '' when it suggests none: the
+ * label a payment link carries, else a Lightning address's own name in words
+ * ("lena.fischer@…" and "LENA.FISCHER@…" are "Lena Fischer"). A name with no letters (a phone
+ * number) or a public key says nothing about the person, so it suggests none.
+ *
+ * @param {{ address?: string, addressType?: string, label?: string }|null} reading
+ * @returns {string}
+ */
+export function suggestedContactName(reading) {
+  if (reading?.label) return reading.label
+  if (reading?.addressType !== 'lightning' || typeof reading.address !== 'string') return ''
+  const name = reading.address.slice(0, reading.address.lastIndexOf('@'))
+  if (!/[a-z]/i.test(name) || /^npub1/i.test(name) || name.length > 32) return ''
+  return name.split(/[._-]+/).filter(Boolean)
+    .map((word) => word.charAt(0).toLocaleUpperCase() + word.slice(1).toLocaleLowerCase())
+    .join(' ')
+}
+
 function readBare(value) {
   if (isLightningInvoice(value) || isSparkPaymentRequest(value)) return ONE_TIME
   const addressType = contactAddressType(value)

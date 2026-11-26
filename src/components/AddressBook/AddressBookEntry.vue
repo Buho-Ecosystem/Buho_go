@@ -10,11 +10,10 @@
     <button
       type="button"
       class="payee-open"
-      :aria-label="unread > 0 ? `${entry.name}, ${$t('New messages')}: ${unread}` : entry.name"
+      :aria-label="openLabel"
       @click="$emit('open', entry)"
     >
-      <!-- Avatar — real picture for nostr-sourced contacts, the
-           app-wide grey silhouette otherwise. -->
+      <!-- Avatar: their picture, else the first character of their name. -->
       <span class="payee-avatar-wrap">
         <ContactAvatar
           class="payee-avatar"
@@ -27,7 +26,13 @@
 
       <span class="payee-copy">
         <span class="payee-name">{{ entry.name }}</span>
-        <span v-if="isPayable" class="payee-addr">{{ truncatedAddress }}</span>
+        <!-- How they are paid, then when they last were; their address
+             until the first payment. -->
+        <span v-if="isPayable" class="payee-sub">
+          <PaymentMark :address-type="entry.addressType" :address="displayAddress" :size="12" />
+          <span v-if="lastPaidLabel" class="payee-paid">{{ lastPaidLabel }}</span>
+          <span v-else class="payee-addr">{{ truncatedAddress }}</span>
+        </span>
         <!-- Identity-only Nostr contact: saved (or restored) without a
              current address. Calm, not an error — their page explains
              and re-checks. -->
@@ -50,11 +55,12 @@
 
 <script>
 import ContactAvatar from './ContactAvatar.vue'
+import PaymentMark from '../PaymentMark.vue'
 import { serviceAddressLine } from '../../utils/lnurlMetadata.js'
 
 export default {
   name: 'AddressBookEntry',
-  components: { ContactAvatar },
+  components: { ContactAvatar, PaymentMark },
   props: {
     entry: {
       type: Object,
@@ -70,6 +76,38 @@ export default {
   computed: {
     unreadBadge() {
       return this.unread > 99 ? '99+' : String(this.unread)
+    },
+    openLabel() {
+      const parts = [this.entry.name]
+      if (this.unread > 0) parts.push(`${this.$t('New messages')}: ${this.unread}`)
+      if (this.isPayable && this.lastPaidLabel) parts.push(this.lastPaidLabel)
+      return parts.join(', ')
+    },
+    /**
+     * When they were last paid (addressBook.recordPayment owns the date):
+     * today, yesterday, else the day, with the year once it is not this one.
+     */
+    lastPaidLabel() {
+      const at = Number(this.entry.lastPaidAt) || 0
+      if (!at) return ''
+      const paid = new Date(at)
+      const startOfToday = new Date()
+      startOfToday.setHours(0, 0, 0, 0)
+      const startOfYesterday = new Date(startOfToday)
+      startOfYesterday.setDate(startOfYesterday.getDate() - 1)
+      if (at >= startOfToday.getTime()) return this.$t('Last paid today')
+      if (at >= startOfYesterday.getTime()) return this.$t('Last paid yesterday')
+      const sameYear = paid.getFullYear() === startOfToday.getFullYear()
+      try {
+        const date = new Intl.DateTimeFormat(this.$i18n?.locale || undefined, {
+          day: 'numeric',
+          month: 'short',
+          ...(sameYear ? {} : { year: 'numeric' }),
+        }).format(paid)
+        return this.$t('Last paid {date}', { date })
+      } catch {
+        return this.$t('Last paid {date}', { date: paid.toLocaleDateString() })
+      }
     },
     displayAddress() {
       return this.entry.address || this.entry.lightningAddress || ''
@@ -196,7 +234,20 @@ export default {
   overflow-wrap: anywhere;
 }
 
+.payee-sub {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.payee-paid {
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+}
+
 .payee-addr {
+  min-width: 0;
   font-family: var(--font-mono);
   font-size: 0.8125rem;
   color: var(--text-secondary);

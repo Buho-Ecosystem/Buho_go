@@ -286,7 +286,7 @@
                     <path fill-rule="evenodd" clip-rule="evenodd" d="M79.4319 49.3554L81.7454 0H52.8438L55.1573 49.356L8.9311 31.9035L0 59.3906L47.6565 72.4425L16.7743 111.012L40.1562 128L67.2966 86.7083L94.4358 127.998L117.818 111.01L86.9359 72.4412L134.587 59.3907L125.656 31.9036L79.4319 49.3554Z" fill="white"/>
                   </svg>
                   <ArkadeLogo v-else-if="contactRailDot(contact).kind === 'arkade'" variant="mark" color="white" :size="9" />
-                  <Icon v-else icon="tabler:currency-bitcoin" width="10" height="10" />
+                  <img v-else src="/icons/bitcoin.svg" alt="" class="row-rail-coin" />
                 </span>
               </span>
               <span class="row-name">
@@ -2131,6 +2131,13 @@ export default {
   justify-content: center;
   color: #fff;
   box-shadow: 0 0 0 2px var(--bg-card);
+}
+
+/* An on-chain contact's dot is the Bitcoin coin itself. */
+.row-rail-coin {
+  width: 100%;
+  height: 100%;
+  display: block;
 }
 
 /* Unpayable on the active wallet (or identity-only Nostr contact):

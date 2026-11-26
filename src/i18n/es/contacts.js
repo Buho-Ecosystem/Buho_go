@@ -10,4 +10,7 @@ export default {
   "Remove all": "Quitar todos",
   "Contacts removed": "Contactos quitados",
   "Couldn't remove contacts": "No se pudieron quitar los contactos",
+  "Last paid today": "Último pago hoy",
+  "Last paid yesterday": "Último pago ayer",
+  "Last paid {date}": "Último pago el {date}",
 }

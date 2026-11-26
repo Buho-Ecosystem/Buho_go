@@ -4,7 +4,9 @@
  * Coverage focus:
  *   - outgoing payments match by address, recipient address, Pay again
  *     record or contact link; incoming only by the contact link
- *   - unsettled payments are never listed
+ *   - unsettled payments are listed only on a contact's page, and only sends
+ *     on their way; the summary never counts them
+ *   - "Last paid" is the newest settled send History showed
  *   - a wallet without a provider, or whose provider fails, answers from
  *     History's cached list; one that cannot answer leaves the others
  *   - a full page says older payments may exist
@@ -13,7 +15,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { loadRecipientPayments, matchesRecipient, paymentTimeMs, summarizePayments } from '../recipientPayments.js';
+import { lastPaidTimes, loadRecipientPayments, matchesRecipient, paymentTimeMs, summarizePayments } from '../recipientPayments.js';
 
 const at = (day) => Date.UTC(2026, 9, day) / 1000;
 const sent = (id, amount, day, extra = {}) => ({ id, type: 'outgoing', status: 'completed', amount, fee: 0, timestamp: at(day), ...extra });
@@ -100,4 +102,36 @@ test('times come from whichever field the provider sets', () => {
   assert.equal(paymentTimeMs({ timestamp: 1700000000000 }), 1700000000000);
   assert.equal(paymentTimeMs({ created_at: '2026-10-01T00:00:00Z' }), Date.UTC(2026, 9, 1));
   assert.equal(paymentTimeMs({}), 0);
+});
+
+test('a send on its way is listed as pending and never counted as paid; a pending receive is not listed', async () => {
+  const { payments } = await loadRecipientPayments({
+    wallets: [{ id: 'A', type: 'lnbits' }],
+    providers: { A: { getTransactions: async () => [
+      sent('done', -4200, 3),
+      sent('routing', -1000, 5, { status: 'pending' }),
+      sent('failed', -900, 6, { status: 'failed' }),
+      { id: 'asked', type: 'incoming', status: 'pending', amount: 500, timestamp: at(7) },
+    ] } },
+    metadataFor: () => ({ contactId: 'c1' }),
+    addresses: [],
+    contactId: 'c1',
+    includePending: true,
+  });
+  assert.deepEqual(payments.map((p) => [p.id, p.pending]), [['routing', true], ['done', false]]);
+  assert.deepEqual(summarizePayments(payments), { count: 1, totalSats: 4200, sinceMs: payments[1].timeMs });
+});
+
+test('last paid is the newest settled send to each contact in what History showed', () => {
+  const metadata = { 'A:old': { recipientAddress: 'lena@example.com' }, 'B:linked': { contactId: 'ben' }, 'B:in': { contactId: 'lena' } };
+  const paidAt = lastPaidTimes({
+    wallets: [{ id: 'A', type: 'lnbits' }, { id: 'B', type: 'nwc' }],
+    contacts: [{ id: 'lena', address: 'Lena@example.com' }, { id: 'ben', address: 'ben@example.com' }, { id: 'jonas', address: '' }],
+    readCache: (walletId) => ({
+      A: [sent('old', -100, 2), sent('new', -100, 9, { status: 'pending', lnaddress: 'lena@example.com' })],
+      B: [sent('linked', -50, 4), { id: 'in', type: 'incoming', status: 'completed', amount: 70, timestamp: at(12) }],
+    }[walletId] || []),
+    metadataFor: (txId, walletId) => metadata[`${walletId}:${txId}`] || null,
+  });
+  assert.deepEqual([...paidAt].sort(), [['ben', at(4) * 1000], ['lena', at(2) * 1000]]);
 });

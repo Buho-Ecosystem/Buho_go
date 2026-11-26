@@ -14,6 +14,7 @@ import * as errorOrigin from '../../utils/errorOrigin.js';
 import * as branta from '../../utils/branta.js';
 import * as brantaReview from '../../services/brantaVerification.js';
 import * as payAgain from '../../utils/payAgain.js';
+import * as contactAddress from '../../utils/contactAddress.js';
 import * as recipientPayments from '../../services/recipientPayments.js';
 import * as haptics from '../../utils/haptics.js';
 import * as nwcErrors from '../../utils/nwcErrors.js';
@@ -54,6 +55,7 @@ const component = (dependencies = {}) => evaluate('../Wallet.vue', {
   '../stores/autoWithdraw': { useAutoWithdrawStore: () => ({ getConfig: () => null, checkAndExecute() {} }) },
   '../utils/fiatRates': { fiatRatesService: { convertSatsToFiat: async () => null } },
   '../utils/payAgain.js': payAgain,
+  '../utils/contactAddress.js': contactAddress,
   '../utils/payingWallets.js': payingWallets,
   '../utils/refundAddress.js': refundAddress,
   '../utils/lud18.js': lud18,
@@ -390,6 +392,15 @@ test('a service profile groups payments to both its identifier and original pay 
   };
   await vm.loadHistory();
   assert.deepEqual(vm.history.map(tx => tx.id).sort(), ['identifier', 'link']);
+});
+
+test('a contact\'s payments show their amounts in the chosen Bitcoin format', () => {
+  const calls = [];
+  const formatAmountWithPrefix = (...args) => { calls.push(args); return '₿ 21,000'; };
+  const profile = evaluate('../ContactProfilePage.vue', { '../utils/amountFormatting.js': { formatAmountWithPrefix } }).default;
+  const vm = { walletStore: { useBip177Format: true } };
+  assert.equal(profile.methods.formatSats.call(vm, 21000), '₿ 21,000');
+  assert.deepEqual(calls, [[21000, true, '']]);
 });
 
 test('contact history reloads when a wallet connects after the page opened, and per contact', () => {
@@ -1242,6 +1253,35 @@ test('Pay with: an untouched payment goes through the active wallet exactly as b
   assert.equal(store.activeWalletId, 'personal');
 });
 
+test('a Bitcoin address that was paid is offered as a contact and linked by its payment id alone; a checkout\'s is not', async () => {
+  const address = 'bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq';
+  const pay = async (payment) => {
+    const harness = payingHarness({ active: 'ark', deps: { '../utils/bip21.js': bip21Helpers } });
+    const { vm, store, providerFor } = harness;
+    store.ensureArkadeConnected = async () => ({ ...providerFor('ark'), offboardToBitcoin: async () => ({ id: 'txid-1', status: 'completed' }) });
+    Object.assign(vm, { pendingPayment: { type: 'bitcoin_address', bitcoinAddress: address, amount: 2100, ...payment } });
+    vm.arkadeFeeQuote = { walletId: 'ark', address, amount: 2100, fee: 130, total: 2230 };
+    await quietly(() => vm.confirmPayment());
+    return harness;
+  };
+
+  const plain = await pay({});
+  assert.equal(plain.sent.success.showSaveContact, true);
+  assert.deepEqual([plain.vm.saveContactData.address, plain.vm.saveContactData.addressType, plain.vm.saveContactData.transactionId], [address, 'bitcoin', 'txid-1']);
+  plain.vm.addressBookStore.addEntry = async entry => ({ id: 'contact-1', ...entry });
+  const recorded = [];
+  plain.vm.addressBookStore.recordPayment = async id => { recorded.push(id); };
+  plain.vm.saveContactData.name = 'Oma';
+  const before = plain.sent.links.length;
+  await plain.vm.saveRecipientAsContact();
+  const link = plain.sent.links[before];
+  assert.deepEqual([link.contactId, link.recipientAddress, link.transactionId], ['contact-1', address, 'txid-1'], 'only that payment can carry the new contact');
+  assert.deepEqual(recorded, ['contact-1'], 'just paid: Quick pay counts it');
+
+  const checkout = await pay({ bip21: { address, amount: '0.000021' } });
+  assert.equal(checkout.sent.success.showSaveContact, false, 'an order\'s address is never a contact');
+});
+
 test('Pay with: transaction metadata is written against the wallet that paid', async () => {
   const { vm, sent } = payingHarness({ active: 'biz' });
   Object.assign(vm, { pendingPayment: lnAddressPayment(), sendingWalletId: 'lnb', paymentAmount: '2500' });
@@ -1456,7 +1496,7 @@ test('Pay with: on-chain sends are the paying Spark wallet\'s, not the active on
   await vm.executeSparkL1Withdrawal(5000);
   assert.deepEqual(callsTo(calls, 'ensureSparkConnected'), [['personal', 'ensureSparkConnected']]);
   assert.deepEqual(callsTo(calls, 'withdrawToL1'), [['personal', 'withdrawToL1', 'bc1qxyz', 5000]]);
-  assert.deepEqual(monitored, [['req-1', 'personal']], 'the paying wallet watches its own withdrawal');
+  assert.deepEqual(monitored, [['req-1', 'personal', null]], 'the paying wallet watches its own withdrawal (no saved contact to date)');
   // Pay again: its own link, waiting for the withdrawal's id.
   const [link] = sent.links;
   assert.deepEqual({ ...link, payAgain: { ...link.payAgain, proof: undefined } }, {

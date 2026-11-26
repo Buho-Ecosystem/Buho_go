@@ -61,6 +61,7 @@ function paymentOptions({ walletId, context, amountSats, note, payout, repeat, c
  *   payAddress: (target: { address: string, addressType?: string, name?: string }, options?: PayOptions) => boolean|undefined,
  *   payAgain: (target: object|null, options?: { walletId?: string, name?: string }) => boolean|undefined,
  *   preparePayment: (input: object, options?: PayOptions) => boolean,
+ *   refreshContact: (contact: object) => void,
  * }}
  */
 export function usePayContact(ctx) {
@@ -124,9 +125,8 @@ export function usePayContact(ctx) {
       return false;
     }
 
-    // Recency feeds the Quick pay shelf. Best effort, never blocks the tap.
-    store.updateLastUsed(contact.id).catch(() => {});
-
+    // Quick pay counts payments, not taps: the payment reports itself once
+    // it went out (addressBook.recordPayment), and a cancelled one never.
     return preparePayment({
       address,
       addressType: contact.addressType || 'lightning',
@@ -174,5 +174,5 @@ export function usePayContact(ctx) {
     });
   }
 
-  return { payContact, payInvoice, payAddress, payAgain, preparePayment };
+  return { payContact, payInvoice, payAddress, payAgain, preparePayment, refreshContact: maybeRefresh };
 }

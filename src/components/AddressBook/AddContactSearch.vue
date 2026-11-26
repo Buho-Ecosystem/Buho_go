@@ -93,6 +93,8 @@
             </span>
             <span v-if="person.about" class="people-bio">{{ person.about }}</span>
           </span>
+          <!-- Someone already in the address book says so before the tap. -->
+          <span v-if="isSaved(person)" class="people-saved">{{ $t('Saved') }}</span>
           <q-icon name="chevron_right" size="20px" :aria-hidden="true" />
         </button>
       </li>
@@ -355,6 +357,11 @@ export default {
   },
 
   methods: {
+    /** Whether this search result is someone already in the address book. */
+    isSaved(person) {
+      return !!person?.pubkey && !!useAddressBookStore().findContactByPubkey(person.pubkey);
+    },
+
     /** What to resolve: `@maria` becomes `maria@mybuho.de`, the rest as typed. */
     lookupQuery(input) {
       return usernameAddressFromInput(input) || input;
@@ -769,6 +776,7 @@ export default {
 .people-copy { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
 .people-name { font-size: 1rem; font-weight: 650; overflow-wrap: anywhere; }
 .people-handle { font-size: .8125rem; color: var(--text-secondary); overflow-wrap: anywhere; }
+.people-saved { flex-shrink: 0; font-size: .8125rem; color: var(--text-secondary); }
 .people-bio { font-size: .875rem; line-height: 1.4; color: var(--text-secondary); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
 .search-retry { display: inline-flex; align-items: center; gap: 4px; align-self: flex-start; min-height: 44px; padding: 8px 12px; border-radius: 12px; border: 0; background: var(--bg-input); color: var(--text-primary); font: 600 .875rem 'Manrope', sans-serif; cursor: pointer; }
 button:focus-visible { outline: 2px solid var(--text-primary); outline-offset: 2px; }

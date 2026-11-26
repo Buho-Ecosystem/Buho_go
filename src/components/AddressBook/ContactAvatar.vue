@@ -16,12 +16,11 @@
       :alt="''"
       @error="onImgError"
     />
-    <!-- No picture: the filled-bust silhouette in the app's grey
-         placeholder language, both themes. One mark for everyone, no
-         initials, no per-contact color. The glyph scales with whatever
-         size the parent sets, so every surface keeps its rhythm. -->
-    <!-- A service (LUD-11 storeable pay link) without a logo: the storefront,
-         in the same grey disc. One glyph for services, one for people. -->
+    <!-- No picture: the app's grey placeholder disc, both themes, no
+         per-contact color. A service (LUD-11 storeable pay link) shows the
+         storefront, a saved person the first character of their name, anyone
+         else the filled-bust silhouette. Every mark scales with whatever size
+         the parent sets, so each surface keeps its rhythm. -->
     <svg
       v-else-if="isService"
       class="contact-avatar__glyph contact-avatar__glyph--service"
@@ -40,6 +39,14 @@
       <path d="M9 21v-4a2 2 0 0 1 2 -2h2a2 2 0 0 1 2 2v4" />
     </svg>
     <svg
+      v-else-if="initial"
+      class="contact-avatar__initial"
+      viewBox="0 0 40 40"
+      aria-hidden="true"
+    >
+      <text x="20" y="20" text-anchor="middle" dominant-baseline="central">{{ initial }}</text>
+    </svg>
+    <svg
       v-else
       class="contact-avatar__glyph"
       viewBox="0 0 24 24"
@@ -56,11 +63,11 @@
  * Unified contact avatar.
  *
  * Renders a Nostr-sourced profile picture when one is available,
- * otherwise falls back to the filled-bust silhouette — one mark for
- * every picture-less contact, the app's grey placeholder (muted figure
- * on the input surface) in both themes. The old colored-initial
- * circles are retired (design decision 2026-07-25); the blue disc
- * went grey 2026-09-10 to match the rest of the app.
+ * otherwise the app's grey placeholder (muted mark on the input surface)
+ * in both themes: a saved contact's first character, the silhouette for
+ * anyone who is not one. Rows of saved people then read apart at a
+ * glance. The old per-contact colors stay retired (2026-07-25); the disc
+ * is grey since 2026-09-10 to match the rest of the app.
  *
  * Layout is intentionally *not* owned by this component — the parent
  * supplies width / height / font-size through its own class so each
@@ -71,19 +78,24 @@
  *   2. img-vs-initial decision
  *   3. graceful fallback when the image fails to load
  *
+ * The initial comes from `entry.name` only: a saved contact's name. A
+ * `name` handed in on its own is often a payment title ("Bitcoin
+ * payment", an address), which must not turn into a letter.
+ *
  * `entry` is intentionally permissive — full address-book entry, a
  * lightweight payment-recipient adapter, or just `{ name }` all work.
  * `picture` explicit override wins when supplied so callers can
  * render in-flight resolved profiles before a store entry exists yet.
  *
  * `name` / `color` / `initialLength` remain declared so existing call
- * sites keep working, but the silhouette fallback ignores them — the
- * per-contact color field is legacy data now.
+ * sites keep working, but the fallback ignores them; the per-contact
+ * color field is legacy data now.
  */
 
 import { matchLnAddressService } from '../../services/lnAddressServices'
 import { matchWalletBrandByAddress } from '../../services/walletBrands'
 import { useServiceImagesStore } from '../../stores/serviceImages'
+import { firstCharacter } from '../../utils/firstCharacter.js'
 
 export default {
   name: 'ContactAvatar',
@@ -189,6 +201,12 @@ export default {
      */
     isService() {
       return this.entry?.addressType === 'lnurl' || !!this.entry?.service
+    },
+
+    /** A saved person's first character, as they see it (a flag stays whole). */
+    initial() {
+      const name = typeof this.entry?.name === 'string' ? this.entry.name : ''
+      return firstCharacter(name).toLocaleUpperCase()
     },
 
     /**
@@ -304,6 +322,20 @@ export default {
   width: 52%;
   height: 52%;
   display: block;
+}
+
+/* The initial: one size relative to the disc, whatever size the parent sets. */
+.contact-avatar__initial {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.contact-avatar__initial text {
+  fill: currentColor;
+  font-family: 'Manrope', sans-serif;
+  font-size: 17px;
+  font-weight: 650;
 }
 
 /* The storefront is a stroke mark; a touch smaller keeps its visual
